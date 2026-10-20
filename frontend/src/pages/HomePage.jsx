@@ -31,6 +31,11 @@ const formatNumber = (value, maximumFractionDigits = 2) =>
     new Intl.NumberFormat('id-ID', { maximumFractionDigits }).format(Number(value ?? 0));
 const formatCurrency = (value) =>
     `Rp ${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value ?? 0))}`;
+const formatAveragePrice = (value) =>
+    `Rp ${new Intl.NumberFormat('id-ID', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(value ?? 0))}`;
 const formatPercent = (value) =>
     `${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(Number(value ?? 0))}%`;
 
@@ -271,9 +276,10 @@ export default function HomePage() {
                 </article>
                     <article className="home-subpanel">
                         <h3>Average Price periode terpilih</h3>
-                        <p className="home-subpanel-caption">Total dihitung dari konversi Sm³, harga USD/MMBTU, dan kurs tiap bulan dalam periode.</p>
+                        <p className="home-subpanel-caption">Mengikuti volume dan hasil pada tab AVG untuk bulan yang telah tersedia.</p>
                         <Message loading={loading} error={errors.price} empty={validPriceRows.length === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
                             <div className="home-year-summary home-price-summary">
+                                <div><small>Average Rp/Sm³</small><strong>{formatAveragePrice(priceReport?.totals?.average_price_rp_sm3)}</strong></div>
                                 <div><small>Total MMBTU</small><strong>{formatNumber(priceReport?.totals?.mmbtu, 3)}</strong></div>
                                 <div><small>Total USD</small><strong>{formatCurrency(priceReport?.totals?.usd)}</strong></div>
                                 <div><small>Total Rupiah</small><strong>{formatCurrency(priceReport?.totals?.rupiah)}</strong></div>

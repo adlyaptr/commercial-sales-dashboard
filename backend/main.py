@@ -3,6 +3,7 @@ import re
 import hmac
 import hashlib
 import math
+import secrets
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from io import BytesIO
@@ -44,6 +45,7 @@ SESSION_COOKIE_SECURE = os.getenv(
     "SESSION_COOKIE_SECURE",
     "true" if APP_ENV == "production" else "false",
 ).strip().lower() == "true"
+PASSWORD_HASH_ITERATIONS = 310_000
 
 
 def validate_runtime_config():
@@ -140,12 +142,66 @@ def init_db():
 
 
 def logged_in(request: Request) -> bool:
-    return request.session.get("username") == APP_USERNAME
+    username = request.session.get("username")
+    role = request.session.get("role")
+    return bool(username) and (
+        role in {"admin", "division"}
+        or (username == APP_USERNAME and role is None)
+    )
 
 
 def require_login(request: Request):
     if not logged_in(request):
         raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
+    role = request.session.get("role")
+    if role != "admin" and not (
+        role is None and request.session.get("username") == APP_USERNAME
+    ):
+        raise HTTPException(status_code=403, detail="Akses khusus admin.")
+
+
+def require_home_access(request: Request):
+    if not logged_in(request):
+        raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
+    username = request.session["username"]
+    role = request.session.get("role")
+    if role == "admin" or (role is None and username == APP_USERNAME):
+        return
+    with db() as con:
+        user = con.execute(
+            "SELECT role FROM app_users WHERE username=%s", (username,)
+        ).fetchone()
+    if not user or user["role"] != "division":
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
+
+
+def hash_user_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS
+    )
+    return f"pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}${salt.hex()}${digest.hex()}"
+
+
+def verify_user_password(password: str, stored_hash: str) -> bool:
+    if stored_hash.startswith("pbkdf2_sha256$"):
+        try:
+            algorithm, iterations, salt_hex, digest_hex = stored_hash.split("$")
+            if algorithm != "pbkdf2_sha256":
+                return False
+            expected = bytes.fromhex(digest_hex)
+            supplied = hashlib.pbkdf2_hmac(
+                "sha256",
+                password.encode("utf-8"),
+                bytes.fromhex(salt_hex),
+                int(iterations),
+            )
+        except (ValueError, TypeError):
+            return False
+        return hmac.compare_digest(supplied, expected)
+    supplied = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(supplied, stored_hash)
 
 
 def norm(value) -> str:
@@ -481,13 +537,20 @@ async def login(request: Request):
     payload = await request.json()
     username = str(payload.get("username", ""))
     password = str(payload.get("password", ""))
-    supplied = hashlib.sha256(password.encode("utf-8")).hexdigest()
     with db() as con:
-        row = con.execute("SELECT password_hash FROM app_users WHERE username=%s", (username,)).fetchone()
-    if username != APP_USERNAME or not row or not hmac.compare_digest(supplied, row["password_hash"]):
+        row = con.execute(
+            "SELECT password_hash,role FROM app_users WHERE username=%s",
+            (username,),
+        ).fetchone()
+    if (
+        not row
+        or row["role"] not in {"admin", "division"}
+        or not verify_user_password(password, row["password_hash"])
+    ):
         return JSONResponse({"detail": "Username atau password salah."}, status_code=401)
     request.session.clear()
     request.session["username"] = username
+    request.session["role"] = row["role"]
     return {"ok": True}
 
 
@@ -499,8 +562,99 @@ def logout(request: Request):
 
 @app.get("/api/me")
 def me(request: Request):
+    if not logged_in(request):
+        raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
+    username = request.session["username"]
+    with db() as con:
+        user = con.execute(
+            "SELECT role FROM app_users WHERE username=%s", (username,)
+        ).fetchone()
+    if not user or user["role"] not in {"admin", "division"}:
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
+    request.session["role"] = user["role"]
+    return {"username": username, "role": user["role"]}
+
+
+@app.get("/api/users")
+def list_users(request: Request):
     require_login(request)
-    return {"username": request.session["username"]}
+    with db() as con:
+        users = con.execute(
+            "SELECT username,role FROM app_users ORDER BY role,username"
+        ).fetchall()
+    return users
+
+
+@app.post("/api/users")
+async def create_user(request: Request):
+    require_login(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Format akun tidak valid.")
+    username = str(payload.get("username", "")).strip()
+    password = str(payload.get("password", ""))
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{2,63}", username):
+        raise HTTPException(
+            status_code=400,
+            detail="Username harus 3-64 karakter dan hanya boleh berisi huruf, angka, titik, garis bawah, atau tanda hubung.",
+        )
+    if len(password) < 12 or len(password) > 256:
+        raise HTTPException(
+            status_code=400,
+            detail="Password akun divisi harus terdiri dari 12-256 karakter.",
+        )
+    with db() as con:
+        existing = con.execute(
+            "SELECT username FROM app_users WHERE username=%s", (username,)
+        ).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail="Username sudah digunakan.")
+        con.execute(
+            "INSERT INTO app_users(username,password_hash,role) VALUES(%s,%s,'division')",
+            (username, hash_user_password(password)),
+        )
+    return {"username": username, "role": "division"}
+
+
+@app.put("/api/users/{username}/password")
+async def update_user_password(username: str, request: Request):
+    require_login(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Format password tidak valid.")
+    password = str(payload.get("password", ""))
+    if len(password) < 12 or len(password) > 256:
+        raise HTTPException(
+            status_code=400,
+            detail="Password akun divisi harus terdiri dari 12-256 karakter.",
+        )
+    with db() as con:
+        user = con.execute(
+            "SELECT role FROM app_users WHERE username=%s", (username,)
+        ).fetchone()
+        if not user or user["role"] != "division":
+            raise HTTPException(status_code=404, detail="Akun divisi tidak ditemukan.")
+        con.execute(
+            "UPDATE app_users SET password_hash=%s WHERE username=%s",
+            (hash_user_password(password), username),
+        )
+    return {"username": username, "role": "division"}
+
+
+@app.delete("/api/users/{username}")
+def delete_user(username: str, request: Request):
+    require_login(request)
+    if username == APP_USERNAME:
+        raise HTTPException(status_code=400, detail="Akun admin utama tidak dapat dihapus.")
+    with db() as con:
+        user = con.execute(
+            "SELECT role FROM app_users WHERE username=%s", (username,)
+        ).fetchone()
+        if not user or user["role"] != "division":
+            raise HTTPException(status_code=404, detail="Akun divisi tidak ditemukan.")
+        con.execute("DELETE FROM app_users WHERE username=%s", (username,))
+    return {"ok": True}
 
 
 @app.post("/api/import/preview")
@@ -591,7 +745,7 @@ async def upload_excel(request: Request, file: UploadFile = File(...)):
 
 @app.get("/api/dates")
 def dates(request: Request):
-    require_login(request)
+    require_home_access(request)
     with db() as con:
         rows = con.execute("SELECT DISTINCT report_date FROM sales ORDER BY report_date DESC").fetchall()
     return [r["report_date"].isoformat() for r in rows]
@@ -1009,7 +1163,7 @@ def home_summary(request: Request, month: str):
 
 @app.get("/api/home-summary-range")
 def home_summary_range(request: Request, start_date: str, end_date: str):
-    require_login(request)
+    require_home_access(request)
     try:
         start = date.fromisoformat(start_date)
         end = date.fromisoformat(end_date)
@@ -1372,7 +1526,22 @@ def normalize_complaint(
 
 @app.get("/api/complaints")
 def list_complaints(request: Request):
-    require_login(request)
+    require_home_access(request)
+    if request.session.get("role") == "division":
+        with db() as con:
+            rows = con.execute(
+                "SELECT report_date,status FROM complaints "
+                "ORDER BY report_date DESC,id DESC"
+            ).fetchall()
+        return [
+            {
+                "date": row["report_date"].isoformat()
+                if isinstance(row["report_date"], date)
+                else str(row["report_date"]),
+                "status": row["status"],
+            }
+            for row in rows
+        ]
     with db() as con:
         rows = con.execute(
             "SELECT id,report_date,customer,summary,follow_up,complaint_type,priority,status,"
@@ -1484,7 +1653,7 @@ async def import_legacy_complaints(request: Request):
 
 @app.get("/api/latest-actual-date")
 def latest_actual_date(request: Request):
-    require_login(request)
+    require_home_access(request)
     with db() as con:
         row = con.execute(
             "SELECT MAX(report_date) AS report_date FROM sales WHERE actual <> 0"
@@ -2445,6 +2614,27 @@ def calculate_average_price(sm3, factor, price_unit, price_usd, price_rp, exchan
     return volume_mmbtu, total_usd, rupiah
 
 
+def has_valid_average_price(
+    price_unit,
+    price_usd,
+    price_rp,
+    factor,
+    exchange_rate,
+    mmbtu_override=None,
+    total_usd_override=None,
+    rupiah_override=None,
+):
+    if price_unit == "IDR_SM3":
+        return price_rp > 0
+    has_workbook_totals = all(
+        value is not None
+        for value in (mmbtu_override, total_usd_override, rupiah_override)
+    )
+    return price_usd > 0 and (
+        (factor > 0 and exchange_rate > 0) or has_workbook_totals
+    )
+
+
 @app.get("/api/monthly-average-price")
 def monthly_average_price(request: Request, month: str):
     require_login(request)
@@ -2468,27 +2658,37 @@ def monthly_average_price(request: Request, month: str):
                    COALESCE(price_inputs.price_unit,'USD_MMBTU') AS price_unit,
                    COALESCE(price_inputs.price_usd_per_mmbtu,0) AS price_usd_per_mmbtu,
                    COALESCE(price_inputs.price_rp_per_sm3,0) AS price_rp_per_sm3,
+                   price_inputs.sm3_override,
+                   price_inputs.mmbtu_override,
+                   price_inputs.total_usd_override,
+                   price_inputs.rupiah_override,
+                   COALESCE(price_inputs.include_in_summary,1) AS include_in_summary,
                    COALESCE(operator_factors.sm3_per_mmbtu,0) AS sm3_per_mmbtu
-            FROM sales s
-            JOIN customers c ON c.customer_key=s.customer_key
+            FROM customers c
+            LEFT JOIN sales s
+              ON s.customer_key=c.customer_key
+             AND s.report_date >= %s AND s.report_date < %s
             LEFT JOIN monthly_average_price_inputs price_inputs
               ON price_inputs.month_start=%s
              AND price_inputs.customer_key=c.customer_key
             LEFT JOIN monthly_average_price_operator_factors operator_factors
               ON operator_factors.month_start=%s
              AND operator_factors.operator=c.operator
-            WHERE s.report_date >= %s AND s.report_date < %s
+            WHERE s.customer_key IS NOT NULL OR price_inputs.customer_key IS NOT NULL
             GROUP BY c.customer_key,c.customer_name,c.operator,
                      price_inputs.region,price_inputs.price_unit,
                      price_inputs.price_usd_per_mmbtu,price_inputs.price_rp_per_sm3,
+                     price_inputs.sm3_override,price_inputs.mmbtu_override,
+                     price_inputs.total_usd_override,price_inputs.rupiah_override,
+                     price_inputs.include_in_summary,
                      operator_factors.sm3_per_mmbtu
             ORDER BY c.operator,c.customer_name
             """,
             (
                 month_start.isoformat(),
-                month_start.isoformat(),
-                month_start.isoformat(),
                 next_month.isoformat(),
+                month_start.isoformat(),
+                month_start.isoformat(),
             ),
         ).fetchall()
         exchange = con.execute(
@@ -2512,19 +2712,40 @@ def monthly_average_price(request: Request, month: str):
     for row in sales_rows:
         so_sm3 = float(row["so_sm3"] or 0)
         actual_sm3 = float(row["actual_sm3"] or 0)
-        sm3 = so_sm3 + actual_sm3
+        sm3 = (
+            float(row["sm3_override"])
+            if row.get("sm3_override") is not None
+            else actual_sm3
+        )
         factor = float(row["sm3_per_mmbtu"] or 0)
-        mmbtu = sm3 / factor if factor > 0 else 0.0
         price_unit = row.get("price_unit") or "USD_MMBTU"
         price = float(row["price_usd_per_mmbtu"] or 0)
         price_rp = float(row.get("price_rp_per_sm3") or 0)
+        is_valid_price = has_valid_average_price(
+            price_unit,
+            price,
+            price_rp,
+            factor,
+            exchange_rate,
+            row.get("mmbtu_override"),
+            row.get("total_usd_override"),
+            row.get("rupiah_override"),
+        )
         mmbtu, total_usd, rupiah = calculate_average_price(
             sm3, factor, price_unit, price, price_rp, exchange_rate
         )
-        totals["sm3"] += sm3
-        totals["mmbtu"] += mmbtu
-        totals["usd"] += total_usd
-        totals["rupiah"] += rupiah
+        if row.get("mmbtu_override") is not None:
+            mmbtu = float(row["mmbtu_override"])
+        if row.get("total_usd_override") is not None:
+            total_usd = float(row["total_usd_override"])
+        if row.get("rupiah_override") is not None:
+            rupiah = float(row["rupiah_override"])
+        include_in_summary = bool(row.get("include_in_summary", True))
+        if is_valid_price and include_in_summary:
+            totals["sm3"] += sm3
+            totals["mmbtu"] += mmbtu
+            totals["usd"] += total_usd
+            totals["rupiah"] += rupiah
         rows.append({
             "customer_key": row["customer_key"],
             "customer": row["customer_name"],
@@ -2538,10 +2759,19 @@ def monthly_average_price(request: Request, month: str):
             "volume_mmbtu": mmbtu,
             "price_usd_per_mmbtu": price,
             "price_rp_per_sm3": price_rp,
+            "sm3_override": row.get("sm3_override"),
+            "mmbtu_override": row.get("mmbtu_override"),
+            "total_usd_override": row.get("total_usd_override"),
+            "rupiah_override": row.get("rupiah_override"),
             "total_usd": total_usd,
             "exchange_rate": exchange_rate,
+            "has_valid_price": is_valid_price,
+            "include_in_summary": include_in_summary,
             "rupiah": rupiah,
         })
+    totals["average_price_rp_sm3"] = (
+        totals["rupiah"] / totals["sm3"] if totals["sm3"] else 0.0
+    )
     return {
         "month": month,
         "exchange_rate": exchange_rate,
@@ -2560,7 +2790,7 @@ def monthly_average_price(request: Request, month: str):
 
 @app.get("/api/monthly-average-price-range")
 def monthly_average_price_range(request: Request, start_date: str, end_date: str):
-    require_login(request)
+    require_home_access(request)
     try:
         start = date.fromisoformat(start_date)
         end = date.fromisoformat(end_date)
@@ -2580,6 +2810,11 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
                    COALESCE(price_inputs.price_unit,'USD_MMBTU') AS price_unit,
                    COALESCE(price_inputs.price_usd_per_mmbtu,0) AS price_usd_per_mmbtu,
                    COALESCE(price_inputs.price_rp_per_sm3,0) AS price_rp_per_sm3,
+                   price_inputs.sm3_override,
+                   price_inputs.mmbtu_override,
+                   price_inputs.total_usd_override,
+                   price_inputs.rupiah_override,
+                   COALESCE(price_inputs.include_in_summary,1) AS include_in_summary,
                    COALESCE(operator_factors.sm3_per_mmbtu,0) AS sm3_per_mmbtu,
                    COALESCE(exchange_rates.exchange_rate,0) AS exchange_rate
             FROM sales s
@@ -2596,30 +2831,113 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             GROUP BY c.customer_key,c.customer_name,c.operator,period,
                      price_inputs.region,price_inputs.price_unit,
                      price_inputs.price_usd_per_mmbtu,price_inputs.price_rp_per_sm3,
+                     price_inputs.sm3_override,price_inputs.mmbtu_override,
+                     price_inputs.total_usd_override,price_inputs.rupiah_override,
+                     price_inputs.include_in_summary,
                      operator_factors.sm3_per_mmbtu,exchange_rates.exchange_rate
             ORDER BY period,c.operator,c.customer_name
             """,
             (start.isoformat(), end.isoformat()),
         ).fetchall()
+        input_rows = con.execute(
+            """
+            SELECT c.customer_key,c.customer_name,c.operator,
+                   DATE_FORMAT(price_inputs.month_start, '%%Y-%%m') AS period,
+                   price_inputs.region,price_inputs.price_unit,
+                   price_inputs.price_usd_per_mmbtu,price_inputs.price_rp_per_sm3,
+                   price_inputs.sm3_override,price_inputs.mmbtu_override,
+                   price_inputs.total_usd_override,price_inputs.rupiah_override,
+                   price_inputs.include_in_summary,
+                   COALESCE(operator_factors.sm3_per_mmbtu,0) AS sm3_per_mmbtu,
+                   COALESCE(exchange_rates.exchange_rate,0) AS exchange_rate
+            FROM monthly_average_price_inputs price_inputs
+            JOIN customers c ON c.customer_key=price_inputs.customer_key
+            LEFT JOIN monthly_average_price_operator_factors operator_factors
+              ON operator_factors.month_start=price_inputs.month_start
+             AND operator_factors.operator=c.operator
+            LEFT JOIN monthly_average_price_exchange_rates exchange_rates
+              ON exchange_rates.month_start=price_inputs.month_start
+            WHERE price_inputs.month_start >= %s AND price_inputs.month_start <= %s
+            ORDER BY price_inputs.month_start,c.operator,c.customer_name
+            """,
+            (
+                date(start.year, start.month, 1).isoformat(),
+                date(end.year, end.month, 1).isoformat(),
+            ),
+        ).fetchall()
 
     totals = {"sm3": 0.0, "mmbtu": 0.0, "usd": 0.0, "rupiah": 0.0}
     rows = []
-    for row in sales_rows:
+    rows_by_period_customer = {
+        (row["period"], row["customer_key"]): row for row in sales_rows
+    }
+    for row in input_rows:
+        period_start = date.fromisoformat(f"{row['period']}-01")
+        next_period_start = (
+            date(period_start.year + 1, 1, 1)
+            if period_start.month == 12
+            else date(period_start.year, period_start.month + 1, 1)
+        )
+        period_end = next_period_start - timedelta(days=1)
+        if (
+            start <= period_start
+            and end >= period_end
+            and (row["period"], row["customer_key"]) not in rows_by_period_customer
+        ):
+            rows_by_period_customer[(row["period"], row["customer_key"])] = {
+                **row,
+                "so_sm3": 0,
+                "actual_sm3": 0,
+            }
+
+    for row in rows_by_period_customer.values():
         so_sm3 = float(row["so_sm3"] or 0)
         actual_sm3 = float(row["actual_sm3"] or 0)
-        sm3 = so_sm3 + actual_sm3
+        period_start = date.fromisoformat(f"{row['period']}-01")
+        next_period_start = (
+            date(period_start.year + 1, 1, 1)
+            if period_start.month == 12
+            else date(period_start.year, period_start.month + 1, 1)
+        )
+        is_full_month = (
+            start <= period_start
+            and end >= next_period_start - timedelta(days=1)
+        )
+        sm3_override = row.get("sm3_override") if is_full_month else None
+        mmbtu_override = row.get("mmbtu_override") if is_full_month else None
+        total_usd_override = row.get("total_usd_override") if is_full_month else None
+        rupiah_override = row.get("rupiah_override") if is_full_month else None
+        sm3 = float(sm3_override) if sm3_override is not None else actual_sm3
         factor = float(row["sm3_per_mmbtu"] or 0)
         price_unit = row.get("price_unit") or "USD_MMBTU"
         price = float(row["price_usd_per_mmbtu"] or 0)
         price_rp = float(row.get("price_rp_per_sm3") or 0)
         exchange_rate = float(row["exchange_rate"] or 0)
+        is_valid_price = has_valid_average_price(
+            price_unit,
+            price,
+            price_rp,
+            factor,
+            exchange_rate,
+            mmbtu_override,
+            total_usd_override,
+            rupiah_override,
+        )
         mmbtu, total_usd, rupiah = calculate_average_price(
             sm3, factor, price_unit, price, price_rp, exchange_rate
         )
-        totals["sm3"] += sm3
-        totals["mmbtu"] += mmbtu
-        totals["usd"] += total_usd
-        totals["rupiah"] += rupiah
+        if mmbtu_override is not None:
+            mmbtu = float(mmbtu_override)
+        if total_usd_override is not None:
+            total_usd = float(total_usd_override)
+        if rupiah_override is not None:
+            rupiah = float(rupiah_override)
+        include_in_summary = bool(row.get("include_in_summary", True))
+        if is_valid_price and include_in_summary:
+            totals["sm3"] += sm3
+            totals["mmbtu"] += mmbtu
+            totals["usd"] += total_usd
+            totals["rupiah"] += rupiah
         rows.append({
             "month": row["period"],
             "customer_key": row["customer_key"],
@@ -2634,10 +2952,19 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             "volume_mmbtu": mmbtu,
             "price_usd_per_mmbtu": price,
             "price_rp_per_sm3": price_rp,
+            "sm3_override": row.get("sm3_override"),
+            "mmbtu_override": row.get("mmbtu_override"),
+            "total_usd_override": row.get("total_usd_override"),
+            "rupiah_override": row.get("rupiah_override"),
             "total_usd": total_usd,
             "exchange_rate": exchange_rate,
+            "has_valid_price": is_valid_price,
+            "include_in_summary": include_in_summary,
             "rupiah": rupiah,
         })
+    totals["average_price_rp_sm3"] = (
+        totals["rupiah"] / totals["sm3"] if totals["sm3"] else 0.0
+    )
     return {
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
@@ -2687,18 +3014,42 @@ async def save_monthly_average_price(request: Request):
                 raise ValueError
             if (
                 not customer_key
-                or not region
                 or not math.isfinite(price_usd)
                 or price_usd < 0
                 or not math.isfinite(price_rp)
                 or price_rp < 0
             ):
                 raise ValueError
-            normalized_entries.append(
-                (customer_key, region, price_unit, price_usd, price_rp)
-            )
+            overrides = []
+            for field in (
+                "sm3_override",
+                "mmbtu_override",
+                "total_usd_override",
+                "rupiah_override",
+            ):
+                value = entry.get(field)
+                if value is None or value == "":
+                    overrides.append(None)
+                    continue
+                numeric_value = float(value)
+                if not math.isfinite(numeric_value) or numeric_value < 0:
+                    raise ValueError
+                overrides.append(numeric_value)
+            include_in_summary = entry.get("include_in_summary", True)
+            if not isinstance(include_in_summary, bool):
+                raise ValueError
+            normalized_entries.append((
+                customer_key,
+                region,
+                price_unit,
+                price_usd,
+                price_rp,
+                *overrides,
+                include_in_summary,
+            ))
         allowed_target_regions = {
-            "JAWA BARAT", "JAWA TENGAH", "JAWA TIMUR", "ALL_EXCEPT_JATIM",
+            "JAWA BARAT", "JAWA TENGAH", "JAWA TIMUR",
+            "JAWA_TENGAH_DAN_TIMUR", "ALL_EXCEPT_JATIM",
         }
         normalized_targets = {}
         for region, target in targets.items():
@@ -2735,14 +3086,31 @@ async def save_monthly_average_price(request: Request):
             "exchange_rate=VALUES(exchange_rate),updated_at=VALUES(updated_at)",
             (month_start.isoformat(), exchange_rate, timestamp),
         )
-        for customer_key, region, price_unit, price_usd, price_rp in normalized_entries:
+        for (
+            customer_key,
+            region,
+            price_unit,
+            price_usd,
+            price_rp,
+            sm3_override,
+            mmbtu_override,
+            total_usd_override,
+            rupiah_override,
+            include_in_summary,
+        ) in normalized_entries:
             con.execute(
                 "INSERT INTO monthly_average_price_inputs("
                 "month_start,customer_key,region,price_unit,price_usd_per_mmbtu,"
-                "price_rp_per_sm3,updated_at) VALUES(%s,%s,%s,%s,%s,%s,%s) "
+                "price_rp_per_sm3,sm3_override,mmbtu_override,total_usd_override,"
+                "rupiah_override,include_in_summary,updated_at) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON DUPLICATE KEY UPDATE region=VALUES(region),price_unit=VALUES(price_unit),"
                 "price_usd_per_mmbtu=VALUES(price_usd_per_mmbtu),"
-                "price_rp_per_sm3=VALUES(price_rp_per_sm3),updated_at=VALUES(updated_at)",
+                "price_rp_per_sm3=VALUES(price_rp_per_sm3),"
+                "sm3_override=VALUES(sm3_override),mmbtu_override=VALUES(mmbtu_override),"
+                "total_usd_override=VALUES(total_usd_override),"
+                "rupiah_override=VALUES(rupiah_override),"
+                "include_in_summary=VALUES(include_in_summary),updated_at=VALUES(updated_at)",
                 (
                     month_start.isoformat(),
                     customer_key,
@@ -2750,6 +3118,11 @@ async def save_monthly_average_price(request: Request):
                     price_unit,
                     price_usd,
                     price_rp,
+                    sm3_override,
+                    mmbtu_override,
+                    total_usd_override,
+                    rupiah_override,
+                    include_in_summary,
                     timestamp,
                 ),
             )
@@ -2832,7 +3205,7 @@ async def save_mapping(request: Request):
         con.execute("INSERT INTO customers(customer_key,customer_name,operator) VALUES(%s,%s,%s) "
                 "ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),operator=VALUES(operator)",
                     (customer_key, customer, operator))
-    return {"ok": True}
+    return {"ok": True, "customer_key": customer_key, "customer": customer, "operator": operator}
 
 
 @app.post("/api/customer-mapping/bulk")
@@ -2863,7 +3236,10 @@ async def save_customer_mappings(request: Request):
 def customers(request: Request):
     require_login(request)
     with db() as con:
-        rows = con.execute("SELECT customer_name,operator FROM customers ORDER BY operator,customer_name").fetchall()
+        rows = con.execute(
+            "SELECT customer_key,customer_name,operator FROM customers "
+            "ORDER BY operator,customer_name"
+        ).fetchall()
     return [dict(r) for r in rows]
 
 

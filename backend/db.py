@@ -10,6 +10,18 @@ def initialize_database(connection_factory, app_username, app_password):
             if statement.strip():
                 con.execute(statement)
 
+        user_columns = con.execute(
+            """
+            SELECT COLUMN_NAME FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'app_users'
+            """
+        ).fetchall()
+        if not any(column["COLUMN_NAME"] == "role" for column in user_columns):
+            con.execute(
+                "ALTER TABLE app_users ADD COLUMN role VARCHAR(16) "
+                "NOT NULL DEFAULT 'division'"
+            )
+
         average_price_columns = con.execute(
             """
             SELECT COLUMN_NAME FROM information_schema.COLUMNS
@@ -31,6 +43,23 @@ def initialize_database(connection_factory, app_username, app_password):
                 "ALTER TABLE monthly_average_price_inputs "
                 "ADD COLUMN price_rp_per_sm3 DOUBLE NOT NULL DEFAULT 0 "
                 "AFTER price_usd_per_mmbtu"
+            )
+        for column_name in (
+            "sm3_override",
+            "mmbtu_override",
+            "total_usd_override",
+            "rupiah_override",
+        ):
+            if column_name not in average_price_column_names:
+                con.execute(
+                    f"ALTER TABLE monthly_average_price_inputs "
+                    f"ADD COLUMN {column_name} DOUBLE NULL"
+                )
+        if "include_in_summary" not in average_price_column_names:
+            con.execute(
+                "ALTER TABLE monthly_average_price_inputs "
+                "ADD COLUMN include_in_summary BOOLEAN NOT NULL DEFAULT TRUE "
+                "AFTER rupiah_override"
             )
 
         complaint_columns = con.execute(
@@ -84,7 +113,7 @@ def initialize_database(connection_factory, app_username, app_password):
 
         password_hash = hashlib.sha256(app_password.encode("utf-8")).hexdigest()
         con.execute(
-            "INSERT INTO app_users(username,password_hash) VALUES(%s,%s) "
-            "ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash)",
+            "INSERT INTO app_users(username,password_hash,role) VALUES(%s,%s,'admin') "
+            "ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash),role='admin'",
             (app_username, password_hash),
         )

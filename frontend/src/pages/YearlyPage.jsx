@@ -91,13 +91,6 @@ export default function YearlyPage() {
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [exporting, setExporting] = useState(false);
-    const [exportError, setExportError] = useState('');
-    const exportableRange = periodKeys.length === 1
-        && rangeStartDate === `${periodKeys[0]}-01`
-        && rangeEndDate === new Date(
-            Date.UTC(Number(periodKeys[0].slice(0, 4)), Number(periodKeys[0].slice(5, 7)), 0),
-        ).toISOString().slice(0, 10);
 
     useEffect(() => {
         let cancelled = false;
@@ -180,41 +173,6 @@ export default function YearlyPage() {
         .sort((left, right) => right.actual - left.actual)
         .slice(0, 10), [filteredCustomers]);
     const maxTopActual = Math.max(1, ...topCustomers.map((customer) => customer.actual));
-
-    const exportData = async () => {
-        setExportError('');
-        setExporting(true);
-        try {
-            const month = Number(periodKeys[0].slice(5, 7));
-            const year = Number(periodKeys[0].slice(0, 4));
-            const response = await fetch(`/api/monthly/export?year=${year}&month=${month}`, {
-                credentials: 'same-origin',
-                signal: AbortSignal.timeout(30000),
-            });
-            if (!response.ok) {
-                const payload = await response.json().catch(() => ({}));
-                throw new Error(payload.detail || payload.message || 'File Excel gagal dibuat.');
-            }
-            const contentType = response.headers.get('content-type') || '';
-            if (!contentType.includes('spreadsheetml.sheet')) {
-                throw new Error('Server belum mengaktifkan ekspor Excel. Muat ulang server API lalu coba lagi.');
-            }
-            const blob = await response.blob();
-            if (blob.size === 0) throw new Error('File Excel yang diterima kosong. Silakan coba lagi.');
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `Rekap_Bulanan_${periodKeys[0]}.xlsx`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } catch (requestError) {
-            setExportError(requestError.message || 'File Excel gagal diunduh dari server.');
-        } finally {
-            setExporting(false);
-        }
-    };
 
     return (
         <div className="yearly-page">
@@ -316,22 +274,13 @@ export default function YearlyPage() {
             <section className="yearly-panel yearly-recap monthly-table-card">
                 <div className="monthly-table-title">
                     <h2>Rekapitulasi Data Bulanan</h2>
-                    <button
-                        type="button"
-                        onClick={exportData}
-                        disabled={exporting || !exportableRange}
-                        title={!exportableRange ? 'Ekspor tersedia jika periode mencakup satu bulan kalender penuh.' : undefined}
-                    >
-                        ⇩ &nbsp; {exporting ? 'Menyiapkan Excel...' : 'Export Excel'}
-                    </button>
                 </div>
-                {exportError && <div className="notice bad" role="alert">{exportError}</div>}
 
                 <div className="monthly-table-scroll">
                     <table className="monthly-table">
                         <colgroup>
                             <col style={{ width: 110 }} />
-                            <col style={{ width: 130 }} />
+                            <col style={{ width: 90 }} />
                             {periodKeys.map((key) => (
                                 <React.Fragment key={key}>
                                     <col style={{ width: 80 }} />
@@ -384,7 +333,7 @@ export default function YearlyPage() {
                                             {operatorGroup.hasOtherRows && (
                                                 <tr>
                                                     <td className="yearly-fixed-left" />
-                                                    <td className="yearly-fixed-left yearly-fixed-label">Pelanggan lainnya (non-FOB)</td>
+                                                    <td className="yearly-fixed-left yearly-fixed-label yearly-other-label">Pelanggan lainnya (non-FOB)</td>
                                                     {periodKeys.map((_, index) => (
                                                         <React.Fragment key={index}>
                                                             <td className="monthly-month-start">{formatNumber(operatorGroup.otherSoValues[index])}</td>

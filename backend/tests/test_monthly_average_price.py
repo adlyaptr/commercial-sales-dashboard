@@ -19,10 +19,17 @@ class FakeRequest:
 
 
 class MemoryMonthlyAveragePrice:
-    def __init__(self, price_unit="USD_MMBTU", price_usd=1, price_rp=0):
+    def __init__(
+        self,
+        price_unit="USD_MMBTU",
+        price_usd=1,
+        price_rp=0,
+        include_in_summary=True,
+    ):
         self.price_unit = price_unit
         self.price_usd = price_usd
         self.price_rp = price_rp
+        self.include_in_summary = include_in_summary
 
     def __enter__(self):
         return self
@@ -31,7 +38,7 @@ class MemoryMonthlyAveragePrice:
         return False
 
     def execute(self, statement, parameters=None):
-        if "FROM sales s" in statement:
+        if "LEFT JOIN sales s" in statement:
             self.assert_month_range(parameters)
             return SimpleNamespace(fetchall=lambda: [{
                 "customer_key": "customer-1",
@@ -43,6 +50,11 @@ class MemoryMonthlyAveragePrice:
                 "price_unit": self.price_unit,
                 "price_usd_per_mmbtu": self.price_usd,
                 "price_rp_per_sm3": self.price_rp,
+                "sm3_override": None,
+                "mmbtu_override": None,
+                "total_usd_override": None,
+                "rupiah_override": None,
+                "include_in_summary": self.include_in_summary,
                 "sm3_per_mmbtu": 29.3078,
             }])
         if statement.startswith("SELECT exchange_rate"):
@@ -59,7 +71,7 @@ class MemoryMonthlyAveragePrice:
 
     @staticmethod
     def assert_month_range(parameters):
-        if parameters != ("2026-10-01", "2026-10-01", "2026-10-01", "2026-11-01"):
+        if parameters != ("2026-10-01", "2026-11-01", "2026-10-01", "2026-10-01"):
             raise AssertionError(f"Unexpected month parameters: {parameters}")
 
 
@@ -88,17 +100,24 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             report = main.monthly_average_price(FakeRequest(), "2026-10")
 
         row = report["rows"][0]
-        expected_sm3 = 50000 + 28095
+        expected_sm3 = 28095
         expected_mmbtu = expected_sm3 / 29.3078
         expected_usd = expected_mmbtu * 1
         expected_rupiah = expected_usd * 17895
         self.assertEqual(row["sm3"], expected_sm3)
+        self.assertEqual(row["so_sm3"], 50000)
+        self.assertEqual(row["actual_sm3"], expected_sm3)
+        self.assertTrue(row["has_valid_price"])
         self.assertAlmostEqual(row["volume_mmbtu"], expected_mmbtu)
         self.assertAlmostEqual(row["total_usd"], expected_usd)
         self.assertAlmostEqual(row["rupiah"], expected_rupiah)
         self.assertEqual(report["operator_factors"]["SETU"], 29.3078)
         self.assertEqual(report["targets"]["JAWA BARAT"], 8250)
         self.assertEqual(report["totals"]["sm3"], expected_sm3)
+        self.assertAlmostEqual(
+            report["totals"]["average_price_rp_sm3"],
+            expected_rupiah / expected_sm3,
+        )
 
     def test_calculates_rupiah_priced_customers_per_sm3(self):
         with patch.object(
@@ -119,6 +138,77 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertAlmostEqual(row["rupiah"], expected_rupiah)
         self.assertAlmostEqual(row["total_usd"], expected_rupiah / 17895)
 
+    def test_keeps_summary_excluded_customer_visible_but_out_of_totals(self):
+        with patch.object(
+            main,
+            "db",
+            return_value=MemoryMonthlyAveragePrice(include_in_summary=False),
+        ):
+            report = main.monthly_average_price(FakeRequest(), "2026-10")
+
+        self.assertEqual(len(report["rows"]), 1)
+        self.assertFalse(report["rows"][0]["include_in_summary"])
+        self.assertTrue(report["rows"][0]["has_valid_price"])
+        self.assertEqual(report["totals"]["sm3"], 0)
+        self.assertEqual(report["totals"]["rupiah"], 0)
+
+    def test_uses_workbook_volume_and_calculation_overrides(self):
+        class WorkbookAveragePrice(MemoryMonthlyAveragePrice):
+            def execute(self, statement, parameters=None):
+                result = super().execute(statement, parameters)
+                if "LEFT JOIN sales s" not in statement:
+                    return result
+                row = result.fetchall()[0]
+                row.update({
+                    "actual_sm3": 50000,
+                    "sm3_override": 1200,
+                    "mmbtu_override": 42,
+                    "total_usd_override": 500,
+                    "rupiah_override": 8400000,
+                })
+                return SimpleNamespace(fetchall=lambda: [row])
+
+        with patch.object(main, "db", return_value=WorkbookAveragePrice()):
+            report = main.monthly_average_price(FakeRequest(), "2026-10")
+
+        row = report["rows"][0]
+        self.assertEqual(row["actual_sm3"], 50000)
+        self.assertEqual(row["sm3"], 1200)
+        self.assertEqual(row["volume_mmbtu"], 42)
+        self.assertEqual(row["total_usd"], 500)
+        self.assertEqual(row["rupiah"], 8400000)
+        self.assertEqual(report["totals"]["sm3"], 1200)
+        self.assertEqual(report["totals"]["rupiah"], 8400000)
+
+    def test_counts_workbook_totals_without_exchange_or_operator_factor(self):
+        class WorkbookTotalsWithoutConversions(MemoryMonthlyAveragePrice):
+            def execute(self, statement, parameters=None):
+                result = super().execute(statement, parameters)
+                if "LEFT JOIN sales s" not in statement:
+                    if statement.startswith("SELECT exchange_rate"):
+                        return SimpleNamespace(fetchone=lambda: {"exchange_rate": 0})
+                    return result
+                row = result.fetchall()[0]
+                row.update({
+                    "operator": "OFF",
+                    "sm3_per_mmbtu": 0,
+                    "sm3_override": 1200,
+                    "mmbtu_override": 42,
+                    "total_usd_override": 500,
+                    "rupiah_override": 8400000,
+                })
+                return SimpleNamespace(fetchall=lambda: [row])
+
+        with patch.object(main, "db", return_value=WorkbookTotalsWithoutConversions()):
+            report = main.monthly_average_price(FakeRequest(), "2026-10")
+
+        row = report["rows"][0]
+        self.assertTrue(row["has_valid_price"])
+        self.assertEqual(report["totals"]["sm3"], 1200)
+        self.assertEqual(report["totals"]["mmbtu"], 42)
+        self.assertEqual(report["totals"]["usd"], 500)
+        self.assertEqual(report["totals"]["rupiah"], 8400000)
+
     def test_saves_monthly_factors_exchange_rate_and_customer_price(self):
         database = MemoryMonthlyAveragePriceWrites()
         payload = {
@@ -135,6 +225,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
                 "region": "JAWA BARAT",
                 "price_unit": "USD_MMBTU",
                 "price_usd_per_mmbtu": 1,
+                "include_in_summary": False,
             }],
             "targets": {"JAWA BARAT": 8250},
         }
@@ -151,7 +242,9 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             price_insert[:6],
             ("2026-10-01", "customer-1", "JAWA BARAT", "USD_MMBTU", 1.0, 0.0),
         )
-        self.assertIsInstance(price_insert[6], str)
+        self.assertEqual(price_insert[6:10], (None, None, None, None))
+        self.assertFalse(price_insert[10])
+        self.assertIsInstance(price_insert[11], str)
         target_insert = next(
             parameters for statement, parameters in database.statements
             if statement.startswith("INSERT INTO monthly_average_price_targets")

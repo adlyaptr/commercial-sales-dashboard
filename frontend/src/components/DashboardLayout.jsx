@@ -253,6 +253,10 @@ export default function DashboardLayout({ user, onLogout }) {
         let active = true;
 
         async function loadDashboard() {
+            if (user.role !== 'admin') {
+                setDashboard(null);
+                return;
+            }
             if (!selectedDate) {
                 setDashboard(null);
                 return;
@@ -283,7 +287,7 @@ export default function DashboardLayout({ user, onLogout }) {
         return () => {
             active = false;
         };
-    }, [selectedDate]);
+    }, [selectedDate, user.role]);
 
     // Dipanggil oleh halaman import setelah proses import berhasil.
     // Memuat ulang daftar tanggal dan mempertahankan tanggal lama
@@ -422,81 +426,90 @@ export default function DashboardLayout({ user, onLogout }) {
                             <span>Beranda</span>
                         </NavLink>
 
-                        <NavLink
-                            className={classForNav}
-                            to="/harian"
-                        >
-                            <NavigationIcon name="daily" />
-                            <span>Harian</span>
-                        </NavLink>
+                        {user.role === 'admin' && (
+                            <>
+                                <NavLink
+                                    className={classForNav}
+                                    to="/harian"
+                                >
+                                    <NavigationIcon name="daily" />
+                                    <span>Harian</span>
+                                </NavLink>
 
-                        <button
-                            className={
-                                `nav-link${isWeekly ? ' active' : ''}`
-                            }
-                            type="button"
-                            aria-expanded={weeklyOpen}
-                            aria-controls="weeklySubmenu"
-                            onClick={() =>
-                                setWeeklyOpen((open) => !open)
-                            }
-                        >
-                            <NavigationIcon name="weekly" />
-                            <span>Mingguan</span>
-                            <span className="nav-chevron">
-                                {weeklyOpen ? '⌃' : '⌄'}
-                            </span>
-                        </button>
+                                <button
+                                    className={
+                                        `nav-link${isWeekly ? ' active' : ''}`
+                                    }
+                                    type="button"
+                                    aria-expanded={weeklyOpen}
+                                    aria-controls="weeklySubmenu"
+                                    onClick={() =>
+                                        setWeeklyOpen((open) => !open)
+                                    }
+                                >
+                                    <NavigationIcon name="weekly" />
+                                    <span>Mingguan</span>
+                                    <span className="nav-chevron">
+                                        {weeklyOpen ? '⌃' : '⌄'}
+                                    </span>
+                                </button>
 
-                        <div
-                            className={
-                                `nav-submenu${weeklyOpen ? '' : ' collapsed'}`
-                            }
-                            id="weeklySubmenu"
-                        >
-                            <NavLink
-                                className={({ isActive }) =>
-                                    `nav-sublink${isActive ? ' active' : ''}`
-                                }
-                                to="/mingguan/volume"
-                            >
-                                Volume
-                            </NavLink>
+                                <div
+                                    className={
+                                        `nav-submenu${weeklyOpen ? '' : ' collapsed'}`
+                                    }
+                                    id="weeklySubmenu"
+                                >
+                                    <NavLink
+                                        className={({ isActive }) =>
+                                            `nav-sublink${isActive ? ' active' : ''}`
+                                        }
+                                        to="/mingguan/volume"
+                                    >
+                                        Volume
+                                    </NavLink>
 
-                            <NavLink
-                                className={({ isActive }) =>
-                                    `nav-sublink${isActive ? ' active' : ''}`
-                                }
-                                to="/mingguan/average-price"
-                            >
-                                Average Price
-                            </NavLink>
+                                    <NavLink
+                                        className={({ isActive }) =>
+                                            `nav-sublink${isActive ? ' active' : ''}`
+                                        }
+                                        to="/mingguan/average-price"
+                                    >
+                                        Average Price
+                                    </NavLink>
 
-                            <NavLink
-                                className={({ isActive }) =>
-                                    `nav-sublink${isActive ? ' active' : ''}`
-                                }
-                                to="/mingguan/complain"
-                            >
-                                Complain
-                            </NavLink>
-                        </div>
+                                    <NavLink
+                                        className={({ isActive }) =>
+                                            `nav-sublink${isActive ? ' active' : ''}`
+                                        }
+                                        to="/mingguan/complain"
+                                    >
+                                        Complain
+                                    </NavLink>
+                                </div>
 
-                        <NavLink
-                            className={classForNav}
-                            to="/bulanan"
-                        >
-                            <NavigationIcon name="monthly" />
-                            <span>Bulanan</span>
-                        </NavLink>
+                                <NavLink
+                                    className={classForNav}
+                                    to="/bulanan"
+                                >
+                                    <NavigationIcon name="monthly" />
+                                    <span>Bulanan</span>
+                                </NavLink>
 
-                        <NavLink
-                            className={classForNav}
-                            to="/tahunan"
-                        >
-                            <NavigationIcon name="yearly" />
-                            <span>Tahunan</span>
-                        </NavLink>
+                                <NavLink
+                                    className={classForNav}
+                                    to="/tahunan"
+                                >
+                                    <NavigationIcon name="yearly" />
+                                    <span>Tahunan</span>
+                                </NavLink>
+
+                                <NavLink className={classForNav} to="/pengguna">
+                                    <span className="nav-ico" aria-hidden="true">♙</span>
+                                    <span>Pengguna</span>
+                                </NavLink>
+                            </>
+                        )}
 
                     </nav>
 

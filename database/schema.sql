@@ -54,6 +54,11 @@ CREATE TABLE IF NOT EXISTS monthly_average_price_inputs (
     price_unit VARCHAR(16) NOT NULL DEFAULT 'USD_MMBTU',
     price_usd_per_mmbtu DOUBLE NOT NULL DEFAULT 0,
     price_rp_per_sm3 DOUBLE NOT NULL DEFAULT 0,
+    sm3_override DOUBLE NULL,
+    mmbtu_override DOUBLE NULL,
+    total_usd_override DOUBLE NULL,
+    rupiah_override DOUBLE NULL,
+    include_in_summary BOOLEAN NOT NULL DEFAULT TRUE,
     updated_at TEXT NOT NULL,
     UNIQUE(month_start, customer_key),
     FOREIGN KEY(customer_key) REFERENCES customers(customer_key)
@@ -98,5 +103,6 @@ CREATE TABLE IF NOT EXISTS complaints (
 
 CREATE TABLE IF NOT EXISTS app_users (
     username VARCHAR(191) PRIMARY KEY,
-    password_hash TEXT NOT NULL
+    password_hash TEXT NOT NULL,
+    role VARCHAR(16) NOT NULL DEFAULT 'division'
 );

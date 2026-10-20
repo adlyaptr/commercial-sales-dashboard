@@ -13,6 +13,7 @@ import WeeklyAveragePricePage from './pages/WeeklyAveragePricePage';
 import WeeklyComplainPage from './pages/WeeklyComplainPage';
 import WeeklyPage from './pages/WeeklyPage';
 import WeeklyVolumePage from './pages/WeeklyVolumePage';
+import UsersPage from './pages/UsersPage';
 
 const YearlyPage = lazy(() => import('./pages/YearlyPage'));
 
@@ -46,21 +47,26 @@ function App() {
                 >
                     <Route index element={<Navigate to="/beranda" replace />} />
                     <Route path="beranda" element={<HomePage />} />
-                    <Route path="harian" element={<DailyPage />} />
-                    <Route path="mingguan" element={<WeeklyPage />} />
-                    <Route path="mingguan/volume" element={<WeeklyVolumePage />} />
-                    <Route path="mingguan/average-price" element={<WeeklyAveragePricePage />} />
-                    <Route path="mingguan/complain" element={<WeeklyComplainPage />} />
-                    <Route path="bulanan" element={<MonthlyPage />} />
-                    <Route
-                        path="tahunan"
-                        element={(
-                            <Suspense fallback={<div className="app-loading">Memuat halaman tahunan...</div>}>
-                                <YearlyPage />
-                            </Suspense>
-                        )}
-                    />
-                    <Route path="laporan" element={<ReportsPage />} />
+                    {user?.role === 'admin' && (
+                        <>
+                            <Route path="harian" element={<DailyPage />} />
+                            <Route path="mingguan" element={<WeeklyPage />} />
+                            <Route path="mingguan/volume" element={<WeeklyVolumePage />} />
+                            <Route path="mingguan/average-price" element={<WeeklyAveragePricePage />} />
+                            <Route path="mingguan/complain" element={<WeeklyComplainPage />} />
+                            <Route path="bulanan" element={<MonthlyPage />} />
+                            <Route
+                                path="tahunan"
+                                element={(
+                                    <Suspense fallback={<div className="app-loading">Memuat halaman tahunan...</div>}>
+                                        <YearlyPage />
+                                    </Suspense>
+                                )}
+                            />
+                            <Route path="laporan" element={<ReportsPage />} />
+                            <Route path="pengguna" element={<UsersPage />} />
+                        </>
+                    )}
                 </Route>
                 <Route path="*" element={<Navigate to={user ? '/beranda' : '/login'} replace />} />
             </Routes>
