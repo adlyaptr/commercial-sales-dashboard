@@ -1,0 +1,10 @@
+.git
+.github
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.env
+backend/static/react
+backend/tests
+database/imports
