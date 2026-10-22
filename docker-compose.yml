@@ -1,0 +1,55 @@
+# Jalankan: docker compose up -d --build
+# Konfigurasi dibaca dari file .env di folder ini (lihat .env.example).
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-commercial_sales_dashboard}
+      MYSQL_USER: ${MYSQL_USER:-commercial}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?isi MYSQL_PASSWORD di .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?isi MYSQL_ROOT_PASSWORD di .env}
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: mysql://${MYSQL_USER:-commercial}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-commercial_sales_dashboard}?charset=utf8mb4
+      APP_USERNAME: ${APP_USERNAME:?isi APP_USERNAME di .env}
+      APP_PASSWORD: ${APP_PASSWORD:?isi APP_PASSWORD di .env}
+      SESSION_SECRET: ${SESSION_SECRET:?isi SESSION_SECRET di .env}
+    volumes:
+      - imports:/app/database/imports
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  db-data:
+  imports:
+  caddy-data:
+  caddy-config:
