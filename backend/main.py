@@ -2603,14 +2603,34 @@ def weekly_average_price(
     }
 
 
-def calculate_average_price(sm3, factor, price_unit, price_usd, price_rp, exchange_rate):
-    volume_mmbtu = sm3 / factor if factor > 0 else 0.0
+def calculate_average_price(
+    sm3,
+    factor,
+    price_unit,
+    price_usd,
+    price_rp,
+    exchange_rate,
+    mmbtu_override=None,
+    total_usd_override=None,
+    rupiah_override=None,
+):
+    volume_mmbtu = (
+        float(mmbtu_override)
+        if mmbtu_override is not None
+        else sm3 / factor if factor > 0 else 0.0
+    )
     if price_unit == "IDR_SM3":
         rupiah = sm3 * price_rp
         total_usd = rupiah / exchange_rate if exchange_rate > 0 else 0.0
     else:
         total_usd = volume_mmbtu * price_usd
         rupiah = total_usd * exchange_rate
+    if total_usd_override is not None:
+        total_usd = float(total_usd_override)
+        if rupiah_override is None:
+            rupiah = total_usd * exchange_rate
+    if rupiah_override is not None:
+        rupiah = float(rupiah_override)
     return volume_mmbtu, total_usd, rupiah
 
 
@@ -2732,14 +2752,16 @@ def monthly_average_price(request: Request, month: str):
             row.get("rupiah_override"),
         )
         mmbtu, total_usd, rupiah = calculate_average_price(
-            sm3, factor, price_unit, price, price_rp, exchange_rate
+            sm3,
+            factor,
+            price_unit,
+            price,
+            price_rp,
+            exchange_rate,
+            row.get("mmbtu_override"),
+            row.get("total_usd_override"),
+            row.get("rupiah_override"),
         )
-        if row.get("mmbtu_override") is not None:
-            mmbtu = float(row["mmbtu_override"])
-        if row.get("total_usd_override") is not None:
-            total_usd = float(row["total_usd_override"])
-        if row.get("rupiah_override") is not None:
-            rupiah = float(row["rupiah_override"])
         include_in_summary = bool(row.get("include_in_summary", True))
         if is_valid_price and include_in_summary:
             totals["sm3"] += sm3
@@ -2924,14 +2946,16 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             rupiah_override,
         )
         mmbtu, total_usd, rupiah = calculate_average_price(
-            sm3, factor, price_unit, price, price_rp, exchange_rate
+            sm3,
+            factor,
+            price_unit,
+            price,
+            price_rp,
+            exchange_rate,
+            mmbtu_override,
+            total_usd_override,
+            rupiah_override,
         )
-        if mmbtu_override is not None:
-            mmbtu = float(mmbtu_override)
-        if total_usd_override is not None:
-            total_usd = float(total_usd_override)
-        if rupiah_override is not None:
-            rupiah = float(rupiah_override)
         include_in_summary = bool(row.get("include_in_summary", True))
         if is_valid_price and include_in_summary:
             totals["sm3"] += sm3
@@ -3205,7 +3229,7 @@ async def save_mapping(request: Request):
         con.execute("INSERT INTO customers(customer_key,customer_name,operator) VALUES(%s,%s,%s) "
                 "ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),operator=VALUES(operator)",
                     (customer_key, customer, operator))
-    return {"ok": True, "customer_key": customer_key, "customer": customer, "operator": operator}
+    return {"ok": True}
 
 
 @app.post("/api/customer-mapping/bulk")

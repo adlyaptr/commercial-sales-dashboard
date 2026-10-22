@@ -982,7 +982,7 @@ footer span { float: right; }
 .average-workspace-right > form { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .average-workspace-right .average-data-table { width: 100%; min-width: 0; table-layout: fixed; }
 .average-workspace-right .average-comparison-table { min-width: 0; }
-.average-workspace-right .average-comparison-chart { flex: 1 0 140px; min-height: 140px; height: auto; margin-top: 0; margin-bottom: 4px; }
+.average-workspace-right .average-comparison-chart { flex: 0 0 250px; min-height: 250px; height: 250px; margin-top: 0; margin-bottom: 4px; }
 .average-workspace-right .average-comparison-table input { min-width: 0; height: 28px; padding: 0 4px; font-size: 8px; }
 .average-workspace-right .average-comparison-table th,
 .average-workspace-right .average-comparison-table td { padding: 5px 4px; font-size: 8px; line-height: 1.2; white-space: normal; overflow-wrap: anywhere; }
@@ -1012,11 +1012,11 @@ footer span { float: right; }
 .average-toolbar button:disabled { opacity: .45; cursor: not-allowed; }
 .average-toolbar .average-add-button { border-color: var(--green); background: var(--green); color: #fff; }
 .average-toolbar .average-delete-button { border-color: #efcccc; color: #c53f4a; }
-.average-entry-form { display: grid; grid-template-columns: minmax(60px, 1fr) minmax(75px, 1.2fr) minmax(55px, .8fr) minmax(60px, .9fr) minmax(65px, .9fr) minmax(72px, 1fr) auto; align-items: end; gap: 5px; margin-bottom: 6px; padding: 6px; border: 1px solid #dbe9df; border-radius: 6px; background: #f7fbf8; }
-.average-entry-form label { display: flex; flex-direction: column; min-width: 0; gap: 5px; color: #557765; font-size: 10px; font-weight: 600; }
-.average-entry-form input, .average-entry-form select { width: 100%; min-width: 0; height: 30px; padding: 0 6px; border: 1px solid #cedfd3; border-radius: 5px; background: #fff; color: var(--ink); font: 10px "Segoe UI", Arial, sans-serif; }
+.average-entry-form { display: grid; grid-template-columns: minmax(60px, 1fr) minmax(75px, 1.2fr) minmax(55px, .8fr) minmax(60px, .9fr) minmax(65px, .9fr) minmax(72px, 1fr) auto; align-items: end; gap: 4px; margin: 0 0 3px; padding: 4px; border: 1px solid #dbe9df; border-radius: 6px; background: #f7fbf8; }
+.average-entry-form label { display: flex; flex-direction: column; min-width: 0; gap: 3px; color: #557765; font-size: 9px; font-weight: 600; }
+.average-entry-form input, .average-entry-form select { width: 100%; min-width: 0; height: 28px; padding: 0 5px; border: 1px solid #cedfd3; border-radius: 5px; background: #fff; color: var(--ink); font: 9px "Segoe UI", Arial, sans-serif; }
 .average-entry-actions { display: flex; gap: 5px; }
-.average-entry-actions .primary { min-height: 30px; padding: 0 8px; font-size: 9px; white-space: nowrap; }
+.average-entry-actions .primary { min-height: 28px; padding: 0 7px; font-size: 8px; white-space: nowrap; }
 .average-table-wrap { overflow: auto; border: 1px solid #dce9df; border-radius: 5px; }
 .average-customer-table-wrap { max-height: 180px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .average-customer-table-wrap .average-data-table { width: 100%; min-width: 0; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
@@ -1044,6 +1044,15 @@ footer span { float: right; }
 .average-data-table tbody tr:nth-child(even) { background: #f5faf6; }
 .average-customer-table-wrap tbody tr:hover { background: #eaf6ee; }
 .average-customer-table-wrap td:nth-child(2) { font-weight: 600; }
+.average-customer-table-wrap .average-workbook-group th {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-top: 1px solid #8eaa94;
+  background: #d9e9d2;
+  color: #244c30;
+  font-weight: 800;
+  text-align: left;
+}
 .average-customer-table-wrap .average-workbook-subtotal th {
   padding-top: 6px;
   padding-bottom: 6px;
@@ -1051,6 +1060,14 @@ footer span { float: right; }
   background: #f3f5f3;
   color: #294433;
   font-weight: 800;
+}
+.average-customer-table-wrap .average-workbook-average th {
+  padding-top: 3px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #aebbb1;
+  background: #fff5b8;
+  color: #5f5220;
+  font-weight: 700;
 }
 .average-data-table tfoot { background: #145b43; color: #fff; }
 .average-data-table tfoot th { padding: 7px; }

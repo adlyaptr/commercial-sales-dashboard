@@ -8,6 +8,25 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 const operators = ['SETU', 'KHT', 'BLORA', 'WUNUT'];
 const regions = ['JAWA BARAT', 'JAWA TENGAH', 'JAWA TIMUR', 'JAWA TENGAH DAN TIMUR'];
+const comparisonAreas = [
+    { key: 'JAWA BARAT', label: 'Jawa Barat', regions: ['JAWA BARAT'] },
+    { key: 'JAWA TENGAH', label: 'Jawa Tengah', regions: ['JAWA TENGAH'] },
+    { key: 'JAWA TIMUR', label: 'Jawa Timur', regions: ['JAWA TIMUR'] },
+    { key: 'JAWA_TENGAH_DAN_TIMUR', label: 'Jawa Tengah dan Timur', regions: ['JAWA TENGAH DAN TIMUR'] },
+    { key: 'ALL_EXCEPT_JATIM', label: 'All Area', regions: [] },
+];
+const workbookCustomerOrder = [
+    'clin', 'mkg', 'oaj', 'shb', 'gtl', 'twk', 'bem', 'tomimoto',
+    'niagagaram', 'pcimengger', 'adp', 'bisurcharge', 'stm', 'sma', 'ip',
+    'ka', 'ktn', 'hci', 'nni', 'gfrsurcharge', 'gfranca', 'byc', 'hli',
+    'dic', 'ksn', 'ami', 'abckogen', 'umi', 'ceres', 'pci84surcharge',
+    'pci84', 'indofood', 'asahimassurcharge', 'asahimas', 'fjiksosalmah',
+    'altksomasami', 'winglokksoebm', 'psdwira', 'abpsbi', 'kgmksorrs',
+    'bdplemb', 'toyoboksoineko', 'citymallwira', 'cisfksorrs',
+    'pujlubricant', 'tongjiksogas', 'torabikahf', 'torabikaic', 'swsace',
+    'idpksoaae', 'hskksogas', 'spglobal', 'torabikacikupaekajaya',
+    'calbeeksobmi', 'spksojes', 'pa', 'gfkulit', 'rb', 'gfatom',
+];
 const pdfCustomerNames = [
     'PT Cipta Lestari Idea Nusa', 'PT Mitra Kaya Galvanize', 'PT Optima Adhi Jaya',
     'SHB', 'GTL', 'TWK', 'BEM', 'TOMIMOTO', 'NIAGA GARAM', 'PCI MENGGER',
@@ -21,31 +40,16 @@ const pdfCustomerNames = [
     'Surya Pamenang (JES)', 'Jiuqi Tecnology Konjac', 'Djarum', 'Green Pulse',
     'Concord Industry', 'Pentawira (KSO REN)',
 ];
-const comparisonAreas = [
-    { key: 'JAWA BARAT', label: 'Jawa Barat', regions: ['JAWA BARAT'] },
-    { key: 'JAWA TENGAH', label: 'Jawa Tengah', regions: ['JAWA TENGAH'] },
-    { key: 'JAWA TIMUR', label: 'Jawa Timur', regions: ['JAWA TIMUR'] },
-    { key: 'JAWA_TENGAH_DAN_TIMUR', label: 'Jawa Tengah dan Timur', regions: ['JAWA TENGAH DAN TIMUR'] },
-    { key: 'ALL_EXCEPT_JATIM', label: 'All Area', regions: [] },
-];
-const templateCustomerOrder = [
-    'CLIN', 'MKG', 'OPTIMA', 'SHB', 'GTL', 'TWK', 'BEM', 'TOMIMOTO',
-    'NIAGA GARAM', 'PCI MENGGER', 'Alia Digital', 'GreenPulse',
-    'BI Surcharge', 'BI', 'STM', 'SMA', 'IP', 'KARISMA', 'KTN', 'Honchuan',
-    'NNI', 'GFR Surcharge', 'GF RANCAEKEK', 'BYC', 'HLI Green Power',
-    'Dic Grapichs', 'KSN Maja', 'ATEJA', 'ABC Kogen', 'KSN Ranca',
-    'UMI', 'Ceres', 'PCI 84 Surcharge', 'PCI 84', 'INDOFOOD NSF',
-    'Asahimas Surcharge', 'Asahimas', 'Concord',
-    'FJI / SBI', 'ALTINEX /Masami', 'Winglok / EBM', 'PSD / WIRA',
-    'ABP / SBI', 'KGM / RRS', 'BDP / LEMB', 'Toyobo (KSO Ineko)',
-    'Citymall/Wira', 'CISF / RRS', 'PUJ - Lubricant', 'Tong Tji / GAS',
-    'Torabika HF', 'Torabika IC', 'SWS / ACE', 'Kimia Farma / IMA',
-    'INDONEPTUNE /AAE', 'HSK / GAS', 'Surya Pamenang (Global)',
-    'Torabika Cikupa/Ekajaya', 'Calbee/ACE',
-    'CV PA', 'GF KULIT', 'RPI', 'RB', 'GF ATOM', 'HSK / GAS',
-    'Surya Pamenang (JES)', 'JIUQI', 'Surya Pamenang (Global)',
-    'Djarum', 'Surya Pamenang (Global)', 'Pentawira / REN',
-];
+const pdfCustomerAliases = {
+    ptciptalestariideanusa: 'CLIN',
+    ptmitrakayagalvanize: 'MKG',
+    ptoptimaadhijaya: 'OPTIMA',
+    oaj: 'OPTIMA',
+    greenpulse: 'GreenPulse',
+    concordindustry: 'Concord',
+    jiuqitecnologykonjac: 'JIUQI',
+    pentawiraksoren: 'Pentawira / REN',
+};
 const customerOrderAliases = {
     adp: 'Alia Digital',
     ami: 'ATEJA',
@@ -75,6 +79,7 @@ const customerOrderAliases = {
     kimiafarmaksoineko: 'Kimia Farma / IMA',
     ksn: 'KSN Maja',
     oaj: 'OPTIMA',
+    ptoptimaadhijaya: 'OPTIMA',
     pentawiraksoren: 'pentawira / ren',
     fjiksosalmah: 'FJI / SBI',
     tongjiksogas: 'Tong Tji / GAS',
@@ -102,14 +107,41 @@ const januaryCustomerAliases = {
     tongjiksogas: 'Tong Tji / GAS',
 };
 const normalizeCustomerOrder = (value) => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const customerOrderIndex = new Map();
-templateCustomerOrder.forEach((customer, index) => {
-    const key = normalizeCustomerOrder(customer);
-    if (!customerOrderIndex.has(key)) customerOrderIndex.set(key, index);
-});
+const normalizeCustomerIdentity = (value) => {
+    const normalizedName = normalizeCustomerOrder(value);
+    return normalizeCustomerOrder(pdfCustomerAliases[normalizedName] || value);
+};
+const canonicalCustomerName = (value) => {
+    const normalizedName = normalizeCustomerOrder(value);
+    return pdfCustomerAliases[normalizedName] || value;
+};
+const customerDisplayIdentity = (row) => [
+    normalizeCustomerIdentity(row.customer),
+    String(row.operator ?? '').trim().toUpperCase(),
+].join('|');
+function workbookCustomerOrderForMonth(month) {
+    const order = [...workbookCustomerOrder];
+    if (month >= '2026-03') {
+        order.splice(order.indexOf('spksojes'), 1);
+        order.push('spksojes');
+    }
+    const insertAfter = (customer, previousCustomer) => {
+        const previousIndex = order.indexOf(previousCustomer);
+        if (previousIndex !== -1 && !order.includes(customer)) {
+            order.splice(previousIndex + 1, 0, customer);
+        }
+    };
+    if (month >= '2026-06') insertAfter('ksnranca', 'abckogen');
+    if (month >= '2026-08') insertAfter('greenpulse', 'adp');
+    if (month >= '2026-09') {
+        insertAfter('concord', 'asahimas');
+        insertAfter('kimiafarmaksoineko', 'swsace');
+    }
+    return new Map(order.map((customerKey, index) => [customerKey, index]));
+}
 const workbookCustomerGroups = [
     {
-        label: 'Customer <50.000 Sm³/bln',
+        label: 'DIRECT · Customer <50.000 Sm³/bln',
         regions: {
             'JAWA BARAT': ['CLIN', 'MKG', 'OPTIMA', 'SHB', 'GTL', 'TWK', 'BEM', 'TOMIMOTO', 'NIAGA GARAM', 'PCI MENGGER', 'Alia Digital'],
             'JAWA TENGAH': ['CV PA', 'GF KULIT', 'RPI'],
@@ -117,7 +149,7 @@ const workbookCustomerGroups = [
         },
     },
     {
-        label: 'Customer 50.001 - 100.000 Sm³/bln',
+        label: 'DIRECT · Customer 50.001 - 100.000 Sm³/bln',
         regions: {
             'JAWA BARAT': ['BI Surcharge', 'BI', 'STM', 'SMA', 'IP', 'KARISMA', 'KTN', 'Honchuan'],
             'JAWA TENGAH': ['RB', 'GF ATOM'],
@@ -125,14 +157,14 @@ const workbookCustomerGroups = [
         },
     },
     {
-        label: 'Customer 100.001 - 200.000 Sm³/bln',
+        label: 'DIRECT · Customer 100.001 - 200.000 Sm³/bln',
         regions: {
             'JAWA BARAT': ['NNI', 'GFR Surcharge', 'GF RANCAEKEK', 'BYC', 'HLI Green Power', 'Dic Grapichs', 'KSN Maja', 'ATEJA', 'ABC Kogen'],
             'JAWA TENGAH': [],
         },
     },
     {
-        label: 'Customer >200.001 Sm³/bln',
+        label: 'DIRECT · Customer >200.001 Sm³/bln',
         regions: {
             'JAWA BARAT': ['UMI', 'Ceres', 'PCI 84 Surcharge', 'PCI 84', 'INDOFOOD NSF', 'Asahimas Surcharge', 'Asahimas'],
             'JAWA TENGAH': [],
@@ -169,13 +201,18 @@ const workbookCustomerGroups = [
     },
 ];
 const workbookCustomerGroupByRegion = new Map();
+const workbookCustomerGroupByCustomer = new Map();
 workbookCustomerGroups.forEach((group, groupIndex) => {
     Object.entries(group.regions).forEach(([region, customers]) => {
         if (!workbookCustomerGroupByRegion.has(region)) {
             workbookCustomerGroupByRegion.set(region, new Map());
         }
         customers.forEach((customer) => {
-            workbookCustomerGroupByRegion.get(region).set(normalizeCustomerOrder(customer), groupIndex);
+            const customerKey = normalizeCustomerOrder(customer);
+            workbookCustomerGroupByRegion.get(region).set(customerKey, groupIndex);
+            if (!workbookCustomerGroupByCustomer.has(customerKey)) {
+                workbookCustomerGroupByCustomer.set(customerKey, groupIndex);
+            }
         });
     });
 });
@@ -186,11 +223,18 @@ const laterWorkbookCustomerGroups = [
     { region: 'JAWA BARAT', customer: 'kimiafarmaima', fromMonth: '2026-09', groupIndex: 5 },
     { region: 'JAWA TENGAH', customer: 'jiuqi', fromMonth: '2026-04', groupIndex: 6 },
 ];
+const workbookGroupRegionOrder = {
+    'JAWA BARAT': 0,
+    'JAWA TENGAH': 1,
+    'JAWA TIMUR': 2,
+    'JAWA TENGAH DAN TIMUR': 3,
+};
 function workbookGroupForCustomer(row, month) {
     const region = String(row.region ?? '').trim().toUpperCase();
     const customerKey = normalizeCustomerOrder(row.customer);
+    let groupIndex;
     if (region === 'JAWA TENGAH DAN TIMUR') {
-        const groupIndex = {
+        groupIndex = {
             cvpa: 0,
             gfkulit: 0,
             rpi: 0,
@@ -201,28 +245,32 @@ function workbookGroupForCustomer(row, month) {
             jiuqi: 6,
             suryapamenangglobal: 7,
         }[customerKey];
-        if (groupIndex != null) {
-            return { index: groupIndex, label: workbookCustomerGroups[groupIndex].label };
-        }
     }
-    const laterGroup = laterWorkbookCustomerGroups.find((group) =>
+    const laterGroup = groupIndex == null && laterWorkbookCustomerGroups.find((group) =>
         group.region === region
         && group.customer === customerKey
         && month >= group.fromMonth);
-    if (laterGroup) {
-        return { index: laterGroup.groupIndex, label: workbookCustomerGroups[laterGroup.groupIndex].label };
-    }
-    if (region === 'JAWA TENGAH' && ['suryapamenangglobal', 'suryapamenangjes'].includes(customerKey)) {
+    if (groupIndex == null && laterGroup) groupIndex = laterGroup.groupIndex;
+    if (groupIndex == null && region === 'JAWA TENGAH'
+        && ['suryapamenangglobal', 'suryapamenangjes'].includes(customerKey)) {
         const isMayOrLater = month >= '2026-05';
-        const groupIndex = customerKey === 'suryapamenangglobal'
+        groupIndex = customerKey === 'suryapamenangglobal'
             ? isMayOrLater ? 7 : 6
             : isMayOrLater ? 6 : 7;
-        return { index: groupIndex, label: workbookCustomerGroups[groupIndex].label };
     }
-    const groupIndex = workbookCustomerGroupByRegion.get(region)?.get(customerKey);
-    return groupIndex == null
-        ? { index: workbookCustomerGroups.length, label: 'Tidak tercantum di file pengguna' }
-        : { index: groupIndex, label: workbookCustomerGroups[groupIndex].label };
+    groupIndex ??= workbookCustomerGroupByRegion.get(region)?.get(customerKey)
+        ?? (!region ? workbookCustomerGroupByCustomer.get(customerKey) : undefined);
+    if (groupIndex == null) {
+        const index = 4 * workbookCustomerGroups.length;
+        return { index, label: 'Tidak tercantum di file pengguna' };
+    }
+    const regionIndex = workbookGroupRegionOrder[region] ?? 4;
+    const index = regionIndex * workbookCustomerGroups.length + groupIndex;
+    const regionLabel = region || 'Wilayah belum ditentukan';
+    return {
+        index,
+        label: `${regionLabel} · ${workbookCustomerGroups[groupIndex].label}`,
+    };
 }
 const formatInteger = (value) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value ?? 0));
 const formatDecimal = (value, digits = 2) => new Intl.NumberFormat('id-ID', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(value ?? 0));
@@ -252,9 +300,27 @@ function monthLabel(value) {
 export default function WeeklyAveragePricePage() {
     const { averagePriceMonth, rangeStartDate } = useOutletContext();
     const selectedMonth = averagePriceMonth || rangeStartDate?.slice(0, 7) || '';
+    const workbookOrderIndex = workbookCustomerOrderForMonth(selectedMonth);
     const activeComparisonAreas = comparisonAreas
-        .filter((area) => area.key !== 'JAWA_TENGAH_DAN_TIMUR'
-            || ['2026-06', '2026-07'].includes(selectedMonth))
+        .filter((area) => {
+            if (selectedMonth === '2026-07'
+                && ['JAWA TIMUR', 'JAWA_TENGAH_DAN_TIMUR'].includes(area.key)) {
+                return false;
+            }
+            if (selectedMonth === '2026-06'
+                && ['JAWA TENGAH', 'JAWA TIMUR'].includes(area.key)) {
+                return false;
+            }
+            if (selectedMonth === '2026-06'
+                && area.key === 'JAWA_TENGAH_DAN_TIMUR') {
+                return true;
+            }
+            if (area.key === 'JAWA_TENGAH_DAN_TIMUR'
+                && !['2026-06', '2026-07'].includes(selectedMonth)) {
+                return false;
+            }
+            return true;
+        })
         .map((area) => {
         if (area.key !== 'ALL_EXCEPT_JATIM') return area;
         const excludesEastJava = selectedMonth >= '2026-09';
@@ -268,9 +334,8 @@ export default function WeeklyAveragePricePage() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
-    const [selectedCustomerKey, setSelectedCustomerKey] = useState('');
     const [customerCatalog, setCustomerCatalog] = useState([]);
-    const [customersLoading, setCustomersLoading] = useState(true);
+    const [selectedCustomerKey, setSelectedCustomerKey] = useState('');
     const [customerEntry, setCustomerEntry] = useState({
         customer: '',
         operator: '',
@@ -278,28 +343,6 @@ export default function WeeklyAveragePricePage() {
         price_unit: 'USD_MMBTU',
         price: '',
     });
-
-    useEffect(() => {
-        let active = true;
-        api('/api/customers')
-            .then((data) => {
-                if (!Array.isArray(data) || data.some((customer) => (
-                    typeof customer.customer_key !== 'string'
-                    || typeof customer.customer_name !== 'string'
-                    || typeof customer.operator !== 'string'
-                ))) {
-                    throw new Error('Format daftar customer dari server tidak valid.');
-                }
-                if (active) setCustomerCatalog(data);
-            })
-            .catch((requestError) => {
-                if (active) setError(requestError.message);
-            })
-            .finally(() => {
-                if (active) setCustomersLoading(false);
-            });
-        return () => { active = false; };
-    }, []);
 
     useEffect(() => {
         if (!selectedMonth) return undefined;
@@ -326,14 +369,25 @@ export default function WeeklyAveragePricePage() {
         return () => { active = false; };
     }, [selectedMonth]);
 
+    useEffect(() => {
+        let active = true;
+        api('/api/customers')
+            .then((data) => {
+                if (!Array.isArray(data)) {
+                    throw new Error('Format daftar customer dari server tidak valid.');
+                }
+                if (active) setCustomerCatalog(data);
+            })
+            .catch((requestError) => active && setError(requestError.message));
+        return () => { active = false; };
+    }, []);
+
     function selectCustomer(customerKey) {
         const row = report.rows.find((item) => item.customer_key === customerKey);
-        const masterCustomer = customerCatalog.find((item) => item.customer_key === customerKey);
-        const customer = row || masterCustomer;
-        setSelectedCustomerKey(customer?.customer_key || '');
+        setSelectedCustomerKey(row?.customer_key || '');
         setCustomerEntry({
-            customer: row?.customer || masterCustomer?.customer_name || '',
-            operator: row?.operator || masterCustomer?.operator || '',
+            customer: row ? canonicalCustomerName(row.customer) : '',
+            operator: row?.operator || '',
             region: row?.region || '',
             price_unit: row?.price_unit || 'USD_MMBTU',
             price: row?.price_unit === 'IDR_SM3'
@@ -343,24 +397,23 @@ export default function WeeklyAveragePricePage() {
     }
 
     function updateCustomerName(value) {
-        const normalizedName = normalizeCustomerOrder(value.trim());
-        const matchingRow = report.rows.find(
-            (row) => normalizeCustomerOrder(row.customer) === normalizedName,
-        );
-        const matchingCustomer = matchingRow || customerCatalog.find(
-            (customer) => normalizeCustomerOrder(customer.customer_name) === normalizedName,
-        );
-        if (matchingCustomer) {
-            selectCustomer(matchingCustomer.customer_key);
+        const normalizedName = normalizeCustomerIdentity(value.trim());
+        const matchingRow = report.rows.find((row) =>
+            normalizeCustomerIdentity(row.customer) === normalizedName
+            || normalizeCustomerIdentity(row.customer_key) === normalizedName);
+        if (matchingRow) {
+            selectCustomer(matchingRow.customer_key);
             return;
         }
-        setSelectedCustomerKey('');
+        const matchingCustomer = customerCatalog.find((customer) =>
+            normalizeCustomerIdentity(customer.customer_name) === normalizedName
+            || normalizeCustomerIdentity(customer.customer_key) === normalizedName);
+        setSelectedCustomerKey(matchingCustomer?.customer_key || '');
         setCustomerEntry((current) => ({
             ...current,
             customer: value,
-            operator: '',
+            operator: matchingCustomer?.operator || '',
             region: '',
-            price_unit: 'USD_MMBTU',
             price: '',
         }));
     }
@@ -369,14 +422,6 @@ export default function WeeklyAveragePricePage() {
         setReport((current) => ({
             ...current,
             operator_factors: { ...current.operator_factors, [operator]: value },
-            rows: current.rows.map((row) => row.operator === operator
-                ? {
-                    ...row,
-                    mmbtu_override: null,
-                    total_usd_override: null,
-                    rupiah_override: null,
-                }
-                : row),
         }));
     }
 
@@ -384,11 +429,6 @@ export default function WeeklyAveragePricePage() {
         setReport((current) => ({
             ...current,
             exchange_rate: value,
-            rows: current.rows.map((row) => ({
-                ...row,
-                total_usd_override: null,
-                rupiah_override: null,
-            })),
         }));
     }
 
@@ -450,19 +490,30 @@ export default function WeeklyAveragePricePage() {
 
     async function saveCustomerEntry(event) {
         event.preventDefault();
-        const customerName = customerEntry.customer.trim();
+        const customerName = canonicalCustomerName(customerEntry.customer.trim());
+        const selectedRow = report.rows.find((item) => item.customer_key === selectedCustomerKey);
+        const normalizedCustomerName = normalizeCustomerIdentity(customerName);
+        const namedRows = report.rows.filter((item) =>
+            normalizeCustomerIdentity(item.customer) === normalizedCustomerName
+            || normalizeCustomerIdentity(item.customer_key) === normalizedCustomerName);
+        const row = selectedRow || namedRows.find((item) =>
+            !customerEntry.operator || item.operator === customerEntry.operator);
+        const catalogCustomer = customerCatalog.find((customer) =>
+            customer.customer_key === selectedCustomerKey
+            || (normalizeCustomerIdentity(customer.customer_name) === normalizedCustomerName
+                && (!row || customer.operator === row.operator)));
         const price = Number(customerEntry.price);
-        const row = report.rows.find((item) => item.customer_key === selectedCustomerKey);
+        const operator = row?.operator || catalogCustomer?.operator || customerEntry.operator;
         if (!customerName) {
             setError('Nama customer wajib diisi.');
             return;
         }
-        if (!selectedCustomerKey && !customerEntry.operator) {
+        if (!operator || (!row && !catalogCustomer && !operators.includes(operator))) {
             setError('Pilih operator untuk customer baru.');
             return;
         }
-        if (!selectedCustomerHasWorkbookData && !customerEntry.region) {
-            setError('Pilih wilayah untuk customer ini.');
+        if (!customerEntry.region) {
+            setError('Pilih wilayah customer.');
             return;
         }
         if (!Number.isFinite(price) || price <= 0) {
@@ -470,68 +521,94 @@ export default function WeeklyAveragePricePage() {
             return;
         }
 
-        setError('');
-        setSaving(true);
-        try {
-            let customerKey = selectedCustomerKey;
-            let operator = row?.operator || customerEntry.operator;
-            if (!customerKey) {
-                const createdCustomer = await api('/api/customer-mapping', {
+        const customerKey = row?.customer_key
+            || catalogCustomer?.customer_key
+            || normalizeCustomerOrder(customerName);
+        const keyConflict = customerCatalog.find((customer) =>
+            customer.customer_key === customerKey
+            && normalizeCustomerIdentity(customer.customer_name) !== normalizeCustomerIdentity(customerName));
+        if (keyConflict) {
+            setError(`Nama customer bertabrakan dengan data master ${keyConflict.customer_name}.`);
+            return;
+        }
+        if (!row && !catalogCustomer) {
+            setSaving(true);
+            setError('');
+            setNotice('');
+            try {
+                await api('/api/customer-mapping', {
                     method: 'POST',
                     body: { customer: customerName, operator },
                 });
-                if (typeof createdCustomer.customer_key !== 'string' || !createdCustomer.customer_key) {
-                    throw new Error('Server tidak mengembalikan identitas customer baru.');
-                }
-                customerKey = createdCustomer.customer_key;
+                setCustomerCatalog((current) => [
+                    ...current,
+                    { customer_key: customerKey, customer_name: customerName, operator },
+                ]);
+            } catch (requestError) {
+                setError(requestError.message);
+                setSaving(false);
+                return;
             }
+            setSaving(false);
+        }
 
-            const existingRow = row || {
-                customer_key: customerKey,
+        const currentRow = row || {
+            customer_key: customerKey,
+            customer: customerName,
+            operator,
+            region: '',
+            price_unit: 'USD_MMBTU',
+            so_sm3: 0,
+            actual_sm3: 0,
+            sm3: 0,
+            sm3_per_mmbtu: Number(report.operator_factors[operator] || 0),
+            volume_mmbtu: 0,
+            price_usd_per_mmbtu: 0,
+            price_rp_per_sm3: 0,
+            sm3_override: null,
+            mmbtu_override: null,
+            total_usd_override: null,
+            rupiah_override: null,
+            total_usd: 0,
+            exchange_rate: Number(report.exchange_rate || 0),
+            has_valid_price: false,
+            include_in_summary: true,
+            rupiah: 0,
+        };
+        const matchingRows = row
+            ? report.rows.filter((item) => customerDisplayIdentity(item) === customerDisplayIdentity(row))
+            : [];
+        const updatePrice = (item) => {
+            const itemPriceChanged = item.price_unit !== customerEntry.price_unit
+                || (customerEntry.price_unit === 'IDR_SM3'
+                    ? Number(item.price_rp_per_sm3 || 0) !== price
+                    : Number(item.price_usd_per_mmbtu || 0) !== price);
+            return {
+                ...item,
                 customer: customerName,
                 operator,
-                region: customerEntry.region,
-                so_sm3: 0,
-                actual_sm3: 0,
-                sm3: 0,
-                price_unit: customerEntry.price_unit,
-                price_usd_per_mmbtu: 0,
-                price_rp_per_sm3: 0,
-                sm3_override: null,
-                mmbtu_override: null,
-                total_usd_override: null,
-                rupiah_override: null,
-                total_usd: 0,
-                rupiah: 0,
-                include_in_summary: true,
-            };
-            const priceChanged = existingRow.price_unit !== customerEntry.price_unit
-                || (customerEntry.price_unit === 'IDR_SM3'
-                    ? Number(existingRow.price_rp_per_sm3 || 0) !== price
-                    : Number(existingRow.price_usd_per_mmbtu || 0) !== price);
-            const updatedRow = {
-                ...existingRow,
                 region: customerEntry.region,
                 price_unit: customerEntry.price_unit,
                 price_usd_per_mmbtu: customerEntry.price_unit === 'USD_MMBTU' ? price : 0,
                 price_rp_per_sm3: customerEntry.price_unit === 'IDR_SM3' ? price : 0,
-                total_usd_override: priceChanged ? null : existingRow.total_usd_override,
-                rupiah_override: priceChanged ? null : existingRow.rupiah_override,
+                total_usd_override: itemPriceChanged ? null : item.total_usd_override,
+                rupiah_override: itemPriceChanged ? null : item.rupiah_override,
             };
-            const nextRows = row
-                ? report.rows.map((item) => item.customer_key === customerKey ? updatedRow : item)
-                : [...report.rows, updatedRow];
-            const nextReport = { ...report, rows: nextRows };
-            setSelectedCustomerKey(customerKey);
-            await persistReport(
-                nextReport,
-                `Data Average Price ${customerName} berhasil disimpan untuk ${monthLabel(selectedMonth)}.`,
-            );
-        } catch (requestError) {
-            setError(requestError.message);
-        } finally {
-            setSaving(false);
-        }
+        };
+        const updatedRow = updatePrice(currentRow);
+        setSelectedCustomerKey(customerKey);
+        const nextReport = {
+            ...report,
+            rows: row
+                ? report.rows.map((item) => matchingRows.some((match) => match.customer_key === item.customer_key)
+                    ? updatePrice(item)
+                    : item)
+                : [...report.rows, updatedRow],
+        };
+        await persistReport(
+            nextReport,
+            `Data Average Price ${customerName} berhasil disimpan untuk ${monthLabel(selectedMonth)}.`,
+        );
     }
 
     async function saveReport(event) {
@@ -587,12 +664,49 @@ export default function WeeklyAveragePricePage() {
         .sort((left, right) => {
             const groupOrder = left.row.workbook_group.index - right.row.workbook_group.index;
             if (groupOrder !== 0) return groupOrder;
-            const leftOrder = customerOrderIndex.get(normalizeCustomerOrder(left.row.customer)) ?? Infinity;
-            const rightOrder = customerOrderIndex.get(normalizeCustomerOrder(right.row.customer)) ?? Infinity;
+            const leftOrder = workbookOrderIndex.get(normalizeCustomerOrder(left.row.customer_key)) ?? Infinity;
+            const rightOrder = workbookOrderIndex.get(normalizeCustomerOrder(right.row.customer_key)) ?? Infinity;
             return leftOrder - rightOrder || left.index - right.index;
         })
         .map(({ row }) => row);
-    const displayRows = calculatedRows.filter((row) => row.workbook_group.index >= 4);
+    const displayRows = calculatedRows.reduce((rows, row) => {
+        const identity = customerDisplayIdentity(row);
+        const matchingRow = rows.find((item) => item.displayIdentity === identity);
+        if (!matchingRow) {
+            rows.push({
+                ...row,
+                displayIdentity: identity,
+                sourceRows: [row],
+            });
+            return rows;
+        }
+        matchingRow.sourceRows.push(row);
+        if (!matchingRow.region && row.region) {
+            matchingRow.region = row.region;
+            matchingRow.workbook_group = row.workbook_group;
+        }
+        matchingRow.sm3 += row.sm3;
+        matchingRow.volume_mmbtu += row.volume_mmbtu;
+        matchingRow.total_usd += row.total_usd;
+        matchingRow.rupiah += row.rupiah;
+        matchingRow.has_valid_price = matchingRow.sourceRows.every((item) => item.has_valid_price);
+        matchingRow.include_in_summary = matchingRow.sourceRows.every(
+            (item) => item.include_in_summary !== false,
+        );
+        if (matchingRow.price_unit !== row.price_unit) {
+            matchingRow.price_unit = 'MIXED';
+        }
+        if (matchingRow.price_unit === 'USD_MMBTU') {
+            matchingRow.price_usd_per_mmbtu = matchingRow.volume_mmbtu > 0
+                ? matchingRow.total_usd / matchingRow.volume_mmbtu
+                : 0;
+        } else if (matchingRow.price_unit === 'IDR_SM3') {
+            matchingRow.price_rp_per_sm3 = matchingRow.sm3 > 0
+                ? matchingRow.rupiah / matchingRow.sm3
+                : 0;
+        }
+        return rows;
+    }, []).map(({ displayIdentity, ...row }) => row);
     const displayGroups = displayRows.reduce((groups, row) => {
         const currentGroup = groups[groups.length - 1];
         if (!currentGroup || currentGroup.group.index !== row.workbook_group.index) {
@@ -618,35 +732,27 @@ export default function WeeklyAveragePricePage() {
             ? Number(row.price_rp_per_sm3) > 0
             : Number(row.price_usd_per_mmbtu) > 0),
     );
-    const customerSuggestions = Array.from(new Map(
-        [
-            ...pdfCustomerNames,
-            ...customerCatalog.map((customer) => customer.customer_name),
-            ...report.rows.map((row) => row.customer),
-        ]
-            .map((customerName) => [normalizeCustomerOrder(customerName), customerName])
-            .filter(([customerKey]) => customerKey),
-    ).values());
     const comparisonRows = activeComparisonAreas.map((area) => {
         const eligibleRows = calculatedRows.filter((row) =>
             (area.key === 'ALL_EXCEPT_JATIM'
                 ? row.include_in_summary !== false
                 : area.regions.includes(row.region))
-            && row.sm3 + Number(row.so_sm3 || 0) > 0
+            && Number(row.actual_sm3 || 0) + Number(row.so_sm3 || 0) > 0
             && (row.price_unit === 'IDR_SM3'
                 ? Number(row.price_rp_per_sm3) > 0
                 : Number(row.sm3_per_mmbtu) > 0
                     && Number(row.price_usd_per_mmbtu) > 0
                     && Number(report.exchange_rate) > 0));
         const volume = eligibleRows.reduce(
-            (sum, row) => sum + row.sm3 + Number(row.so_sm3 || 0),
+            (sum, row) => sum + Number(row.actual_sm3 || 0) + Number(row.so_sm3 || 0),
             0,
         );
         const rupiah = eligibleRows.reduce((sum, row) => {
-            const actualSm3 = row.sm3;
+            const calculationSm3 = row.sm3;
+            const actualSm3 = Number(row.actual_sm3 || 0);
             const prognosisSm3 = actualSm3 + Number(row.so_sm3 || 0);
-            const rupiahPerSm3 = actualSm3 > 0
-                ? row.rupiah / actualSm3
+            const rupiahPerSm3 = calculationSm3 > 0
+                ? row.rupiah / calculationSm3
                 : row.price_unit === 'IDR_SM3'
                     ? Number(row.price_rp_per_sm3)
                     : Number(row.price_usd_per_mmbtu)
@@ -669,8 +775,18 @@ export default function WeeklyAveragePricePage() {
         };
     });
     const selectedCustomer = report.rows.find((row) => row.customer_key === selectedCustomerKey);
-    const selectedCustomerHasWorkbookData = Number(selectedCustomer?.sm3_override) > 0
-        && !selectedCustomer?.region;
+    const selectedCustomerCatalog = customerCatalog.find((customer) => customer.customer_key === selectedCustomerKey);
+    const selectedCustomerOperator = selectedCustomer?.operator || selectedCustomerCatalog?.operator || '';
+    const customerNameSuggestions = [...new Map([
+        ...pdfCustomerNames,
+        ...customerCatalog
+            .filter((customer) => !customer.customer_key.startsWith('manualfob-'))
+            .map((customer) => customer.customer_name),
+        ...report.rows.map((row) => row.customer),
+    ].map((name) => {
+        const canonicalName = canonicalCustomerName(name);
+        return [normalizeCustomerIdentity(canonicalName), canonicalName];
+    })).values()];
     const hasUnassignedWorkbookRegions = calculatedRows.some(
         (row) => Number(row.sm3_override) > 0 && !row.region,
     );
@@ -715,7 +831,7 @@ export default function WeeklyAveragePricePage() {
                     <div className="average-workspace-column average-workspace-left">
                 <div className="average-data-heading">
                     <div className="average-panel-heading">
-                        <b>2. Hasil Perhitungan Average Price</b>
+                        <b>Hasil Perhitungan Average Price</b>
                         <small>{monthLabel(selectedMonth)} · Customer DIRECT tetap masuk total. Baris * dikecualikan dari total Summary.</small>
                     </div>
                 </div>
@@ -738,6 +854,7 @@ export default function WeeklyAveragePricePage() {
                                     )
                                     : displayGroups.map((group) => {
                                         const groupTotals = group.rows
+                                            .flatMap((row) => row.sourceRows || [row])
                                             .filter((row) => row.has_valid_price)
                                             .reduce((sum, row) => ({
                                                 sm3: sum.sm3 + row.sm3,
@@ -746,14 +863,19 @@ export default function WeeklyAveragePricePage() {
                                                 rupiah: sum.rupiah + row.rupiah,
                                             }), { sm3: 0, mmbtu: 0, usd: 0, rupiah: 0 });
                                         return <React.Fragment key={group.group.index}>
-                                            {group.rows.map((row) => {
-                                                return <tr key={row.customer_key}>
+                                                <tr className="average-workbook-group">
+                                                    <th colSpan="8">{group.group.label}</th>
+                                                </tr>
+                                                {group.rows.map((row) => {
+                                                    return <tr key={row.customer_key}>
                                                     <td>{displayRowNumbers.get(row.customer_key)}</td>
                                                     <td>{row.customer}{row.include_in_summary === false ? ' *' : ''}</td>
                                                     <td>{row.operator}</td>
                                                     <td>{formatInteger(row.sm3)}</td>
                                                     <td>{formatDecimal(row.volume_mmbtu, 3)}</td>
-                                                    <td>{row.price_unit === 'IDR_SM3'
+                                                    <td>{row.price_unit === 'MIXED'
+                                                        ? '—'
+                                                        : row.price_unit === 'IDR_SM3'
                                                         ? `Rp ${formatDecimal(row.price_rp_per_sm3, 2)}`
                                                         : `$ ${formatDecimal(row.price_usd_per_mmbtu, 4)}`}</td>
                                                     <td>$ {formatDecimal(row.total_usd, 2)}</td>
@@ -767,6 +889,24 @@ export default function WeeklyAveragePricePage() {
                                                 <th>—</th>
                                                 <th>$ {formatDecimal(groupTotals.usd, 2)}</th>
                                                 <th>Rp {formatDecimal(groupTotals.rupiah, 2)}</th>
+                                            </tr>
+                                            <tr className="average-workbook-average">
+                                                <th colSpan="3">AVG</th>
+                                                <th>—</th>
+                                                <th>—</th>
+                                                <th>$ {formatDecimal(
+                                                    groupTotals.mmbtu > 0
+                                                        ? groupTotals.usd / groupTotals.mmbtu
+                                                        : 0,
+                                                    2,
+                                                )}</th>
+                                                <th>—</th>
+                                                <th>Rp {formatDecimal(
+                                                    groupTotals.sm3 > 0
+                                                        ? groupTotals.rupiah / groupTotals.sm3
+                                                        : 0,
+                                                    2,
+                                                )}</th>
                                             </tr>
                                         </React.Fragment>;
                                     })}
@@ -782,12 +922,6 @@ export default function WeeklyAveragePricePage() {
                         </table>
                     </div>
                 </form>
-                <div className="average-data-heading average-customer-entry-heading">
-                    <div className="average-panel-heading">
-                        <b>1. Input Average Price Customer</b>
-                        <small>Data dari Excel tetap dipertahankan jika harga tidak diubah.</small>
-                    </div>
-                </div>
                 <form className="average-entry-form" onSubmit={saveCustomerEntry}>
                     <label>
                         Periode
@@ -799,21 +933,20 @@ export default function WeeklyAveragePricePage() {
                             type="text"
                             list="average-customer-options"
                             required
-                            maxLength="255"
                             placeholder="Ketik nama customer"
                             value={customerEntry.customer}
                             onChange={(event) => updateCustomerName(event.target.value)}
                         />
                         <datalist id="average-customer-options">
-                            {customerSuggestions.map((customerName) => (
+                            {customerNameSuggestions.map((customerName) => (
                                 <option key={normalizeCustomerOrder(customerName)} value={customerName} />
                             ))}
                         </datalist>
                     </label>
                     <label>
                         Operator
-                        {selectedCustomerKey
-                            ? <input readOnly value={customerEntry.operator} />
+                        {selectedCustomerOperator
+                            ? <input readOnly value={selectedCustomerOperator} />
                             : <select
                                 required
                                 value={customerEntry.operator}
@@ -828,9 +961,7 @@ export default function WeeklyAveragePricePage() {
                     </label>
                     <label>
                         Wilayah
-                        {selectedCustomerHasWorkbookData
-                            ? <input readOnly value="Tidak tersedia di file" />
-                            : <select
+                        <select
                             required
                             value={customerEntry.region}
                             onChange={(event) => setCustomerEntry((current) => ({
@@ -840,7 +971,7 @@ export default function WeeklyAveragePricePage() {
                         >
                             <option value="">Pilih wilayah</option>
                             {regions.map((region) => <option key={region} value={region}>{region}</option>)}
-                        </select>}
+                        </select>
                     </label>
                     <label>
                         Satuan Harga
@@ -871,7 +1002,7 @@ export default function WeeklyAveragePricePage() {
                         />
                     </label>
                     <div className="average-entry-actions">
-                        <button className="primary" type="submit" disabled={saving || loading || customersLoading || !selectedMonth}>
+                        <button className="primary" type="submit" disabled={saving || loading || !selectedMonth}>
                             {saving ? 'Menyimpan...' : 'Simpan Harga'}
                         </button>
                     </div>
@@ -879,7 +1010,7 @@ export default function WeeklyAveragePricePage() {
                 <form onSubmit={saveReport}>
                     <div className="average-data-heading average-conversion-heading">
                         <div className="average-panel-heading">
-                            <b>3. Faktor Konversi Operator dan Kurs</b>
+                            <b>Faktor Konversi Operator dan Kurs</b>
                             <small>Faktor dan kurs berlaku untuk seluruh customer pada {monthLabel(selectedMonth)}.</small>
                         </div>
                         <label className="average-filter-field">
@@ -893,7 +1024,7 @@ export default function WeeklyAveragePricePage() {
                             <tbody>{operators.map((operator, index) => <tr key={operator}>
                                 <td>{index + 1}</td>
                                 <td>{operator}</td>
-                                <td><input aria-label={`Faktor konversi ${operator}`} type="number" min="0" step="0.0001" value={report.operator_factors[operator] || ''} onChange={(event) => updateFactor(operator, event.target.value)} /></td>
+                                <td><input aria-label={`Faktor konversi ${operator}`} type="number" min="0" step="any" value={report.operator_factors[operator] || ''} onChange={(event) => updateFactor(operator, event.target.value)} /></td>
                                 <td>MMBTU = Sm³ ÷ faktor</td>
                             </tr>)}</tbody>
                         </table>
@@ -905,7 +1036,7 @@ export default function WeeklyAveragePricePage() {
                     <form onSubmit={saveReport}>
                     <div className="average-data-heading average-comparison-heading">
                         <div className="average-panel-heading">
-                            <b>4. Target Harga dan Prognosa (Rp/Sm³)</b>
+                            <b>Target Harga dan Prognosa (Rp/Sm³)</b>
                             <small>{monthLabel(selectedMonth)} · Prognosa menggunakan (Sm³ actual customer + SO) · Selisih = Prognosa − Target</small>
                         </div>
                     </div>

@@ -180,6 +180,26 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertEqual(report["totals"]["sm3"], 1200)
         self.assertEqual(report["totals"]["rupiah"], 8400000)
 
+    def test_calculates_totals_from_workbook_mmbtu_when_amount_overrides_are_missing(self):
+        class WorkbookMmbtuOnly(MemoryMonthlyAveragePrice):
+            def execute(self, statement, parameters=None):
+                result = super().execute(statement, parameters)
+                if "LEFT JOIN sales s" not in statement:
+                    return result
+                row = result.fetchall()[0]
+                row["mmbtu_override"] = 42
+                return SimpleNamespace(fetchall=lambda: [row])
+
+        with patch.object(main, "db", return_value=WorkbookMmbtuOnly()):
+            report = main.monthly_average_price(FakeRequest(), "2026-10")
+
+        row = report["rows"][0]
+        self.assertEqual(row["volume_mmbtu"], 42)
+        self.assertEqual(row["total_usd"], 42)
+        self.assertEqual(row["rupiah"], 42 * 17895)
+        self.assertEqual(report["totals"]["usd"], 42)
+        self.assertEqual(report["totals"]["rupiah"], 42 * 17895)
+
     def test_counts_workbook_totals_without_exchange_or_operator_factor(self):
         class WorkbookTotalsWithoutConversions(MemoryMonthlyAveragePrice):
             def execute(self, statement, parameters=None):

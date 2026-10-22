@@ -205,6 +205,29 @@ class MonthlyRangeTests(unittest.TestCase):
         self.assertEqual(result["totals"]["usd"], 500)
         self.assertEqual(result["totals"]["rupiah"], 8400000)
 
+    def test_calculates_totals_from_workbook_mmbtu_when_amount_overrides_are_missing(self):
+        class WorkbookMmbtuOnlyRange(MemoryAveragePriceRange):
+            def execute(self, statement, parameters=None):
+                result = super().execute(statement, parameters)
+                rows = result.fetchall()
+                if rows:
+                    rows[0]["mmbtu_override"] = 42
+                return SimpleNamespace(fetchall=lambda: rows)
+
+        with patch.object(main, "db", return_value=WorkbookMmbtuOnlyRange()):
+            result = main.monthly_average_price_range(
+                FakeRequest(),
+                "2026-10-01",
+                "2026-10-31",
+            )
+
+        row = result["rows"][0]
+        self.assertEqual(row["volume_mmbtu"], 42)
+        self.assertEqual(row["total_usd"], 42)
+        self.assertEqual(row["rupiah"], 42 * 17895)
+        self.assertEqual(result["totals"]["usd"], 42)
+        self.assertEqual(result["totals"]["rupiah"], 42 * 17895)
+
     def test_counts_workbook_totals_without_exchange_or_operator_factor(self):
         class WorkbookTotalsWithoutConversions(MemoryAveragePriceRange):
             def execute(self, statement, parameters=None):
