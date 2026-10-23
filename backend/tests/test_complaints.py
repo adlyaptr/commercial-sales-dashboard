@@ -212,7 +212,7 @@ class MemoryHomeSummaryRange:
                 {"month_start": date(2026, 10, 1), "so": 700},
             ])
         if statement.startswith("SELECT SUM(so) AS total_so,SUM(actual) AS total_actual FROM sales"):
-            if parameters != ("2026-08-01", "2026-11-01"):
+            if parameters != ("2026-08-01", "2026-10-31"):
                 raise AssertionError(f"Unexpected summary-report date range: {parameters}")
             return SimpleNamespace(fetchone=lambda: {"total_so": 1800, "total_actual": 1650})
         raise AssertionError(f"Unexpected SQL in test: {statement}")
@@ -506,7 +506,29 @@ class HomeSummaryTests(unittest.TestCase):
         )
         self.assertFalse(result["year_months"][1]["has_data"])
         self.assertEqual(result["month_summary"]["manual_so"], 1800)
+        self.assertEqual(result["year_summary"]["manual_so"], 1800)
         self.assertEqual(result["summary_report"], {"so": 1800, "actual": 1650})
+
+    def test_home_summary_report_totals_follow_exact_selected_dates(self):
+        class CapturesReportRange(MemoryHomeSummaryRange):
+            report_parameters = None
+
+            def execute(self, statement, parameters=None):
+                if statement.startswith("SELECT SUM(so) AS total_so,SUM(actual) AS total_actual FROM sales"):
+                    self.report_parameters = parameters
+                    return SimpleNamespace(fetchone=lambda: {"total_so": 90, "total_actual": 85})
+                return super().execute(statement, parameters)
+
+        database = CapturesReportRange()
+        with patch.object(main, "db", return_value=database):
+            result = main.home_summary_range(
+                FakeRequest(),
+                start_date="2026-10-05",
+                end_date="2026-10-14",
+            )
+
+        self.assertEqual(database.report_parameters, ("2026-10-05", "2026-10-14"))
+        self.assertEqual(result["summary_report"], {"so": 90, "actual": 85})
 
     def test_home_summary_builds_daily_weekly_monthly_and_yearly_totals(self):
         with patch.object(main, "db", return_value=MemoryHomeSummary()):
