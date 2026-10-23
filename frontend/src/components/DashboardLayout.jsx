@@ -107,7 +107,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const isHome = location.pathname === '/beranda';
     const hasAuthenticatedUser = user?.role === 'admin' || user?.role === 'division';
     const [isCompactViewport, setIsCompactViewport] = useState(
-        () => window.matchMedia('(max-width: 900px)').matches,
+        () => window.matchMedia('(max-width: 1024px)').matches,
     );
     const [sidebarHidden, setSidebarHidden] =
         useState(readSidebarPreference);
@@ -133,7 +133,7 @@ export default function DashboardLayout({ user, onLogout }) {
     }, [isWeekly]);
 
     useEffect(() => {
-        const mediaQuery = window.matchMedia('(max-width: 900px)');
+        const mediaQuery = window.matchMedia('(max-width: 1024px)');
         const updateViewport = (event) => {
             setIsCompactViewport(event.matches);
             if (!event.matches) setMobileSidebarOpen(false);

@@ -1467,7 +1467,6 @@ textarea:focus-visible, a:focus-visible {
 @media (max-width: 720px) {
   .layout-shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar { position: fixed; left: 0; top: 0; width: 220px; transform: translateX(-100%); }
-  .layout-shell:not(.sidebar-hidden) .sidebar { transform: translateX(0); }
   .app-shell { padding: 8px; }
   .topbar { align-items: flex-start; flex-wrap: wrap; padding: 12px; }
   .top-controls { width: 100%; margin-left: 0; flex-wrap: wrap; gap: 10px; }
@@ -3381,7 +3380,7 @@ textarea:focus-visible, a:focus-visible {
   display: none;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
   .layout-shell {
     display: block;
     min-height: 100vh;
@@ -3408,7 +3407,11 @@ textarea:focus-visible, a:focus-visible {
     box-shadow: 5px 0 24px rgb(0 0 0 / 22%);
   }
 
-  .layout-shell.mobile-sidebar-open .sidebar {
+  .layout-shell:not(.mobile-sidebar-open) #sidebar {
+    transform: translateX(-105%);
+  }
+
+  .layout-shell.mobile-sidebar-open #sidebar {
     transform: translateX(0);
   }
 
