@@ -154,7 +154,6 @@ export default function HomePage() {
                 <div className="home-weekly-details">
                 <article className="home-subpanel home-volume-panel">
                     <h3>Volume dan perbandingan wilayah</h3>
-                    <p className="home-subpanel-caption">Volume menggunakan SO/Actual sales. Wilayah mengikuti data yang diinput pada laporan Average Price.</p>
                     <Message loading={loading} error={errors.price} empty={priceReport?.rows?.length === 0 ? 'Belum ada volume pada periode ini.' : ''}>
                         <div className="home-region-list">
                             {regionalVolume.length === 0
