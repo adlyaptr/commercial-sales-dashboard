@@ -17,6 +17,19 @@ import UsersPage from './pages/UsersPage';
 
 const YearlyPage = lazy(() => import('./pages/YearlyPage'));
 
+function DashboardAccess({ user, onLogout }) {
+    const location = useLocation();
+    if (!user && !['/', '/beranda'].includes(location.pathname)) {
+        return <Navigate to="/login" replace />;
+    }
+    return (
+        <DashboardLayout
+            user={user || { role: 'public' }}
+            onLogout={onLogout}
+        />
+    );
+}
+
 function App() {
     const [user, setUser] = useState(undefined);
 
@@ -43,7 +56,12 @@ function App() {
                     element={user ? <Navigate to="/beranda" replace /> : <LoginPage onLogin={setUser} />}
                 />
                 <Route
-                    element={user ? <DashboardLayout user={user} onLogout={() => setUser(null)} /> : <Navigate to="/login" replace />}
+                    element={(
+                        <DashboardAccess
+                            user={user}
+                            onLogout={() => setUser(null)}
+                        />
+                    )}
                 >
                     <Route index element={<Navigate to="/beranda" replace />} />
                     <Route path="beranda" element={<HomePage />} />

@@ -11,6 +11,12 @@ import main
 class FakeRequest:
     session = {"username": main.APP_USERNAME}
 
+class AnonymousRequest:
+    session = {}
+
+class DivisionRequest:
+    session = {"username": "division", "role": "division"}
+
 
 class MemoryMonthlyRange:
     def __enter__(self):
@@ -127,6 +133,41 @@ class MonthlyRangeTests(unittest.TestCase):
             row["rupiah"] / expected_sm3,
         )
 
+    def test_public_average_price_range_returns_only_aggregate_data(self):
+        with patch.object(main, "db", return_value=MemoryAveragePriceRange()):
+            result = main.monthly_average_price_range(
+                AnonymousRequest(),
+                "2026-10-01",
+                "2026-10-31",
+            )
+
+        self.assertEqual(
+            set(result),
+            {"start_date", "end_date", "rows", "regions", "valid_price_count", "totals"},
+        )
+        self.assertEqual(result["rows"], [])
+        self.assertEqual(result["valid_price_count"], 1)
+        self.assertEqual(result["regions"], [{
+            "region": "JAWA BARAT",
+            "so_sm3": 50000,
+            "actual_sm3": 28095,
+        }])
+        self.assertEqual(result["totals"]["sm3"], 28095)
+
+    def test_division_average_price_range_does_not_return_customer_details(self):
+        with (
+            patch.object(main, "db", return_value=MemoryAveragePriceRange()),
+            patch.object(main, "require_home_access"),
+        ):
+            result = main.monthly_average_price_range(
+                DivisionRequest(),
+                "2026-10-01",
+                "2026-10-31",
+            )
+
+        self.assertEqual(result["rows"], [])
+        self.assertEqual(result["valid_price_count"], 1)
+
     def test_excludes_customers_without_valid_price_from_average_totals(self):
         class IncludesUnpricedCustomer(MemoryAveragePriceRange):
             def execute(self, statement, parameters=None):
@@ -204,6 +245,29 @@ class MonthlyRangeTests(unittest.TestCase):
         self.assertEqual(result["totals"]["mmbtu"], 42)
         self.assertEqual(result["totals"]["usd"], 500)
         self.assertEqual(result["totals"]["rupiah"], 8400000)
+
+    def test_calculates_totals_from_workbook_mmbtu_when_amount_overrides_are_missing(self):
+        class WorkbookMmbtuOnlyRange(MemoryAveragePriceRange):
+            def execute(self, statement, parameters=None):
+                result = super().execute(statement, parameters)
+                rows = result.fetchall()
+                if rows:
+                    rows[0]["mmbtu_override"] = 42
+                return SimpleNamespace(fetchall=lambda: rows)
+
+        with patch.object(main, "db", return_value=WorkbookMmbtuOnlyRange()):
+            result = main.monthly_average_price_range(
+                FakeRequest(),
+                "2026-10-01",
+                "2026-10-31",
+            )
+
+        row = result["rows"][0]
+        self.assertEqual(row["volume_mmbtu"], 42)
+        self.assertEqual(row["total_usd"], 42)
+        self.assertEqual(row["rupiah"], 42 * 17895)
+        self.assertEqual(result["totals"]["usd"], 42)
+        self.assertEqual(result["totals"]["rupiah"], 42 * 17895)
 
     def test_counts_workbook_totals_without_exchange_or_operator_factor(self):
         class WorkbookTotalsWithoutConversions(MemoryAveragePriceRange):

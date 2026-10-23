@@ -149,20 +149,22 @@ def logged_in(request: Request) -> bool:
         or (username == APP_USERNAME and role is None)
     )
 
+def is_admin(request: Request) -> bool:
+    username = request.session.get("username")
+    role = request.session.get("role")
+    return role == "admin" or (role is None and username == APP_USERNAME)
+
 
 def require_login(request: Request):
     if not logged_in(request):
         raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
-    role = request.session.get("role")
-    if role != "admin" and not (
-        role is None and request.session.get("username") == APP_USERNAME
-    ):
+    if not is_admin(request):
         raise HTTPException(status_code=403, detail="Akses khusus admin.")
 
 
 def require_home_access(request: Request):
     if not logged_in(request):
-        raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
+        return
     username = request.session["username"]
     role = request.session.get("role")
     if role == "admin" or (role is None and username == APP_USERNAME):
@@ -934,7 +936,7 @@ def delete_manual_fob_sale(sale_id: int, request: Request):
 
 @app.get("/api/home-summary")
 def home_summary(request: Request, month: str):
-    require_login(request)
+    require_home_access(request)
     try:
         month_start = date.fromisoformat(f"{month}-01")
     except ValueError as exc:
@@ -1527,7 +1529,7 @@ def normalize_complaint(
 @app.get("/api/complaints")
 def list_complaints(request: Request):
     require_home_access(request)
-    if request.session.get("role") == "division":
+    if not is_admin(request):
         with db() as con:
             rows = con.execute(
                 "SELECT report_date,status FROM complaints "
@@ -2603,14 +2605,34 @@ def weekly_average_price(
     }
 
 
-def calculate_average_price(sm3, factor, price_unit, price_usd, price_rp, exchange_rate):
-    volume_mmbtu = sm3 / factor if factor > 0 else 0.0
+def calculate_average_price(
+    sm3,
+    factor,
+    price_unit,
+    price_usd,
+    price_rp,
+    exchange_rate,
+    mmbtu_override=None,
+    total_usd_override=None,
+    rupiah_override=None,
+):
+    volume_mmbtu = (
+        float(mmbtu_override)
+        if mmbtu_override is not None
+        else sm3 / factor if factor > 0 else 0.0
+    )
     if price_unit == "IDR_SM3":
         rupiah = sm3 * price_rp
         total_usd = rupiah / exchange_rate if exchange_rate > 0 else 0.0
     else:
         total_usd = volume_mmbtu * price_usd
         rupiah = total_usd * exchange_rate
+    if total_usd_override is not None:
+        total_usd = float(total_usd_override)
+        if rupiah_override is None:
+            rupiah = total_usd * exchange_rate
+    if rupiah_override is not None:
+        rupiah = float(rupiah_override)
     return volume_mmbtu, total_usd, rupiah
 
 
@@ -2732,14 +2754,16 @@ def monthly_average_price(request: Request, month: str):
             row.get("rupiah_override"),
         )
         mmbtu, total_usd, rupiah = calculate_average_price(
-            sm3, factor, price_unit, price, price_rp, exchange_rate
+            sm3,
+            factor,
+            price_unit,
+            price,
+            price_rp,
+            exchange_rate,
+            row.get("mmbtu_override"),
+            row.get("total_usd_override"),
+            row.get("rupiah_override"),
         )
-        if row.get("mmbtu_override") is not None:
-            mmbtu = float(row["mmbtu_override"])
-        if row.get("total_usd_override") is not None:
-            total_usd = float(row["total_usd_override"])
-        if row.get("rupiah_override") is not None:
-            rupiah = float(row["rupiah_override"])
         include_in_summary = bool(row.get("include_in_summary", True))
         if is_valid_price and include_in_summary:
             totals["sm3"] += sm3
@@ -2924,14 +2948,16 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             rupiah_override,
         )
         mmbtu, total_usd, rupiah = calculate_average_price(
-            sm3, factor, price_unit, price, price_rp, exchange_rate
+            sm3,
+            factor,
+            price_unit,
+            price,
+            price_rp,
+            exchange_rate,
+            mmbtu_override,
+            total_usd_override,
+            rupiah_override,
         )
-        if mmbtu_override is not None:
-            mmbtu = float(mmbtu_override)
-        if total_usd_override is not None:
-            total_usd = float(total_usd_override)
-        if rupiah_override is not None:
-            rupiah = float(rupiah_override)
         include_in_summary = bool(row.get("include_in_summary", True))
         if is_valid_price and include_in_summary:
             totals["sm3"] += sm3
@@ -2965,6 +2991,28 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
     totals["average_price_rp_sm3"] = (
         totals["rupiah"] / totals["sm3"] if totals["sm3"] else 0.0
     )
+    if not is_admin(request):
+        region_totals = {}
+        valid_price_count = 0
+        for row in rows:
+            region = row["region"] or "Belum ditentukan"
+            regional = region_totals.setdefault(
+                region,
+                {"region": region, "so_sm3": 0.0, "actual_sm3": 0.0},
+            )
+            regional["so_sm3"] += row["so_sm3"]
+            regional["actual_sm3"] += row["actual_sm3"]
+            valid_price_count += int(
+                row["has_valid_price"] and row["include_in_summary"]
+            )
+        return {
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "rows": [],
+            "regions": list(region_totals.values()),
+            "valid_price_count": valid_price_count,
+            "totals": totals,
+        }
     return {
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
@@ -3205,7 +3253,7 @@ async def save_mapping(request: Request):
         con.execute("INSERT INTO customers(customer_key,customer_name,operator) VALUES(%s,%s,%s) "
                 "ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),operator=VALUES(operator)",
                     (customer_key, customer, operator))
-    return {"ok": True, "customer_key": customer_key, "customer": customer, "operator": operator}
+    return {"ok": True}
 
 
 @app.post("/api/customer-mapping/bulk")

@@ -38,6 +38,17 @@ class MemoryComplaints:
 
     def execute(self, statement, parameters=None):
         parameters = parameters or ()
+        if statement.startswith("SELECT report_date,status FROM complaints ORDER BY"):
+            rows = sorted(
+                self.rows,
+                key=lambda row: (row["report_date"], row["id"]),
+                reverse=True,
+            )
+            return SimpleNamespace(fetchall=lambda: [
+                {"report_date": row["report_date"], "status": row["status"]}
+                for row in rows
+            ])
+
         if statement.startswith(f"SELECT {self.columns} FROM complaints ORDER BY"):
             rows = sorted(
                 self.rows,
@@ -344,7 +355,7 @@ class ComplaintApiTests(unittest.TestCase):
         self.assertIsNone(reopened["statusChangedAt"])
         self.assertNotEqual(closed_again["statusChangedAt"], closed["statusChangedAt"])
 
-    def test_invalid_input_and_unauthenticated_access_are_rejected(self):
+    def test_public_complaint_list_is_minimal_and_mutations_require_login(self):
         with self.assertRaises(main.HTTPException) as invalid:
             asyncio.run(main.create_complaint(FakeRequest(self.complaint(date="tanggal"))))
         self.assertEqual(invalid.exception.status_code, 400)
@@ -354,8 +365,14 @@ class ComplaintApiTests(unittest.TestCase):
         self.assertEqual(invalid_status.exception.status_code, 400)
 
         with self.assertRaises(main.HTTPException) as unauthenticated:
-            main.list_complaints(FakeRequest(authenticated=False))
+            asyncio.run(main.create_complaint(
+                FakeRequest(self.complaint(), authenticated=False)
+            ))
         self.assertEqual(unauthenticated.exception.status_code, 401)
+
+        asyncio.run(main.create_complaint(FakeRequest(self.complaint())))
+        public_complaints = main.list_complaints(FakeRequest(authenticated=False))
+        self.assertEqual(public_complaints, [{"date": "2026-10-13", "status": "Open"}])
 
     def test_legacy_import_is_safe_to_retry(self):
         legacy = self.complaint()
