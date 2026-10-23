@@ -105,8 +105,14 @@ export default function DashboardLayout({ user, onLogout }) {
     const isYearly = location.pathname === '/tahunan';
     const isMonthly = location.pathname === '/bulanan';
     const isHome = location.pathname === '/beranda';
+    const hasAuthenticatedUser = user?.role === 'admin' || user?.role === 'division';
     const [sidebarHidden, setSidebarHidden] =
         useState(readSidebarPreference);
+    const [isCompactViewport, setIsCompactViewport] = useState(
+        () => typeof window !== 'undefined'
+            && window.matchMedia('(max-width: 900px)').matches,
+    );
+    const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
     const [weeklyOpen, setWeeklyOpen] = useState(isWeekly);
     const [dates, setDates] = useState([]);
@@ -126,6 +132,23 @@ export default function DashboardLayout({ user, onLogout }) {
     useEffect(() => {
         if (isWeekly) setWeeklyOpen(true);
     }, [isWeekly]);
+
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(max-width: 900px)');
+        const updateViewport = (event) => setIsCompactViewport(event.matches);
+        setIsCompactViewport(mediaQuery.matches);
+        mediaQuery.addEventListener('change', updateViewport);
+        return () => mediaQuery.removeEventListener('change', updateViewport);
+    }, []);
+
+    useEffect(() => {
+        if (!isCompactViewport || !mobileSidebarOpen) return undefined;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = previousOverflow;
+        };
+    }, [isCompactViewport, mobileSidebarOpen]);
 
     // Memuat tanggal yang tersedia dari backend.
     const loadDates = useCallback(async () => {
@@ -352,12 +375,26 @@ export default function DashboardLayout({ user, onLogout }) {
     }
 
     function toggleSidebar() {
+        if (isCompactViewport) {
+            setMobileSidebarOpen((open) => !open);
+            return;
+        }
         setSidebarHidden((current) => {
             const next = !current;
             saveSidebarPreference(next);
             return next;
         });
     }
+
+    function closeMobileSidebarAfterNavigation(event) {
+        if (isCompactViewport && event.target.closest('a')) {
+            setMobileSidebarOpen(false);
+        }
+    }
+
+    const sidebarVisible = isCompactViewport
+        ? mobileSidebarOpen
+        : !sidebarHidden;
 
     const outletContext = {
         dashboard,
@@ -392,10 +429,18 @@ export default function DashboardLayout({ user, onLogout }) {
     return (
         <div
             className={
-                `layout-shell${sidebarHidden ? ' sidebar-hidden' : ''}`
+                `layout-shell${sidebarVisible ? '' : ' sidebar-hidden'}`
             }
         >
-            {!sidebarHidden && (
+            {isCompactViewport && sidebarVisible && (
+                <button
+                    className="sidebar-overlay"
+                    type="button"
+                    aria-label="Tutup navigasi"
+                    onClick={() => setMobileSidebarOpen(false)}
+                />
+            )}
+            {sidebarVisible && (
                 <aside className="sidebar" id="sidebar">
                     <NavLink
                         className="side-brand"
@@ -417,6 +462,7 @@ export default function DashboardLayout({ user, onLogout }) {
                     <nav
                         className="side-nav"
                         aria-label="Navigasi utama"
+                        onClick={closeMobileSidebarAfterNavigation}
                     >
                         <NavLink
                             className={classForNav}
@@ -528,17 +574,17 @@ export default function DashboardLayout({ user, onLogout }) {
                             className="sidebar-toggle"
                             onClick={toggleSidebar}
                             aria-label={
-                                sidebarHidden
+                                !sidebarVisible
                                     ? 'Tampilkan sidebar'
                                     : 'Sembunyikan sidebar'
                             }
                             title={
-                                sidebarHidden
+                                !sidebarVisible
                                     ? 'Tampilkan sidebar'
                                     : 'Sembunyikan sidebar'
                             }
                         >
-                            {sidebarHidden ? '☰' : '☷'}
+                            {!sidebarVisible ? '☰' : '☷'}
                         </button>
 
                         <div
@@ -636,9 +682,11 @@ export default function DashboardLayout({ user, onLogout }) {
                         <button
                             className="topbar-profile"
                             type="button"
-                            aria-label="Keluar dari aplikasi"
+                            aria-label={hasAuthenticatedUser ? 'Keluar dari aplikasi' : 'Login Admin'}
                             title={
-                                loggingOut
+                                !hasAuthenticatedUser
+                                    ? 'Login Admin'
+                                    : loggingOut
                                     ? 'Sedang keluar...'
                                     : `Keluar: ${
                                         user?.name ||
@@ -647,7 +695,7 @@ export default function DashboardLayout({ user, onLogout }) {
                                     }`
                             }
                             disabled={loggingOut}
-                            onClick={logout}
+                            onClick={hasAuthenticatedUser ? logout : () => navigate('/login')}
                         >
                             <span aria-hidden="true">👤</span>
                         </button>

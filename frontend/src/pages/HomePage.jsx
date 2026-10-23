@@ -186,7 +186,15 @@ export default function HomePage() {
             : Number(row.price_usd_per_mmbtu) > 0
                 && Number(row.sm3_per_mmbtu) > 0
                 && Number(row.exchange_rate) > 0) ?? [];
+    const validPriceCount = priceReport?.valid_price_count ?? validPriceRows.length;
     const regionalVolume = useMemo(() => {
+        if (priceReport?.regions) {
+            return priceReport.regions.map((region) => ({
+                region: region.region,
+                so: region.so_sm3,
+                actual: region.actual_sm3,
+            }));
+        }
         const regions = new Map();
         for (const row of priceReport?.rows ?? []) {
             const region = row.region || 'Belum ditentukan';
@@ -277,14 +285,14 @@ export default function HomePage() {
                     <article className="home-subpanel">
                         <h3>Average Price periode terpilih</h3>
                         <p className="home-subpanel-caption">Mengikuti volume dan hasil pada tab AVG untuk bulan yang telah tersedia.</p>
-                        <Message loading={loading} error={errors.price} empty={validPriceRows.length === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
+                        <Message loading={loading} error={errors.price} empty={validPriceCount === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
                             <div className="home-year-summary home-price-summary">
                                 <div><small>Average Rp/Sm³</small><strong>{formatAveragePrice(priceReport?.totals?.average_price_rp_sm3)}</strong></div>
                                 <div><small>Total MMBTU</small><strong>{formatNumber(priceReport?.totals?.mmbtu, 3)}</strong></div>
                                 <div><small>Total USD</small><strong>{formatCurrency(priceReport?.totals?.usd)}</strong></div>
                                 <div><small>Total Rupiah</small><strong>{formatCurrency(priceReport?.totals?.rupiah)}</strong></div>
                             </div>
-                            <small className="home-data-coverage">Perhitungan mencakup {validPriceRows.length} customer dengan harga/kurs valid.</small>
+                            <small className="home-data-coverage">Perhitungan mencakup {validPriceCount} customer dengan harga/kurs valid.</small>
                         </Message>
                     </article>
                     <article className="home-subpanel">

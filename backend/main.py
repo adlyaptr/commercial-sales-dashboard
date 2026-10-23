@@ -162,7 +162,7 @@ def require_login(request: Request):
 
 def require_home_access(request: Request):
     if not logged_in(request):
-        raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
+        return
     username = request.session["username"]
     role = request.session.get("role")
     if role == "admin" or (role is None and username == APP_USERNAME):
@@ -934,7 +934,7 @@ def delete_manual_fob_sale(sale_id: int, request: Request):
 
 @app.get("/api/home-summary")
 def home_summary(request: Request, month: str):
-    require_login(request)
+    require_home_access(request)
     try:
         month_start = date.fromisoformat(f"{month}-01")
     except ValueError as exc:
@@ -1527,7 +1527,11 @@ def normalize_complaint(
 @app.get("/api/complaints")
 def list_complaints(request: Request):
     require_home_access(request)
-    if request.session.get("role") == "division":
+    is_admin = request.session.get("role") == "admin" or (
+        request.session.get("role") is None
+        and request.session.get("username") == APP_USERNAME
+    )
+    if not is_admin:
         with db() as con:
             rows = con.execute(
                 "SELECT report_date,status FROM complaints "
@@ -2989,6 +2993,28 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
     totals["average_price_rp_sm3"] = (
         totals["rupiah"] / totals["sm3"] if totals["sm3"] else 0.0
     )
+    if not logged_in(request):
+        region_totals = {}
+        valid_price_count = 0
+        for row in rows:
+            region = row["region"] or "Belum ditentukan"
+            regional = region_totals.setdefault(
+                region,
+                {"region": region, "so_sm3": 0.0, "actual_sm3": 0.0},
+            )
+            regional["so_sm3"] += row["so_sm3"]
+            regional["actual_sm3"] += row["actual_sm3"]
+            valid_price_count += int(
+                row["has_valid_price"] and row["include_in_summary"]
+            )
+        return {
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "rows": [],
+            "regions": list(region_totals.values()),
+            "valid_price_count": valid_price_count,
+            "totals": totals,
+        }
     return {
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),

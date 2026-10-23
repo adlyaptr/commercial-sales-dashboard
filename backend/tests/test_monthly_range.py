@@ -11,6 +11,9 @@ import main
 class FakeRequest:
     session = {"username": main.APP_USERNAME}
 
+class AnonymousRequest:
+    session = {}
+
 
 class MemoryMonthlyRange:
     def __enter__(self):
@@ -126,6 +129,27 @@ class MonthlyRangeTests(unittest.TestCase):
             result["totals"]["average_price_rp_sm3"],
             row["rupiah"] / expected_sm3,
         )
+
+    def test_public_average_price_range_returns_only_aggregate_data(self):
+        with patch.object(main, "db", return_value=MemoryAveragePriceRange()):
+            result = main.monthly_average_price_range(
+                AnonymousRequest(),
+                "2026-10-01",
+                "2026-10-31",
+            )
+
+        self.assertEqual(
+            set(result),
+            {"start_date", "end_date", "rows", "regions", "valid_price_count", "totals"},
+        )
+        self.assertEqual(result["rows"], [])
+        self.assertEqual(result["valid_price_count"], 1)
+        self.assertEqual(result["regions"], [{
+            "region": "JAWA BARAT",
+            "so_sm3": 50000,
+            "actual_sm3": 28095,
+        }])
+        self.assertEqual(result["totals"]["sm3"], 28095)
 
     def test_excludes_customers_without_valid_price_from_average_totals(self):
         class IncludesUnpricedCustomer(MemoryAveragePriceRange):

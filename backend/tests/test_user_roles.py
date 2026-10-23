@@ -144,6 +144,10 @@ class UserRoleTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 401)
         self.assertEqual(request.session, {})
 
+    def test_home_access_is_available_without_a_session(self):
+        request = SimpleNamespace(session={})
+        self.assertIsNone(main.require_home_access(request))
+
     def test_login_accepts_admin_legacy_and_division_password_hashes(self):
         admin_request = FakeRequest({
             "username": main.APP_USERNAME,

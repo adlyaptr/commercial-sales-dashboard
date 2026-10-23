@@ -3,10 +3,14 @@ Website Sistem Laporan Commercial
 
 ## Role pengguna
 
+Beranda dapat dibuka tanpa login dan menampilkan ringkasan penjualan, agregat wilayah, jumlah customer dengan harga valid, serta tanggal dan status keluhan. Data customer dan rincian keluhan tidak ditampilkan kepada pengunjung publik.
+
 Sistem menyediakan dua role:
 
 - **Admin** menggunakan akun yang ditentukan oleh `APP_USERNAME` dan `APP_PASSWORD` pada konfigurasi backend, serta dapat membuka seluruh halaman.
-- **Divisi** hanya dapat membuka Beranda. Admin dapat membuat akun divisi, mengganti kata sandi, dan menghapus akun melalui menu **Pengguna**.
+- **Divisi** harus login dan hanya dapat membuka Beranda. Admin dapat membuat akun divisi, mengganti kata sandi, dan menghapus akun melalui menu **Pengguna**.
+
+Halaman selain Beranda memerlukan login Admin. Karena Beranda bersifat publik, siapa pun yang mengakses alamat sistem dapat melihat ringkasan yang tersedia di sana.
 
 Kolom role ditambahkan otomatis pada tabel `app_users` saat backend dimulai. Buat akun divisi melalui halaman Pengguna; kata sandi akun baru harus memiliki minimal 12 karakter.
 
