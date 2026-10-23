@@ -359,6 +359,7 @@ button { cursor: pointer; }
 .topbar-period-control.date-range .topbar-period-content { flex: 1; }
 .topbar-period-control.date-range .topbar-period-range input { width: 132px; }
 .topbar-period-control.home-period-control { min-width: 185px; }
+.topbar-period-control.home-period-control.date-range { min-width: 310px; }
 .home-period-picker {
     display: grid;
     grid-template-columns: 1fr;
@@ -502,7 +503,10 @@ button { cursor: pointer; }
     }
 
     .topbar-period-control.home-period-control { min-width: 0; }
+    .topbar-period-control.home-period-control.date-range { min-width: 0; }
     .home-period-picker { width: min(225px, calc(100vw - 30px)); }
+    .home-period-control.date-range .topbar-period-summary { font-size: 10px; padding: 4px 5px; }
+    .home-period-control.date-range .topbar-period-summary > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .topbar-period-control.date-range { min-width: 0; }
     .topbar-period-control.date-range input { width: 100%; }

@@ -10,7 +10,7 @@ Beranda (`/` atau `/beranda`) dapat dibuka langsung melalui tautan deploy tanpa 
 
 Halaman Pengguna tetap tersedia bagi Admin untuk mengelola akun yang sudah terdaftar. Kolom role ditambahkan otomatis pada tabel `app_users` saat backend dimulai.
 
-Beranda menyediakan pilihan periode Harian, Bulanan, dan Tahunan. Ringkasan, grafik, volume wilayah, Average Price, dan jumlah keluhan mengikuti tanggal/periode yang dipilih.
+Beranda dibuka dengan rentang tanggal seluruh data hingga tanggal actual terakhir, dan juga menyediakan pilihan Harian, Bulanan, dan Tahunan. Ringkasan, grafik, volume wilayah, Average Price, dan jumlah keluhan mengikuti tanggal/periode yang dipilih. Total Target untuk rentang, bulan, dan tahun dijumlahkan dari Total SO Periode yang diinput pada halaman Bulanan; mode Harian menampilkan SO transaksi pada tanggal terpilih.
 
 ## Average Price
 

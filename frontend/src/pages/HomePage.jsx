@@ -88,9 +88,12 @@ const chartOptions = {
 function PeriodMetrics({ summary, reportSummary, periodType }) {
     const displayedSO = periodType === 'daily'
         ? reportSummary?.so
-        : summary?.manual_so ?? reportSummary?.so;
+        : summary?.manual_so;
     const displayedActual = reportSummary?.actual ?? 0;
-    const displayedDiff = displayedActual - Number(displayedSO ?? 0);
+    const hasTarget = displayedSO != null;
+    const displayedDiff = hasTarget
+        ? displayedActual - Number(displayedSO)
+        : null;
     const achievement = reportSummary?.so
         ? displayedActual / reportSummary.so * 100
         : null;
@@ -98,15 +101,15 @@ function PeriodMetrics({ summary, reportSummary, periodType }) {
         <div className="home-period-metrics">
             <article className="kpi kpi-blue">
                 <div className="kpi-icon">◎</div>
-                <div><span>{periodType === 'daily' ? 'TOTAL SO' : 'TOTAL TARGET'}</span><strong>{formatNumber(displayedSO)}</strong><small>{periodType === 'daily' ? 'Sales Order pada tanggal terpilih' : summary?.manual_so == null ? 'Data pada periode terpilih' : 'Target dari halaman Bulanan'}</small></div>
+                <div><span>{periodType === 'daily' ? 'TOTAL SO' : 'TOTAL TARGET'}</span><strong>{displayedSO == null ? '—' : formatNumber(displayedSO)}</strong><small>{periodType === 'daily' ? 'Sales Order pada tanggal terpilih' : hasTarget ? 'Target dari halaman Bulanan' : 'Target bulanan belum diinput'}</small></div>
             </article>
             <article className="kpi kpi-green">
                 <div className="kpi-icon">↗</div>
                 <div><span>TOTAL ACTUAL</span><strong>{formatNumber(displayedActual)}</strong><small>Total Actual Summary Report</small></div>
             </article>
-            <article className={`kpi ${Number(displayedDiff ?? 0) >= 0 ? 'kpi-purple' : 'kpi-negative'}`}>
+            <article className={`kpi ${displayedDiff == null || displayedDiff >= 0 ? 'kpi-purple' : 'kpi-negative'}`}>
                 <div className="kpi-icon">±</div>
-                <div><span>DIFF (ACTUAL − TARGET)</span><strong>{Number(displayedDiff ?? 0) > 0 ? '+' : ''}{formatNumber(displayedDiff)}</strong><small>{Number(displayedDiff ?? 0) >= 0 ? 'Di atas target' : 'Di bawah target'}</small></div>
+                <div><span>DIFF (ACTUAL − TARGET)</span><strong>{displayedDiff == null ? '—' : `${displayedDiff > 0 ? '+' : ''}${formatNumber(displayedDiff)}`}</strong><small>{displayedDiff == null ? 'Target belum tersedia' : displayedDiff >= 0 ? 'Di atas target' : 'Di bawah target'}</small></div>
             </article>
             <article className="kpi kpi-teal">
                 <div className="kpi-icon">♙</div>
@@ -123,8 +126,8 @@ function PeriodMetrics({ summary, reportSummary, periodType }) {
 export default function HomePage() {
     const {
         homePeriodType,
-        rangeStartDate,
-        rangeEndDate,
+        homeRangeStartDate: rangeStartDate,
+        homeRangeEndDate: rangeEndDate,
         dataError,
         loadingDates,
     } = useOutletContext();
@@ -234,11 +237,11 @@ export default function HomePage() {
         }
         return rows;
     }, [rangeStartDate, rangeEndDate, summary]);
-    const chartRows = homePeriodType === 'yearly'
+    const chartRows = homePeriodType === 'yearly' || homePeriodType === 'range'
         ? summary?.year_months ?? []
         : dailyChartRows;
     const chartLabels = chartRows.map((item) => {
-        if (homePeriodType === 'yearly') {
+        if (homePeriodType === 'yearly' || homePeriodType === 'range') {
             const [year, month] = item.month.split('-');
             return `${months[Number(month) - 1].slice(0, 3)} '${year.slice(-2)}`;
         }
@@ -249,11 +252,10 @@ export default function HomePage() {
     });
     const periodChart = useMemo(() => {
         const datasets = [];
-        if (homePeriodType === 'yearly') {
+        if (homePeriodType === 'yearly' || homePeriodType === 'range') {
             datasets.push({
                 label: 'Target',
-                data: chartRows.map((item) =>
-                    item.manual_so ?? (item.has_data ? item.so : null)),
+                data: chartRows.map((item) => item.manual_so ?? null),
                 borderColor: '#139768',
                 backgroundColor: 'rgb(19 151 104 / 12%)',
                 tension: 0.28,
@@ -287,14 +289,18 @@ export default function HomePage() {
             : summary?.month_summary;
     const periodChartTitle = homePeriodType === 'daily'
         ? 'Rekapan Harian'
-        : homePeriodType === 'yearly'
-            ? 'Rekapan Tahunan'
-            : 'Rekapan Bulanan';
+        : homePeriodType === 'range'
+            ? 'Rekapan Periode'
+            : homePeriodType === 'yearly'
+                ? 'Rekapan Tahunan'
+                : 'Rekapan Bulanan';
     const periodChartDescription = homePeriodType === 'daily'
         ? 'Perbandingan Target, SO, dan Actual pada tanggal yang dipilih.'
-        : homePeriodType === 'yearly'
-            ? 'Perbandingan Target, SO, dan Actual per bulan pada tahun yang dipilih.'
-            : 'Perbandingan Target, SO, dan Actual per hari pada bulan yang dipilih.';
+        : homePeriodType === 'range'
+            ? 'Perbandingan Target Bulanan, SO, dan Actual pada rentang tanggal yang dipilih.'
+            : homePeriodType === 'yearly'
+                ? 'Perbandingan Target, SO, dan Actual per bulan pada tahun yang dipilih.'
+                : 'Perbandingan Target, SO, dan Actual per hari pada bulan yang dipilih.';
 
     return (
         <div className="home-page">
@@ -303,7 +309,7 @@ export default function HomePage() {
                 <Message loading={loading} error={errors.summary} empty={!summary ? '' : ''}>
                     {summary && <PeriodMetrics summary={periodSummary} reportSummary={summary.summary_report} periodType={homePeriodType} />}
                 </Message>
-                <p className="home-kpi-note">Ringkasan mengikuti periode terpilih. Total SO dan Actual mencakup seluruh customer termasuk OFF; jumlah customer aktif tidak menghitung customer berstatus OFF.</p>
+                <p className="home-kpi-note">Ringkasan mengikuti periode terpilih. Mode rentang, bulanan, dan tahunan mengambil Total Target dari Total SO Periode pada halaman Bulanan; mode Harian menampilkan SO transaksi pada tanggal terpilih. Total SO dan Actual mencakup customer OFF, sedangkan jumlah customer aktif tidak.</p>
             </section>
 
             <section className="home-section home-monthly-chart-section">

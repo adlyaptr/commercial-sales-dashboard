@@ -78,7 +78,10 @@ const formatReportDate = (date) => {
 const formatPeriodDate = (date) =>
     date ? date.split('-').reverse().join('/') : 'Pilih tanggal';
 
-const formatHomePeriod = (type, value) => {
+const formatHomePeriod = (type, value, startDate, endDate) => {
+    if (type === 'range') {
+        return `${formatPeriodDate(startDate)} – ${formatPeriodDate(endDate)}`;
+    }
     if (type === 'yearly') return value || 'Pilih tahun';
     if (type === 'monthly' && value) {
         const date = new Date(`${value}-01T00:00:00`);
@@ -120,7 +123,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const isMonthly = location.pathname === '/bulanan';
     const isHome = location.pathname === '/beranda';
     const hasAuthenticatedUser = user?.role === 'admin' || user?.role === 'division';
-    const [homePeriodType, setHomePeriodType] = useState('daily');
+    const [homePeriodType, setHomePeriodType] = useState('range');
     const [isCompactViewport, setIsCompactViewport] = useState(
         () => window.matchMedia('(max-width: 1024px)').matches,
     );
@@ -134,6 +137,8 @@ export default function DashboardLayout({ user, onLogout }) {
     const [selectedDate, setSelectedDate] = useState('');
     const [rangeStartDate, setRangeStartDate] = useState('');
     const [rangeEndDate, setRangeEndDate] = useState('');
+    const [homeRangeStartDate, setHomeRangeStartDate] = useState('');
+    const [homeRangeEndDate, setHomeRangeEndDate] = useState('');
     const [averagePriceMonth, setAveragePriceMonth] = useState('');
     const [rangePickerOpen, setRangePickerOpen] = useState(false);
     const [dashboard, setDashboard] = useState(null);
@@ -212,9 +217,12 @@ export default function DashboardLayout({ user, onLogout }) {
             const defaultDate = normalizedDates.includes(latestActual)
                 ? latestActual
                 : normalizedDates[0] ?? '';
+            const earliestDate = normalizedDates[normalizedDates.length - 1] ?? '';
             setSelectedDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
             setRangeStartDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
             setRangeEndDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
+            setHomeRangeStartDate((current) => current && normalizedDates.includes(current) ? current : earliestDate);
+            setHomeRangeEndDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
             setAveragePriceMonth((current) => current || defaultDate.slice(0, 7));
 
             setDataError('');
@@ -272,9 +280,12 @@ export default function DashboardLayout({ user, onLogout }) {
                 const defaultDate = normalizedDates.includes(latestActual)
                     ? latestActual
                     : normalizedDates[0] ?? '';
+                const earliestDate = normalizedDates[normalizedDates.length - 1] ?? '';
                 setSelectedDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
                 setRangeStartDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
                 setRangeEndDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
+                setHomeRangeStartDate((current) => current && normalizedDates.includes(current) ? current : earliestDate);
+                setHomeRangeEndDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
                 setAveragePriceMonth((current) => current || defaultDate.slice(0, 7));
 
                 setDataError('');
@@ -411,6 +422,8 @@ export default function DashboardLayout({ user, onLogout }) {
     const outletContext = {
         dashboard,
         homePeriodType,
+        homeRangeStartDate,
+        homeRangeEndDate,
         selectedDate,
         rangeStartDate,
         rangeEndDate,
@@ -460,15 +473,38 @@ export default function DashboardLayout({ user, onLogout }) {
         setSelectedDate(canonicalDate);
         setRangeStartDate(startDate);
         setRangeEndDate(endDate);
+        setHomeRangeStartDate(startDate);
+        setHomeRangeEndDate(endDate);
     }
 
     function changeHomePeriodType(type) {
+        if (type === 'range') {
+            setHomePeriodType(type);
+            return;
+        }
+        const referenceDate = homePeriodType === 'range'
+            ? homeRangeEndDate
+            : selectedDate;
         const currentValue = type === 'monthly'
-            ? selectedDate.slice(0, 7)
+            ? referenceDate.slice(0, 7)
             : type === 'yearly'
-                ? selectedDate.slice(0, 4)
-                : selectedDate;
+                ? referenceDate.slice(0, 4)
+                : referenceDate;
         updateHomePeriod(type, currentValue);
+    }
+
+    function updateHomeRangeStart(value) {
+        setHomeRangeStartDate(value);
+        if (!homeRangeEndDate || value > homeRangeEndDate) {
+            setHomeRangeEndDate(value);
+        }
+    }
+
+    function updateHomeRangeEnd(value) {
+        setHomeRangeEndDate(value);
+        if (!homeRangeStartDate || value < homeRangeStartDate) {
+            setHomeRangeStartDate(value);
+        }
     }
 
     function toggleSidebar() {
@@ -681,7 +717,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
             
                     <div className="topbar-actions">
-                        <div className={`topbar-period-control${isHome ? ' home-period-control' : ''}${isHome || isDaily || isAveragePrice ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
+                        <div className={`topbar-period-control${isHome ? ' home-period-control' : ''}${(isHome && homePeriodType !== 'range') || isDaily || isAveragePrice ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
                                 <span
                                     className="topbar-calendar"
                                     aria-hidden="true"
@@ -701,7 +737,12 @@ export default function DashboardLayout({ user, onLogout }) {
                                                 onClick={() => setRangePickerOpen((open) => !open)}
                                             >
                                                 <span>
-                                                    {formatHomePeriod(homePeriodType, homePeriodValue)}
+                                                    {formatHomePeriod(
+                                                        homePeriodType,
+                                                        homePeriodValue,
+                                                        homeRangeStartDate,
+                                                        homeRangeEndDate,
+                                                    )}
                                                 </span>
                                                 <span className="topbar-period-summary-icon" aria-hidden="true">▾</span>
                                             </button>
@@ -715,46 +756,74 @@ export default function DashboardLayout({ user, onLogout }) {
                                                             disabled={loadingDates || dates.length === 0}
                                                             onChange={(event) => changeHomePeriodType(event.target.value)}
                                                         >
+                                                            <option value="range">Rentang</option>
                                                             <option value="daily">Harian</option>
                                                             <option value="monthly">Bulanan</option>
                                                             <option value="yearly">Tahunan</option>
                                                         </select>
                                                     </label>
-                                                    <label>
-                                                        <span>
-                                                            {homePeriodType === 'daily'
-                                                                ? 'Tanggal'
-                                                                : homePeriodType === 'monthly'
-                                                                    ? 'Bulan'
-                                                                    : 'Tahun'}
-                                                        </span>
-                                                        {homePeriodType === 'daily' ? (
-                                                            <input
-                                                                aria-label="Tanggal Beranda"
-                                                                type="date"
-                                                                value={homePeriodValue}
-                                                                disabled={loadingDates || dates.length === 0}
-                                                                onChange={(event) => updateHomePeriod('daily', event.target.value)}
-                                                            />
-                                                        ) : homePeriodType === 'monthly' ? (
-                                                            <input
-                                                                aria-label="Bulan Beranda"
-                                                                type="month"
-                                                                value={homePeriodValue}
-                                                                disabled={loadingDates || dates.length === 0}
-                                                                onChange={(event) => updateHomePeriod('monthly', event.target.value)}
-                                                            />
-                                                        ) : (
-                                                            <select
-                                                                aria-label="Tahun Beranda"
-                                                                value={homePeriodValue}
-                                                                disabled={loadingDates || availableYears.length === 0}
-                                                                onChange={(event) => updateHomePeriod('yearly', event.target.value)}
-                                                            >
-                                                                {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
-                                                            </select>
-                                                        )}
-                                                    </label>
+                                                    {homePeriodType === 'range' ? (
+                                                        <>
+                                                            <label>
+                                                                <span>Dari</span>
+                                                                <input
+                                                                    aria-label="Tanggal awal Beranda"
+                                                                    type="date"
+                                                                    value={homeRangeStartDate}
+                                                                    max={homeRangeEndDate || undefined}
+                                                                    disabled={loadingDates || dates.length === 0}
+                                                                    onChange={(event) => updateHomeRangeStart(event.target.value)}
+                                                                />
+                                                            </label>
+                                                            <label>
+                                                                <span>Sampai</span>
+                                                                <input
+                                                                    aria-label="Tanggal akhir Beranda"
+                                                                    type="date"
+                                                                    value={homeRangeEndDate}
+                                                                    min={homeRangeStartDate || undefined}
+                                                                    disabled={loadingDates || dates.length === 0}
+                                                                    onChange={(event) => updateHomeRangeEnd(event.target.value)}
+                                                                />
+                                                            </label>
+                                                        </>
+                                                    ) : (
+                                                        <label>
+                                                            <span>
+                                                                {homePeriodType === 'daily'
+                                                                    ? 'Tanggal'
+                                                                    : homePeriodType === 'monthly'
+                                                                        ? 'Bulan'
+                                                                        : 'Tahun'}
+                                                            </span>
+                                                            {homePeriodType === 'daily' ? (
+                                                                <input
+                                                                    aria-label="Tanggal Beranda"
+                                                                    type="date"
+                                                                    value={homePeriodValue}
+                                                                    disabled={loadingDates || dates.length === 0}
+                                                                    onChange={(event) => updateHomePeriod('daily', event.target.value)}
+                                                                />
+                                                            ) : homePeriodType === 'monthly' ? (
+                                                                <input
+                                                                    aria-label="Bulan Beranda"
+                                                                    type="month"
+                                                                    value={homePeriodValue}
+                                                                    disabled={loadingDates || dates.length === 0}
+                                                                    onChange={(event) => updateHomePeriod('monthly', event.target.value)}
+                                                                />
+                                                            ) : (
+                                                                <select
+                                                                    aria-label="Tahun Beranda"
+                                                                    value={homePeriodValue}
+                                                                    disabled={loadingDates || availableYears.length === 0}
+                                                                    onChange={(event) => updateHomePeriod('yearly', event.target.value)}
+                                                                >
+                                                                    {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
+                                                                </select>
+                                                            )}
+                                                        </label>
+                                                    )}
                                                     <button
                                                         className="topbar-period-done"
                                                         type="button"
