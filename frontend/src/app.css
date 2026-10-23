@@ -358,39 +358,6 @@ button { cursor: pointer; }
 .topbar-period-control.date-range { min-width: 278px; }
 .topbar-period-control.date-range .topbar-period-content { flex: 1; }
 .topbar-period-control.date-range .topbar-period-range input { width: 132px; }
-.topbar-period-control.home-period-control { min-width: 185px; }
-.topbar-period-control.home-period-control.date-range { min-width: 310px; }
-.home-period-picker {
-    display: grid;
-    grid-template-columns: 1fr;
-    align-items: stretch;
-    width: 225px;
-}
-.home-period-picker label {
-    display: grid;
-    grid-template-columns: 82px minmax(0, 1fr);
-    gap: 7px;
-}
-.home-period-picker label > span {
-    color: #e0f5e9;
-    font-size: 9px;
-}
-.home-period-picker input,
-.home-period-picker select {
-    width: 100%;
-    min-width: 0;
-    min-height: 27px;
-    padding: 3px 5px;
-    border: 1px solid rgb(255 255 255 / 44%);
-    border-radius: 4px;
-    outline: none;
-    background: #16845b;
-    color: #fff;
-    color-scheme: dark;
-    font-family: inherit;
-    font-size: 10px;
-    font-weight: 700;
-}
 .topbar-period-content input:disabled { opacity: .65; cursor: wait; }
 
 @media (max-width: 1200px) {
@@ -501,12 +468,6 @@ button { cursor: pointer; }
         flex: 1;
         min-width: 0;
     }
-
-    .topbar-period-control.home-period-control { min-width: 0; }
-    .topbar-period-control.home-period-control.date-range { min-width: 0; }
-    .home-period-picker { width: min(225px, calc(100vw - 30px)); }
-    .home-period-control.date-range .topbar-period-summary { font-size: 10px; padding: 4px 5px; }
-    .home-period-control.date-range .topbar-period-summary > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .topbar-period-control.date-range { min-width: 0; }
     .topbar-period-control.date-range input { width: 100%; }

@@ -10,8 +10,6 @@ Beranda (`/` atau `/beranda`) dapat dibuka langsung melalui tautan deploy tanpa 
 
 Halaman Pengguna tetap tersedia bagi Admin untuk mengelola akun yang sudah terdaftar. Kolom role ditambahkan otomatis pada tabel `app_users` saat backend dimulai.
 
-Beranda dibuka dengan rentang tanggal seluruh data hingga tanggal actual terakhir, dan juga menyediakan pilihan Harian, Bulanan, dan Tahunan. Ringkasan, grafik, volume wilayah, Average Price, dan jumlah keluhan mengikuti tanggal/periode yang dipilih. Total Target untuk rentang, bulan, dan tahun dijumlahkan dari Total SO Periode yang diinput pada halaman Bulanan; mode Harian menampilkan SO transaksi pada tanggal terpilih.
-
 ## Average Price
 
 Perhitungan bulanan menggunakan nilai volume dan hasil dari sheet `AVG` workbook 2026 untuk Januari–November; daftar customer diurutkan mengikuti sheet masing-masing bulan. Nilai impor disimpan sebagai override per customer dan faktor konversi mengikuti nilai presisi pada workbook. Nilai hasil workbook tetap digunakan saat faktor atau kurs diubah selama harga customer tidak berubah. Jika harga customer diubah, total dihitung ulang menggunakan volume dan MMBTU workbook. Total konsolidasi mengikuti sheet `Summary`: KSN Ranca pada Juni dan customer Jawa Timur pada September–November tetap ditampilkan sebagai detail, tetapi tidak masuk total. Untuk rentang tanggal parsial, sistem memakai volume sales aktual agar tidak memakai total satu bulan penuh. Data November 2026 pada workbook berstatus prognosa; detail Desember belum tersedia.

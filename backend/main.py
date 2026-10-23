@@ -1176,6 +1176,10 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
     operators = (*OPERATORS, "OFF")
     first_month = start.replace(day=1)
     last_month = end.replace(day=1)
+    if last_month.month == 12:
+        after_last_month = date(last_month.year + 1, 1, 1)
+    else:
+        after_last_month = date(last_month.year, last_month.month + 1, 1)
     with db() as con:
         rows = con.execute(
             """
@@ -1193,8 +1197,8 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
         ).fetchall()
         report_totals = con.execute(
             "SELECT SUM(so) AS total_so,SUM(actual) AS total_actual FROM sales "
-            "WHERE report_date BETWEEN %s AND %s",
-            (start.isoformat(), end.isoformat()),
+            "WHERE report_date >= %s AND report_date < %s",
+            (first_month.isoformat(), after_last_month.isoformat()),
         ).fetchone()
 
     monthly_targets = {
@@ -1335,7 +1339,6 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             operators=operators_totals,
             through_month=end.strftime("%Y-%m"),
             has_data=bool(rows),
-            manual_so=sum(float(row["so"] or 0) for row in target_rows) if target_rows else None,
         ),
         "year_months": year_months,
     }

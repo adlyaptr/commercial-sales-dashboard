@@ -85,15 +85,10 @@ const chartOptions = {
     },
 };
 
-function PeriodMetrics({ summary, reportSummary, periodType }) {
-    const displayedSO = periodType === 'daily'
-        ? reportSummary?.so
-        : summary?.manual_so;
+function PeriodMetrics({ summary, reportSummary }) {
+    const displayedSO = summary?.manual_so ?? reportSummary?.so;
     const displayedActual = reportSummary?.actual ?? 0;
-    const hasTarget = displayedSO != null;
-    const displayedDiff = hasTarget
-        ? displayedActual - Number(displayedSO)
-        : null;
+    const displayedDiff = displayedActual - Number(displayedSO ?? 0);
     const achievement = reportSummary?.so
         ? displayedActual / reportSummary.so * 100
         : null;
@@ -101,15 +96,15 @@ function PeriodMetrics({ summary, reportSummary, periodType }) {
         <div className="home-period-metrics">
             <article className="kpi kpi-blue">
                 <div className="kpi-icon">◎</div>
-                <div><span>{periodType === 'daily' ? 'TOTAL SO' : 'TOTAL TARGET'}</span><strong>{displayedSO == null ? '—' : formatNumber(displayedSO)}</strong><small>{periodType === 'daily' ? 'Sales Order pada tanggal terpilih' : hasTarget ? 'Target dari halaman Bulanan' : 'Target bulanan belum diinput'}</small></div>
+                <div><span>TOTAL TARGET</span><strong>{formatNumber(displayedSO)}</strong><small>{summary?.manual_so == null ? 'Data pada periode terpilih' : 'Target bulanan dari halaman Bulanan'}</small></div>
             </article>
             <article className="kpi kpi-green">
                 <div className="kpi-icon">↗</div>
                 <div><span>TOTAL ACTUAL</span><strong>{formatNumber(displayedActual)}</strong><small>Total Actual Summary Report</small></div>
             </article>
-            <article className={`kpi ${displayedDiff == null || displayedDiff >= 0 ? 'kpi-purple' : 'kpi-negative'}`}>
+            <article className={`kpi ${Number(displayedDiff ?? 0) >= 0 ? 'kpi-purple' : 'kpi-negative'}`}>
                 <div className="kpi-icon">±</div>
-                <div><span>DIFF (ACTUAL − TARGET)</span><strong>{displayedDiff == null ? '—' : `${displayedDiff > 0 ? '+' : ''}${formatNumber(displayedDiff)}`}</strong><small>{displayedDiff == null ? 'Target belum tersedia' : displayedDiff >= 0 ? 'Di atas target' : 'Di bawah target'}</small></div>
+                <div><span>DIFF (ACTUAL − TARGET)</span><strong>{Number(displayedDiff ?? 0) > 0 ? '+' : ''}{formatNumber(displayedDiff)}</strong><small>{Number(displayedDiff ?? 0) >= 0 ? 'Di atas target' : 'Di bawah target'}</small></div>
             </article>
             <article className="kpi kpi-teal">
                 <div className="kpi-icon">♙</div>
@@ -124,13 +119,7 @@ function PeriodMetrics({ summary, reportSummary, periodType }) {
 }
 
 export default function HomePage() {
-    const {
-        homePeriodType,
-        homeRangeStartDate: rangeStartDate,
-        homeRangeEndDate: rangeEndDate,
-        dataError,
-        loadingDates,
-    } = useOutletContext();
+    const { rangeStartDate, rangeEndDate, dataError, loadingDates } = useOutletContext();
     const [summary, setSummary] = useState(null);
     const [priceReport, setPriceReport] = useState(null);
     const [complaints, setComplaints] = useState([]);
@@ -217,55 +206,24 @@ export default function HomePage() {
         return [...regions.entries()].map(([region, totals]) => ({ region, ...totals }));
     }, [priceReport]);
 
-    const dailyRowsByDate = new Map(
-        (summary?.days ?? []).map((item) => [item.date, item]),
-    );
-    const dailyChartRows = useMemo(() => {
-        if (!rangeStartDate || !rangeEndDate) return [];
-        const current = new Date(`${rangeStartDate}T00:00:00Z`);
-        const end = new Date(`${rangeEndDate}T00:00:00Z`);
-        const rows = [];
-        while (current <= end) {
-            const date = current.toISOString().slice(0, 10);
-            rows.push(dailyRowsByDate.get(date) ?? {
-                date,
-                has_data: false,
-                so: 0,
-                actual: 0,
-            });
-            current.setUTCDate(current.getUTCDate() + 1);
-        }
-        return rows;
-    }, [rangeStartDate, rangeEndDate, summary]);
-    const chartRows = homePeriodType === 'yearly' || homePeriodType === 'range'
-        ? summary?.year_months ?? []
-        : dailyChartRows;
-    const chartLabels = chartRows.map((item) => {
-        if (homePeriodType === 'yearly' || homePeriodType === 'range') {
+    const monthlyChart = useMemo(() => ({
+        labels: summary?.year_months?.map((item) => {
             const [year, month] = item.month.split('-');
             return `${months[Number(month) - 1].slice(0, 3)} '${year.slice(-2)}`;
-        }
-        const [, month, day] = item.date.split('-');
-        return homePeriodType === 'monthly'
-            ? day
-            : `${day} ${months[Number(month) - 1].slice(0, 3)}`;
-    });
-    const periodChart = useMemo(() => {
-        const datasets = [];
-        if (homePeriodType === 'yearly' || homePeriodType === 'range') {
-            datasets.push({
+        }) ?? [],
+        datasets: [
+            {
                 label: 'Target',
-                data: chartRows.map((item) => item.manual_so ?? null),
+                data: summary?.year_months?.map((item) =>
+                    item.manual_so ?? (item.has_data ? item.so : null)) ?? [],
                 borderColor: '#139768',
                 backgroundColor: 'rgb(19 151 104 / 12%)',
                 tension: 0.28,
                 spanGaps: false,
-            });
-        }
-        datasets.push(
+            },
             {
                 label: 'SO',
-                data: chartRows.map((item) => item.has_data ? item.so : null),
+                data: summary?.year_months?.map((item) => item.has_data ? item.so : null) ?? [],
                 borderColor: '#1777d1',
                 backgroundColor: 'rgb(23 119 209 / 12%)',
                 tension: 0.28,
@@ -273,56 +231,36 @@ export default function HomePage() {
             },
             {
                 label: 'Actual',
-                data: chartRows.map((item) => item.has_data ? item.actual : null),
+                data: summary?.year_months?.map((item) => item.has_data ? item.actual : null) ?? [],
                 borderColor: '#f0a43a',
                 backgroundColor: 'rgb(240 164 58 / 12%)',
                 tension: 0.28,
                 spanGaps: false,
             },
-        );
-        return { labels: chartLabels, datasets };
-    }, [chartRows, chartLabels, homePeriodType]);
-    const periodSummary = homePeriodType === 'daily'
-        ? summary?.days?.[0]
-        : homePeriodType === 'yearly'
-            ? summary?.year_summary
-            : summary?.month_summary;
-    const periodChartTitle = homePeriodType === 'daily'
-        ? 'Rekapan Harian'
-        : homePeriodType === 'range'
-            ? 'Rekapan Periode'
-            : homePeriodType === 'yearly'
-                ? 'Rekapan Tahunan'
-                : 'Rekapan Bulanan';
-    const periodChartDescription = homePeriodType === 'daily'
-        ? 'Perbandingan Target, SO, dan Actual pada tanggal yang dipilih.'
-        : homePeriodType === 'range'
-            ? 'Perbandingan Target Bulanan, SO, dan Actual pada rentang tanggal yang dipilih.'
-            : homePeriodType === 'yearly'
-                ? 'Perbandingan Target, SO, dan Actual per bulan pada tahun yang dipilih.'
-                : 'Perbandingan Target, SO, dan Actual per hari pada bulan yang dipilih.';
+        ],
+    }), [summary]);
 
     return (
         <div className="home-page">
             <section className="home-section home-kpi-section" aria-label="Ringkasan">
                 {!rangeStartDate && <div className="home-message">{dataError || (loadingDates ? 'Memuat periode...' : 'Pilih periode laporan.')}</div>}
                 <Message loading={loading} error={errors.summary} empty={!summary ? '' : ''}>
-                    {summary && <PeriodMetrics summary={periodSummary} reportSummary={summary.summary_report} periodType={homePeriodType} />}
+                    {summary && <PeriodMetrics summary={summary.month_summary} reportSummary={summary.summary_report} />}
                 </Message>
-                <p className="home-kpi-note">Ringkasan mengikuti periode terpilih. Mode rentang, bulanan, dan tahunan mengambil Total Target dari Total SO Periode pada halaman Bulanan; mode Harian menampilkan SO transaksi pada tanggal terpilih. Total SO dan Actual mencakup customer OFF, sedangkan jumlah customer aktif tidak.</p>
+                <p className="home-kpi-note">Total SO dan Actual mencakup seluruh customer termasuk OFF; jumlah customer aktif tidak menghitung customer berstatus OFF. Bulan tanpa data ditampilkan tanpa angka rekaan.</p>
             </section>
 
             <section className="home-section home-monthly-chart-section">
                 <SectionHeading
-                    title={periodChartTitle}
-                    description={periodChartDescription}
+                    title="Rekapan Bulanan"
+                    description="Perbandingan target, SO, dan actual per bulan pada rentang tanggal terpilih."
                 />
                 <Message
                     loading={loading}
                     error={errors.summary}
-                    empty={!chartRows.some((item) => item.has_data) ? 'Belum ada transaksi pada periode yang dipilih.' : ''}
+                    empty={!summary?.year_months?.some((item) => item.has_data) ? 'Belum ada transaksi pada rentang tanggal yang dipilih.' : ''}
                 >
-                    {summary && <div className="home-monthly-chart"><Line data={periodChart} options={chartOptions} /></div>}
+                    {summary && <div className="home-monthly-chart"><Line data={monthlyChart} options={chartOptions} /></div>}
                 </Message>
             </section>
 
@@ -330,7 +268,7 @@ export default function HomePage() {
                 <div className="home-weekly-details">
                 <article className="home-subpanel home-volume-panel">
                     <h3>Volume dan perbandingan wilayah</h3>
-                    <p className="home-subpanel-caption">Volume mengikuti periode terpilih; wilayah mengikuti data pada laporan Average Price.</p>
+                    <p className="home-subpanel-caption">Volume menggunakan SO/Actual sales. Wilayah mengikuti data yang diinput pada laporan Average Price.</p>
                     <Message loading={loading} error={errors.price} empty={priceReport?.rows?.length === 0 ? 'Belum ada volume pada periode ini.' : ''}>
                         <div className="home-region-list">
                             {regionalVolume.length === 0
@@ -346,7 +284,7 @@ export default function HomePage() {
                 </article>
                     <article className="home-subpanel">
                         <h3>Average Price periode terpilih</h3>
-                        <p className="home-subpanel-caption">Perhitungan mengikuti periode yang dipilih dan harga efektif pada tab Average Price.</p>
+                        <p className="home-subpanel-caption">Mengikuti volume dan hasil pada tab AVG untuk bulan yang telah tersedia.</p>
                         <Message loading={loading} error={errors.price} empty={validPriceCount === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
                             <div className="home-year-summary home-price-summary">
                                 <div><small>Average Rp/Sm³</small><strong>{formatAveragePrice(priceReport?.totals?.average_price_rp_sm3)}</strong></div>
