@@ -120,6 +120,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const [rangeStartDate, setRangeStartDate] = useState('');
     const [rangeEndDate, setRangeEndDate] = useState('');
     const [averagePriceMonth, setAveragePriceMonth] = useState('');
+    const [monthlyMonth, setMonthlyMonth] = useState('');
     const [rangePickerOpen, setRangePickerOpen] = useState(false);
     const [dashboard, setDashboard] = useState(null);
     const [dataError, setDataError] = useState('');
@@ -201,6 +202,7 @@ export default function DashboardLayout({ user, onLogout }) {
             setRangeStartDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
             setRangeEndDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
             setAveragePriceMonth((current) => current || defaultDate.slice(0, 7));
+            setMonthlyMonth((current) => current && normalizedDates.some((date) => date.startsWith(current)) ? current : defaultDate.slice(0, 7));
 
             setDataError('');
             return {
@@ -261,6 +263,7 @@ export default function DashboardLayout({ user, onLogout }) {
                 setRangeStartDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
                 setRangeEndDate((current) => current && normalizedDates.includes(current) ? current : defaultDate);
                 setAveragePriceMonth((current) => current || defaultDate.slice(0, 7));
+                setMonthlyMonth((current) => current && normalizedDates.some((date) => date.startsWith(current)) ? current : defaultDate.slice(0, 7));
 
                 setDataError('');
             } catch (error) {
@@ -352,6 +355,7 @@ export default function DashboardLayout({ user, onLogout }) {
             setRangeStartDate(nextDate);
             setRangeEndDate(nextDate);
             setAveragePriceMonth(nextDate.slice(0, 7));
+            setMonthlyMonth(nextDate.slice(0, 7));
             if (nextDate && nextDate === previousDate) {
                 const refreshed = await api(
                     `/api/dashboard?report_date=${encodeURIComponent(nextDate)}`
@@ -400,6 +404,7 @@ export default function DashboardLayout({ user, onLogout }) {
         rangeEndDate,
         averagePriceMonth,
         setAveragePriceMonth,
+        monthlyMonth,
         dates,
         refreshDashboard,
         dataError,
@@ -627,7 +632,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
             
                     <div className="topbar-actions">
-                        <div className={`topbar-period-control${isDaily || isAveragePrice ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
+                        <div className={`topbar-period-control${isDaily || isMonthly || isAveragePrice ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
                                 <span
                                     className="topbar-calendar"
                                     aria-hidden="true"
@@ -644,6 +649,14 @@ export default function DashboardLayout({ user, onLogout }) {
                                             value={selectedDate}
                                             disabled={loadingDates || dates.length === 0}
                                             onChange={(event) => updateDailyDate(event.target.value)}
+                                        />
+                                    ) : isMonthly ? (
+                                        <input
+                                            aria-label="Bulan laporan"
+                                            type="month"
+                                            value={monthlyMonth}
+                                            disabled={loadingDates || dates.length === 0}
+                                            onChange={(event) => setMonthlyMonth(event.target.value)}
                                         />
                                     ) : isAveragePrice ? (
                                         <input

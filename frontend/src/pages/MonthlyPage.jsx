@@ -50,24 +50,6 @@ const fmtPercent = (value) =>
 const sum = (values) =>
   values.reduce((total, value) => total + (Number(value) || 0), 0);
 
-function periodKeysBetween(startDate, endDate) {
-  if (!startDate || !endDate) return [];
-  const periods = [];
-  const [startYear, startMonth] = startDate.slice(0, 7).split("-").map(Number);
-  const [endYear, endMonth] = endDate.slice(0, 7).split("-").map(Number);
-  let year = startYear;
-  let month = startMonth;
-  while (year < endYear || (year === endYear && month <= endMonth)) {
-    periods.push(`${year}-${String(month).padStart(2, "0")}`);
-    month += 1;
-    if (month > 12) {
-      month = 1;
-      year += 1;
-    }
-  }
-  return periods;
-}
-
 function periodLabel(period) {
   const [year, month] = period.split("-").map(Number);
   return `${months[month - 1]} ${year}`;
@@ -104,15 +86,14 @@ function buildCustomerRows(items = [], periods = []) {
 }
 
 export default function MonthlyPage() {
-  const { rangeStartDate, rangeEndDate } = useOutletContext();
+  const { monthlyMonth } = useOutletContext();
   const [region, setRegion] = useState("Semua Wilayah");
   const [operator, setOperator] = useState("Semua MS");
 
   const [filter, setFilter] = useState({
     region: "Semua Wilayah",
     operator: "Semua MS",
-    startDate: rangeStartDate,
-    endDate: rangeEndDate,
+    month: monthlyMonth,
   });
 
   const [records, setRecords] = useState([]);
@@ -123,19 +104,15 @@ export default function MonthlyPage() {
   const [manualSOSaving, setManualSOSaving] = useState(false);
   const [manualSOError, setManualSOError] = useState("");
   const [manualSOSaved, setManualSOSaved] = useState(false);
-  const periodKeys = useMemo(
-    () => periodKeysBetween(filter.startDate, filter.endDate),
-    [filter.startDate, filter.endDate],
-  );
+  const periodKeys = useMemo(() => filter.month ? [filter.month] : [], [filter.month]);
   const periodLabels = useMemo(() => periodKeys.map(periodLabel), [periodKeys]);
 
   useEffect(() => {
     setFilter((current) => ({
       ...current,
-      startDate: rangeStartDate,
-      endDate: rangeEndDate,
+      month: monthlyMonth,
     }));
-  }, [rangeStartDate, rangeEndDate]);
+  }, [monthlyMonth]);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,13 +122,16 @@ export default function MonthlyPage() {
       setError("");
 
       try {
-        if (!filter.startDate || !filter.endDate) {
+        if (!filter.month) {
           setRecords([]);
           return;
         }
+        const [year, month] = filter.month.split("-").map(Number);
+        const startDate = `${filter.month}-01`;
+        const endDate = `${filter.month}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`;
         const params = new URLSearchParams({
-          start_date: filter.startDate,
-          end_date: filter.endDate,
+          start_date: startDate,
+          end_date: endDate,
         });
         const result = await api(`/api/monthly-range?${params.toString()}`);
 
@@ -176,10 +156,10 @@ export default function MonthlyPage() {
     return () => {
       cancelled = true;
     };
-  }, [filter.startDate, filter.endDate, periodKeys]);
+  }, [filter.month, periodKeys]);
 
   const monthIndex = Math.max(0, periodKeys.length - 1);
-  const selectedMonthKey = periodKeys[0] || "";
+  const selectedMonthKey = filter.month || "";
 
   useEffect(() => {
     let cancelled = false;
@@ -318,8 +298,7 @@ export default function MonthlyPage() {
     setFilter({
       region,
       operator,
-      startDate: rangeStartDate,
-      endDate: rangeEndDate,
+      month: filter.month,
     });
   };
 
@@ -581,7 +560,7 @@ export default function MonthlyPage() {
           <span>
             {loading
               ? "Sedang mengambil data dari database..."
-              : `Sumber: database penjualan ${filter.startDate} – ${filter.endDate}`}
+              : `Sumber: database penjualan ${filter.month ? periodLabel(filter.month) : "—"}`}
           </span>
         </footer>
       </main>
