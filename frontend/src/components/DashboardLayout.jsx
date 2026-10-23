@@ -78,6 +78,20 @@ const formatReportDate = (date) => {
 const formatPeriodDate = (date) =>
     date ? date.split('-').reverse().join('/') : 'Pilih tanggal';
 
+const formatHomePeriod = (type, value) => {
+    if (type === 'yearly') return value || 'Pilih tahun';
+    if (type === 'monthly' && value) {
+        const date = new Date(`${value}-01T00:00:00`);
+        return Number.isNaN(date.getTime())
+            ? value
+            : date.toLocaleDateString('id-ID', {
+                month: 'short',
+                year: 'numeric',
+            });
+    }
+    return formatPeriodDate(value);
+};
+
 function readSidebarPreference() {
     try {
         return localStorage.getItem('sidebar-hidden') === 'true';
@@ -667,7 +681,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
             
                     <div className="topbar-actions">
-                        <div className={`topbar-period-control${isHome ? ' home-period-control' : ''}${isDaily || isAveragePrice ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
+                        <div className={`topbar-period-control${isHome ? ' home-period-control' : ''}${isHome || isDaily || isAveragePrice ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
                                 <span
                                     className="topbar-calendar"
                                     aria-hidden="true"
@@ -678,44 +692,79 @@ export default function DashboardLayout({ user, onLogout }) {
                                 <div className="topbar-period-content">
                                     <small>Periode Data</small>
                                     {isHome ? (
-                                        <div className="home-period-fields">
-                                            <select
-                                                aria-label="Jenis periode Beranda"
-                                                value={homePeriodType}
-                                                disabled={loadingDates || dates.length === 0}
-                                                onChange={(event) => changeHomePeriodType(event.target.value)}
+                                        <>
+                                            <button
+                                                className="topbar-period-summary"
+                                                type="button"
+                                                aria-label="Pilih periode Beranda"
+                                                aria-expanded={rangePickerOpen}
+                                                onClick={() => setRangePickerOpen((open) => !open)}
                                             >
-                                                <option value="daily">Harian</option>
-                                                <option value="monthly">Bulanan</option>
-                                                <option value="yearly">Tahunan</option>
-                                            </select>
-                                            {homePeriodType === 'daily' ? (
-                                                <input
-                                                    aria-label="Tanggal Beranda"
-                                                    type="date"
-                                                    value={homePeriodValue}
-                                                    disabled={loadingDates || dates.length === 0}
-                                                    onChange={(event) => updateHomePeriod('daily', event.target.value)}
-                                                />
-                                            ) : homePeriodType === 'monthly' ? (
-                                                <input
-                                                    aria-label="Bulan Beranda"
-                                                    type="month"
-                                                    value={homePeriodValue}
-                                                    disabled={loadingDates || dates.length === 0}
-                                                    onChange={(event) => updateHomePeriod('monthly', event.target.value)}
-                                                />
-                                            ) : (
-                                                <select
-                                                    aria-label="Tahun Beranda"
-                                                    value={homePeriodValue}
-                                                    disabled={loadingDates || availableYears.length === 0}
-                                                    onChange={(event) => updateHomePeriod('yearly', event.target.value)}
-                                                >
-                                                    {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
-                                                </select>
+                                                <span>
+                                                    {formatHomePeriod(homePeriodType, homePeriodValue)}
+                                                </span>
+                                                <span className="topbar-period-summary-icon" aria-hidden="true">▾</span>
+                                            </button>
+                                            {rangePickerOpen && (
+                                                <div className="topbar-period-range home-period-picker">
+                                                    <label>
+                                                        <span>Jenis periode</span>
+                                                        <select
+                                                            aria-label="Jenis periode Beranda"
+                                                            value={homePeriodType}
+                                                            disabled={loadingDates || dates.length === 0}
+                                                            onChange={(event) => changeHomePeriodType(event.target.value)}
+                                                        >
+                                                            <option value="daily">Harian</option>
+                                                            <option value="monthly">Bulanan</option>
+                                                            <option value="yearly">Tahunan</option>
+                                                        </select>
+                                                    </label>
+                                                    <label>
+                                                        <span>
+                                                            {homePeriodType === 'daily'
+                                                                ? 'Tanggal'
+                                                                : homePeriodType === 'monthly'
+                                                                    ? 'Bulan'
+                                                                    : 'Tahun'}
+                                                        </span>
+                                                        {homePeriodType === 'daily' ? (
+                                                            <input
+                                                                aria-label="Tanggal Beranda"
+                                                                type="date"
+                                                                value={homePeriodValue}
+                                                                disabled={loadingDates || dates.length === 0}
+                                                                onChange={(event) => updateHomePeriod('daily', event.target.value)}
+                                                            />
+                                                        ) : homePeriodType === 'monthly' ? (
+                                                            <input
+                                                                aria-label="Bulan Beranda"
+                                                                type="month"
+                                                                value={homePeriodValue}
+                                                                disabled={loadingDates || dates.length === 0}
+                                                                onChange={(event) => updateHomePeriod('monthly', event.target.value)}
+                                                            />
+                                                        ) : (
+                                                            <select
+                                                                aria-label="Tahun Beranda"
+                                                                value={homePeriodValue}
+                                                                disabled={loadingDates || availableYears.length === 0}
+                                                                onChange={(event) => updateHomePeriod('yearly', event.target.value)}
+                                                            >
+                                                                {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
+                                                            </select>
+                                                        )}
+                                                    </label>
+                                                    <button
+                                                        className="topbar-period-done"
+                                                        type="button"
+                                                        onClick={() => setRangePickerOpen(false)}
+                                                    >
+                                                        Selesai
+                                                    </button>
+                                                </div>
                                             )}
-                                        </div>
+                                        </>
                                     ) : isDaily ? (
                                         <input
                                             aria-label="Tanggal laporan"
