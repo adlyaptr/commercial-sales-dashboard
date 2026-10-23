@@ -696,7 +696,6 @@ button { cursor: pointer; }
   font-weight: 700;
 }
 .home-trend-chart { height: 230px; margin-top: 9px; position: relative; }
-.home-monthly-chart { height: 270px; margin-top: 9px; position: relative; }
 .home-message {
   display: grid;
   min-height: 54px;
@@ -2924,14 +2923,13 @@ textarea:focus-visible, a:focus-visible {
     flex: 1 1 auto;
     min-height: 0;
     display: grid;
-    grid-template-rows: minmax(100px, 0.55fr) minmax(210px, 1.2fr) minmax(190px, 1fr);
+    grid-template-rows: minmax(100px, 0.55fr) minmax(190px, 1fr);
     gap: 8px;
     overflow: hidden;
     padding: 0 8px 4px;
   }
 
   .home-kpi-section,
-  .home-monthly-chart-section,
   .home-page > .home-section:last-child {
     min-height: 0;
     overflow: hidden;
@@ -2942,23 +2940,6 @@ textarea:focus-visible, a:focus-visible {
   .home-kpi-section .kpi-icon { width: 30px; height: 30px; }
   .home-kpi-section .kpi strong { font-size: 15px; }
   .home-kpi-note { margin-top: 4px; }
-  .home-monthly-chart-section {
-    display: flex;
-    flex-direction: column;
-  }
-  .home-monthly-chart-section > .home-section-heading { flex: 0 0 auto; }
-  .home-monthly-chart-section > .home-message,
-  .home-monthly-chart-section > .home-monthly-chart {
-    flex: 1 1 auto;
-    min-height: 0;
-  }
-  .home-monthly-chart {
-    position: relative;
-    min-height: 0;
-    flex: 1 1 auto;
-    height: 100%;
-    margin-top: 0;
-  }
   .home-weekly-details {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     min-height: 0;

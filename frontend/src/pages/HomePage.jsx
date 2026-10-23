@@ -1,32 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Line } from 'react-chartjs-2';
-import {
-    CategoryScale,
-    Chart as ChartJS,
-    Legend,
-    LinearScale,
-    LineElement,
-    PointElement,
-    Tooltip,
-} from 'chart.js';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
 
 const operators = ['SETU', 'KHT', 'BLORA', 'WUNUT', 'OFF'];
 
-ChartJS.register(
-    CategoryScale,
-    LinearScale,
-    LineElement,
-    PointElement,
-    Tooltip,
-    Legend,
-);
-
-const months = [
-    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
-];
 const formatNumber = (value, maximumFractionDigits = 2) =>
     new Intl.NumberFormat('id-ID', { maximumFractionDigits }).format(Number(value ?? 0));
 const formatCurrency = (value) =>
@@ -39,51 +16,12 @@ const formatAveragePrice = (value) =>
 const formatPercent = (value) =>
     `${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(Number(value ?? 0))}%`;
 
-function SectionHeading({ title, description }) {
-    return (
-        <div className="home-section-heading">
-            <div>
-                <h2>{title}</h2>
-                <p>{description}</p>
-            </div>
-        </div>
-    );
-}
-
 function Message({ loading, error, empty, children }) {
     if (loading) return <div className="home-message">Memuat data...</div>;
     if (error) return <div className="home-message home-message-error" role="alert">{error}</div>;
     if (empty) return <div className="home-message">{empty}</div>;
     return children;
 }
-
-const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-        legend: {
-            position: 'bottom',
-            labels: { boxWidth: 9, boxHeight: 9, font: { size: 10 }, usePointStyle: true },
-        },
-        tooltip: {
-            callbacks: {
-                label: (context) => `${context.dataset.label}: ${formatNumber(context.raw)}`,
-            },
-        },
-    },
-    scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 0, autoSkip: true } },
-        y: {
-            beginAtZero: true,
-            grid: { color: '#e9f0f6' },
-            ticks: {
-                font: { size: 9 },
-                callback: (value) => new Intl.NumberFormat('id-ID', { notation: 'compact' }).format(value),
-            },
-        },
-    },
-};
 
 function PeriodMetrics({ summary, reportSummary }) {
     const displayedSO = summary?.manual_so ?? reportSummary?.so;
@@ -105,10 +43,6 @@ function PeriodMetrics({ summary, reportSummary }) {
             <article className={`kpi ${Number(displayedDiff ?? 0) >= 0 ? 'kpi-purple' : 'kpi-negative'}`}>
                 <div className="kpi-icon">±</div>
                 <div><span>DIFF (ACTUAL − TARGET)</span><strong>{Number(displayedDiff ?? 0) > 0 ? '+' : ''}{formatNumber(displayedDiff)}</strong><small>{Number(displayedDiff ?? 0) >= 0 ? 'Di atas target' : 'Di bawah target'}</small></div>
-            </article>
-            <article className="kpi kpi-teal">
-                <div className="kpi-icon">♙</div>
-                <div><span>CUSTOMER AKTIF</span><strong>{formatNumber(summary?.customers, 0)}</strong><small>Tidak termasuk customer OFF</small></div>
             </article>
             <article className="kpi kpi-purple">
                 <div className="kpi-icon">%</div>
@@ -206,40 +140,6 @@ export default function HomePage() {
         return [...regions.entries()].map(([region, totals]) => ({ region, ...totals }));
     }, [priceReport]);
 
-    const monthlyChart = useMemo(() => ({
-        labels: summary?.year_months?.map((item) => {
-            const [year, month] = item.month.split('-');
-            return `${months[Number(month) - 1].slice(0, 3)} '${year.slice(-2)}`;
-        }) ?? [],
-        datasets: [
-            {
-                label: 'Target',
-                data: summary?.year_months?.map((item) =>
-                    item.manual_so ?? (item.has_data ? item.so : null)) ?? [],
-                borderColor: '#139768',
-                backgroundColor: 'rgb(19 151 104 / 12%)',
-                tension: 0.28,
-                spanGaps: false,
-            },
-            {
-                label: 'SO',
-                data: summary?.year_months?.map((item) => item.has_data ? item.so : null) ?? [],
-                borderColor: '#1777d1',
-                backgroundColor: 'rgb(23 119 209 / 12%)',
-                tension: 0.28,
-                spanGaps: false,
-            },
-            {
-                label: 'Actual',
-                data: summary?.year_months?.map((item) => item.has_data ? item.actual : null) ?? [],
-                borderColor: '#f0a43a',
-                backgroundColor: 'rgb(240 164 58 / 12%)',
-                tension: 0.28,
-                spanGaps: false,
-            },
-        ],
-    }), [summary]);
-
     return (
         <div className="home-page">
             <section className="home-section home-kpi-section" aria-label="Ringkasan">
@@ -247,21 +147,7 @@ export default function HomePage() {
                 <Message loading={loading} error={errors.summary} empty={!summary ? '' : ''}>
                     {summary && <PeriodMetrics summary={summary.month_summary} reportSummary={summary.summary_report} />}
                 </Message>
-                <p className="home-kpi-note">Total SO dan Actual mencakup seluruh customer termasuk OFF; jumlah customer aktif tidak menghitung customer berstatus OFF. Bulan tanpa data ditampilkan tanpa angka rekaan.</p>
-            </section>
-
-            <section className="home-section home-monthly-chart-section">
-                <SectionHeading
-                    title="Rekapan Bulanan"
-                    description="Perbandingan target, SO, dan actual per bulan pada rentang tanggal terpilih."
-                />
-                <Message
-                    loading={loading}
-                    error={errors.summary}
-                    empty={!summary?.year_months?.some((item) => item.has_data) ? 'Belum ada transaksi pada rentang tanggal yang dipilih.' : ''}
-                >
-                    {summary && <div className="home-monthly-chart"><Line data={monthlyChart} options={chartOptions} /></div>}
-                </Message>
+                <p className="home-kpi-note">Total SO dan Actual mencakup seluruh customer termasuk OFF. Bulan tanpa data ditampilkan tanpa angka rekaan.</p>
             </section>
 
             <section className="home-section" aria-label="Informasi mingguan">
