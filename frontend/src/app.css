@@ -769,18 +769,7 @@ button { cursor: pointer; }
   overflow-wrap: anywhere;
 }
 .home-mini-metrics span { color: #789487; font-size: 8px; }
-.home-region-list { margin-top: 9px; }
-.home-region-list > b { display: block; margin-bottom: 4px; color: #426651; font-size: 9px; }
-.home-region-list > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 7px;
-  padding: 4px 0;
-  border-bottom: 1px solid #edf3ee;
-  font-size: 9px;
-}
-.home-region-list > div span { color: #365e48; font-weight: 650; }
-.home-region-list > div small, .home-muted { color: #71877c; font-size: 8px; }
+.home-volume-chart { position: relative; height: 190px; margin-top: 6px; }
 .home-operator-volume {
   display: flex;
   flex-wrap: wrap;
@@ -2803,7 +2792,7 @@ textarea:focus-visible, a:focus-visible {
   .home-small-chart { height: 190px; }
   .home-period-switch { width: 100%; }
   .home-period-switch button { flex: 1; padding: 6px 3px; }
-  .home-region-list > div { flex-direction: column; gap: 2px; }
+  .home-volume-chart { height: 210px; }
 }
 
 .home-month-picker {

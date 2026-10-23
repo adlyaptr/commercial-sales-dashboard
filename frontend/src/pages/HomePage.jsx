@@ -1,11 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Bar } from 'react-chartjs-2';
+import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
 
-const operators = ['SETU', 'KHT', 'BLORA', 'WUNUT', 'OFF'];
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+
+const operators = ['SETU', 'KHT', 'BLORA', 'WUNUT'];
 
 const formatNumber = (value, maximumFractionDigits = 2) =>
     new Intl.NumberFormat('id-ID', { maximumFractionDigits }).format(Number(value ?? 0));
+const formatVolume = (value) =>
+    new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value ?? 0));
 const formatCurrency = (value) =>
     `Rp ${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value ?? 0))}`;
 const formatAveragePrice = (value) =>
@@ -15,6 +21,51 @@ const formatAveragePrice = (value) =>
     }).format(Number(value ?? 0))}`;
 const formatPercent = (value) =>
     `${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(Number(value ?? 0))}%`;
+
+const volumeValueLabels = {
+    id: 'homeVolumeValueLabels',
+    afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        ctx.save();
+        ctx.font = '9px "Segoe UI", Arial, sans-serif';
+        ctx.fillStyle = '#354b40';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        chart.data.datasets.forEach((dataset, datasetIndex) => {
+            const metadata = chart.getDatasetMeta(datasetIndex);
+            metadata.data.forEach((element, index) => {
+                const value = Number(dataset.data[index] ?? 0);
+                if (!Number.isFinite(value) || value === 0) return;
+                const { x, y } = element.tooltipPosition();
+                ctx.fillText(formatVolume(value), x, y - 4);
+            });
+        });
+        ctx.restore();
+    },
+};
+
+const volumeChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: { padding: { top: 18 } },
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+        legend: {
+            position: 'top',
+            align: 'end',
+            labels: { boxWidth: 9, boxHeight: 9, font: { size: 10 }, usePointStyle: true, pointStyle: 'rect' },
+        },
+        tooltip: {
+            callbacks: {
+                label: (context) => `${context.dataset.label}: ${formatVolume(context.raw)}`,
+            },
+        },
+    },
+    scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: false } },
+        y: { beginAtZero: true, grid: { color: '#e9f0f6' }, ticks: { display: false } },
+    },
+};
 
 function Message({ loading, error, empty, children }) {
     if (loading) return <div className="home-message">Memuat data...</div>;
@@ -91,7 +142,7 @@ export default function HomePage() {
                         setSummary(result.value);
                     } else if (index === 1) {
                         setPriceReport(result.value);
-                    } else {
+                    } else if (index === 2) {
                         setComplaints(result.value);
                     }
                 } else {
@@ -121,24 +172,16 @@ export default function HomePage() {
                 && Number(row.sm3_per_mmbtu) > 0
                 && Number(row.exchange_rate) > 0) ?? [];
     const validPriceCount = priceReport?.valid_price_count ?? validPriceRows.length;
-    const regionalVolume = useMemo(() => {
-        if (priceReport?.regions) {
-            return priceReport.regions.map((region) => ({
-                region: region.region,
-                so: region.so_sm3,
-                actual: region.actual_sm3,
-            }));
-        }
-        const regions = new Map();
-        for (const row of priceReport?.rows ?? []) {
-            const region = row.region || 'Belum ditentukan';
-            const current = regions.get(region) ?? { so: 0, actual: 0 };
-            current.so += Number(row.so_sm3 ?? 0);
-            current.actual += Number(row.actual_sm3 ?? 0);
-            regions.set(region, current);
-        }
-        return [...regions.entries()].map(([region, totals]) => ({ region, ...totals }));
-    }, [priceReport]);
+    const volumeComparison = useMemo(() => {
+        const operatorTotals = summary?.month_summary?.operators ?? {};
+        return {
+            labels: operators,
+            datasets: [
+                { label: 'SO', data: operators.map((operator) => operatorTotals[operator]?.so ?? 0), backgroundColor: '#1777d1', borderRadius: 3, maxBarThickness: 32 },
+                { label: 'Actual', data: operators.map((operator) => operatorTotals[operator]?.actual ?? 0), backgroundColor: '#f0a43a', borderRadius: 3, maxBarThickness: 32 },
+            ],
+        };
+    }, [summary]);
 
     return (
         <div className="home-page">
@@ -153,17 +196,10 @@ export default function HomePage() {
             <section className="home-section" aria-label="Informasi mingguan">
                 <div className="home-weekly-details">
                 <article className="home-subpanel home-volume-panel">
-                    <h3>Volume dan perbandingan wilayah</h3>
-                    <Message loading={loading} error={errors.price} empty={priceReport?.rows?.length === 0 ? 'Belum ada volume pada periode ini.' : ''}>
-                        <div className="home-region-list">
-                            {regionalVolume.length === 0
-                                ? <span className="home-muted">Belum ada data wilayah yang dapat dibandingkan.</span>
-                                : regionalVolume.map((region) => (
-                                    <div key={region.region}>
-                                        <span>{region.region}</span>
-                                        <small>SO {formatNumber(region.so)} · Actual {formatNumber(region.actual)} Sm³</small>
-                                    </div>
-                                ))}
+                    <h3>Perbandingan Volume per MS</h3>
+                    <Message loading={loading} error={errors.summary}>
+                        <div className="home-volume-chart">
+                            <Bar data={volumeComparison} options={volumeChartOptions} plugins={[volumeValueLabels]} />
                         </div>
                     </Message>
                 </article>
