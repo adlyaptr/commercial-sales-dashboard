@@ -190,7 +190,6 @@ export default function HomePage() {
                 <Message loading={loading} error={errors.summary} empty={!summary ? '' : ''}>
                     {summary && <PeriodMetrics summary={summary.month_summary} reportSummary={summary.summary_report} />}
                 </Message>
-                <p className="home-kpi-note">Total SO dan Actual mencakup seluruh customer termasuk OFF. Bulan tanpa data ditampilkan tanpa angka rekaan.</p>
             </section>
 
             <section className="home-section" aria-label="Informasi mingguan">
@@ -205,7 +204,6 @@ export default function HomePage() {
                 </article>
                     <article className="home-subpanel">
                         <h3>Average Price periode terpilih</h3>
-                        <p className="home-subpanel-caption">Mengikuti volume dan hasil pada tab AVG untuk bulan yang telah tersedia.</p>
                         <Message loading={loading} error={errors.price} empty={validPriceCount === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
                             <div className="home-year-summary home-price-summary">
                                 <div><small>Average Rp/Sm³</small><strong>{formatAveragePrice(priceReport?.totals?.average_price_rp_sm3)}</strong></div>
@@ -218,7 +216,6 @@ export default function HomePage() {
                     </article>
                     <article className="home-subpanel">
                         <h3>Complain periode terpilih</h3>
-                        <p className="home-subpanel-caption">Jumlah keluhan menurut tanggal laporan dan status penyelesaian.</p>
                         <Message loading={loading} error={errors.complaints}>
                             <div className="home-complaint-total"><strong>{monthlyComplaints.length}</strong><span>Total keluhan</span></div>
                             <div className="home-complaint-status">
