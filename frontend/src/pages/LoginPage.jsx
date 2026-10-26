@@ -39,7 +39,6 @@ export default function LoginPage({ onLogin }) {
                     <button className="primary full" type="submit" disabled={busy}>{busy ? 'MEMERIKSA...' : <>MASUK <span>→</span></>}</button>
                     {error && <p className="error" role="alert">{error}</p>}
                 </form>
-                <small>Dashboard internal · Akses terbatas</small>
             </section>
         </main>
     );
