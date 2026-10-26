@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { api } from "../api";
+import SectionIcon from "../components/SectionIcon";
 
 const months = [
   "Januari", "Februari", "Maret", "April",
@@ -460,7 +461,7 @@ export default function MonthlyPage() {
         <section className="monthly-charts">
           <article className="monthly-card">
             <div className="monthly-card-title">
-              <h2>Realisasi Bulanan (Rp)</h2>
+              <h2><SectionIcon name="sales" />Realisasi Bulanan (Rp)</h2>
               <div className="monthly-legend">
                 <span><i className="legend-so" /> SO</span>
                 <span><i className="legend-actual" /> Actual</span>
@@ -518,7 +519,7 @@ export default function MonthlyPage() {
 
           <article className="monthly-card">
             <div className="monthly-card-title">
-              <h2>Realisasi per Wilayah</h2>
+              <h2><SectionIcon name="region" />Realisasi per Wilayah</h2>
             </div>
 
             <div className="monthly-region-content">

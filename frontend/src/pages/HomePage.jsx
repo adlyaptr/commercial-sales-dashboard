@@ -3,6 +3,7 @@ import { Bar } from 'react-chartjs-2';
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
+import SectionIcon from '../components/SectionIcon';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -195,7 +196,7 @@ export default function HomePage() {
             <section className="home-section" aria-label="Informasi mingguan">
                 <div className="home-weekly-details">
                 <article className="home-subpanel home-volume-panel">
-                    <h3>Perbandingan Volume per MS</h3>
+                    <h3><SectionIcon name="volume" />Perbandingan Volume per MS</h3>
                     <Message loading={loading} error={errors.summary}>
                         <div className="home-volume-chart">
                             <Bar data={volumeComparison} options={volumeChartOptions} plugins={[volumeValueLabels]} />
@@ -203,7 +204,7 @@ export default function HomePage() {
                     </Message>
                 </article>
                     <article className="home-subpanel">
-                        <h3>Average Price periode terpilih</h3>
+                        <h3><SectionIcon name="price" />Average Price periode terpilih</h3>
                         <Message loading={loading} error={errors.price} empty={validPriceCount === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
                             <div className="home-year-summary home-price-summary">
                                 <div><small>Average Rp/Sm³</small><strong>{formatAveragePrice(priceReport?.totals?.average_price_rp_sm3)}</strong></div>
@@ -215,7 +216,7 @@ export default function HomePage() {
                         </Message>
                     </article>
                     <article className="home-subpanel">
-                        <h3>Complain periode terpilih</h3>
+                        <h3><SectionIcon name="complaint" />Complain periode terpilih</h3>
                         <Message loading={loading} error={errors.complaints}>
                             <div className="home-complaint-total"><strong>{monthlyComplaints.length}</strong><span>Total keluhan</span></div>
                             <div className="home-complaint-status">

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
+import SectionIcon from '../components/SectionIcon';
 
 const operators = ['SETU', 'KHT', 'BLORA', 'WUNUT'];
 const regions = ['JAWA BARAT', 'JAWA TENGAH', 'JAWA TIMUR'];
@@ -205,7 +206,7 @@ export default function YearlyPage() {
             <section className="yearly-content">
                 <article className="yearly-panel yearly-top-panel">
                     <div className="yearly-panel-heading">
-                        <h2>TOP 10 CUSTOMER TERBESAR (PERIODE)</h2>
+                        <h2><SectionIcon name="customer" />TOP 10 CUSTOMER TERBESAR (PERIODE)</h2>
                     </div>
                     <div className="yearly-table-wrap">
                         <table className="yearly-table">
@@ -237,7 +238,7 @@ export default function YearlyPage() {
                 </article>
 
                 <article className="yearly-panel yearly-chart-panel">
-                    <div className="yearly-panel-heading"><h2>Volume Penjualan Top 10 Customer (Sm³)</h2></div>
+                    <div className="yearly-panel-heading"><h2><SectionIcon name="volume" />Volume Penjualan Top 10 Customer (Sm³)</h2></div>
                     <div className="yearly-bars" role="img" aria-label="Grafik actual penjualan untuk sepuluh customer terbesar">
                         {topCustomers.length === 0 && <p className="yearly-empty">{loading ? 'Memuat data...' : 'Belum ada data untuk ditampilkan.'}</p>}
                         {topCustomers.map((customer) => (
@@ -252,7 +253,7 @@ export default function YearlyPage() {
                 </article>
 
                 <aside className="yearly-panel yearly-filters">
-                    <h2><span aria-hidden="true">▽</span> FILTERS / SLICERS</h2>
+                    <h2><SectionIcon name="filter" />FILTERS / SLICERS</h2>
                     <label>Wilayah
                         <select value={region} onChange={(event) => setRegion(event.target.value)}>
                             {['Semua Wilayah', ...regions].map((value) => <option key={value} value={value}>{value}</option>)}
@@ -269,7 +270,7 @@ export default function YearlyPage() {
 
             <section className="yearly-panel yearly-recap monthly-table-card">
                 <div className="monthly-table-title">
-                    <h2>Rekapitulasi Data Bulanan</h2>
+                    <h2><SectionIcon name="calendar" />Rekapitulasi Data Bulanan</h2>
                 </div>
 
                 <div className="monthly-table-scroll">
