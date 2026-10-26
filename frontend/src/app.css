@@ -2880,7 +2880,7 @@ textarea:focus-visible, a:focus-visible {
 .home-year-summary strong { color: #245740; font-size: 12px; overflow-wrap: anywhere; }
 
 @media (max-width: 1150px) {
-  .home-period-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .home-period-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .home-year-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
@@ -2952,6 +2952,7 @@ textarea:focus-visible, a:focus-visible {
 }
 
 @media (min-width: 761px) and (max-width: 1000px) and (min-height: 560px) {
+  .home-period-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-weekly-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-weekly-details > :last-child { grid-column: 1 / -1; }
 }
