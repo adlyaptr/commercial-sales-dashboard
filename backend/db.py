@@ -62,6 +62,32 @@ def initialize_database(connection_factory, app_username, app_password):
                 "AFTER rupiah_override"
             )
 
+        legacy_weekly_customers = (
+            ("clin", "CLIN", "SETU"),
+            ("abckogen", "ABC KOGEN", "KHT"),
+        )
+        for customer_key, customer_name, operator in legacy_weekly_customers:
+            con.execute(
+                "INSERT INTO customers (customer_key,customer_name,operator) "
+                "VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                "customer_name=VALUES(customer_name),operator=VALUES(operator)",
+                (customer_key, customer_name, operator),
+            )
+        legacy_weekly_inputs = (
+            ("2026-10-26", "clin", "JAWA BARAT", 959.0, 1.0, 958.0, "2026-10-14T09:59:48"),
+            ("2026-10-26", "abckogen", "JAWA BARAT", 0.0, 13.4, 17.0, "2026-10-15T16:23:05"),
+        )
+        for week_start, customer_key, region, volume_mmbtu, price_usd, exchange_rate, updated_at in legacy_weekly_inputs:
+            con.execute(
+                "INSERT INTO weekly_average_price_inputs "
+                "(week_start,customer_key,region,volume_mmbtu,price_usd_per_sm3,exchange_rate,updated_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                "region=VALUES(region),volume_mmbtu=VALUES(volume_mmbtu),"
+                "price_usd_per_sm3=VALUES(price_usd_per_sm3),"
+                "exchange_rate=VALUES(exchange_rate),updated_at=VALUES(updated_at)",
+                (week_start, customer_key, region, volume_mmbtu, price_usd, exchange_rate, updated_at),
+            )
+
         complaint_columns = con.execute(
             """
             SELECT COLUMN_NAME FROM information_schema.COLUMNS
