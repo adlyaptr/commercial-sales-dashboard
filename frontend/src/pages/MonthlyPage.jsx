@@ -55,6 +55,25 @@ function periodLabel(period) {
   return `${months[month - 1]} ${year}`;
 }
 
+function buildPeriodKeys(startDate, endDate) {
+  if (!startDate || !endDate || startDate > endDate) return [];
+
+  const periods = [];
+  let [year, month] = startDate.split("-").map(Number);
+  const lastPeriod = endDate.slice(0, 7);
+
+  while (`${year}-${String(month).padStart(2, "0")}` <= lastPeriod) {
+    periods.push(`${year}-${String(month).padStart(2, "0")}`);
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+
+  return periods;
+}
+
 function buildCustomerRows(items = [], periods = []) {
   const customerMap = new Map();
   const periodIndexes = new Map(periods.map((period, index) => [period, index]));
@@ -86,14 +105,15 @@ function buildCustomerRows(items = [], periods = []) {
 }
 
 export default function MonthlyPage() {
-  const { monthlyMonth } = useOutletContext();
+  const { rangeStartDate, rangeEndDate } = useOutletContext();
   const [region, setRegion] = useState("Semua Wilayah");
   const [operator, setOperator] = useState("Semua MS");
 
   const [filter, setFilter] = useState({
     region: "Semua Wilayah",
     operator: "Semua MS",
-    month: monthlyMonth,
+    startDate: rangeStartDate,
+    endDate: rangeEndDate,
   });
 
   const [records, setRecords] = useState([]);
@@ -104,15 +124,19 @@ export default function MonthlyPage() {
   const [manualSOSaving, setManualSOSaving] = useState(false);
   const [manualSOError, setManualSOError] = useState("");
   const [manualSOSaved, setManualSOSaved] = useState(false);
-  const periodKeys = useMemo(() => filter.month ? [filter.month] : [], [filter.month]);
+  const periodKeys = useMemo(
+    () => buildPeriodKeys(filter.startDate, filter.endDate),
+    [filter.startDate, filter.endDate]
+  );
   const periodLabels = useMemo(() => periodKeys.map(periodLabel), [periodKeys]);
 
   useEffect(() => {
     setFilter((current) => ({
       ...current,
-      month: monthlyMonth,
+      startDate: rangeStartDate,
+      endDate: rangeEndDate,
     }));
-  }, [monthlyMonth]);
+  }, [rangeStartDate, rangeEndDate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,16 +146,13 @@ export default function MonthlyPage() {
       setError("");
 
       try {
-        if (!filter.month) {
+        if (!filter.startDate || !filter.endDate) {
           setRecords([]);
           return;
         }
-        const [year, month] = filter.month.split("-").map(Number);
-        const startDate = `${filter.month}-01`;
-        const endDate = `${filter.month}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`;
         const params = new URLSearchParams({
-          start_date: startDate,
-          end_date: endDate,
+          start_date: filter.startDate,
+          end_date: filter.endDate,
         });
         const result = await api(`/api/monthly-range?${params.toString()}`);
 
@@ -156,10 +177,10 @@ export default function MonthlyPage() {
     return () => {
       cancelled = true;
     };
-  }, [filter.month, periodKeys]);
+  }, [filter.startDate, filter.endDate, periodKeys]);
 
   const monthIndex = Math.max(0, periodKeys.length - 1);
-  const selectedMonthKey = filter.month || "";
+  const selectedMonthKey = periodKeys.length === 1 ? periodKeys[0] : "";
 
   useEffect(() => {
     let cancelled = false;
@@ -260,12 +281,13 @@ export default function MonthlyPage() {
     ? (totalActual / totalSO) * 100
     : 0;
 
+  const currentMonth = monthlyTotals[monthIndex];
   const previousMonth = monthIndex > 0
     ? monthlyTotals[monthIndex - 1]
     : null;
 
-  const actualGrowth = previousMonth?.actual
-    ? ((totalActual - previousMonth.actual) /
+  const actualGrowth = currentMonth?.actual && previousMonth?.actual
+    ? ((currentMonth.actual - previousMonth.actual) /
         previousMonth.actual) * 100
     : null;
 
@@ -298,7 +320,8 @@ export default function MonthlyPage() {
     setFilter({
       region,
       operator,
-      month: filter.month,
+      startDate: rangeStartDate,
+      endDate: rangeEndDate,
     });
   };
 
@@ -560,7 +583,11 @@ export default function MonthlyPage() {
           <span>
             {loading
               ? "Sedang mengambil data dari database..."
-              : `Sumber: database penjualan ${filter.month ? periodLabel(filter.month) : "—"}`}
+              : `Sumber: database penjualan ${
+                  filter.startDate && filter.endDate
+                    ? `${filter.startDate.split("-").reverse().join("/")} - ${filter.endDate.split("-").reverse().join("/")}`
+                    : "—"
+                }`}
           </span>
         </footer>
       </main>
