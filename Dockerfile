@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY backend/ backend/
 COPY database/ database/
+COPY backups/ backups/
 COPY --from=frontend /src/backend/static/react/ backend/static/react/
 
 WORKDIR /app/backend
