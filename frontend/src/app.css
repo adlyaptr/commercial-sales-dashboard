@@ -1155,7 +1155,9 @@ footer span { float: right; }
 /* ===== LOGIN ===== */
 .login-page {
   min-height: 100vh; display: grid; place-items: center;
-  background: radial-gradient(ellipse at top left, #e0f5e8, #f4f8f5 55%, #e7f3eb);
+  background:
+    linear-gradient(115deg, rgb(8 39 47 / 42%), rgb(5 48 36 / 30%)),
+    url('./assets/login-background.webp') center / cover no-repeat;
 }
 .login-card { width: min(420px, calc(100% - 30px)); padding: 34px; background: #fff; border: 1px solid #d9e9e0; border-radius: 17px; box-shadow: 0 18px 60px rgb(7 61 52 / 10%); }
 .login-mark { width: 54px; height: 54px; border-radius: 14px; background: #dff4e7; color: var(--green); font-size: 36px; display: grid; place-items: center; }
@@ -1426,7 +1428,6 @@ tbody tr:hover { background: #f0faf3; }
 .average-region-card { background: linear-gradient(135deg, #effaf3, #fff); border-color: #dcebe1; }
 .average-toolbar .average-add-button, .average-entry-actions .primary { background: linear-gradient(110deg, #20b982, #08734f); }
 
-.login-page { background: radial-gradient(ellipse at top left, #d7f6e5 0%, #f1fbf4 42%, #f4f8f5 100%); }
 .login-mark { background: linear-gradient(135deg, #d7f6e5, #a8eac8); color: #08734f; }
 .login-card h1, .complain-empty h3 { color: #073b2e; }
 .eyebrow { color: #0f9467; }
