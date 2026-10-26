@@ -2892,7 +2892,7 @@ textarea:focus-visible, a:focus-visible {
 .home-operator-breakdown .home-table-wrap { margin-top: 7px; }
 .home-weekly-details {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.775fr) minmax(0, 0.775fr);
   gap: 9px;
   margin-top: 12px;
 }
@@ -2974,7 +2974,7 @@ textarea:focus-visible, a:focus-visible {
   .home-kpi-note { margin-top: 4px; }
   .home-weekly-details {
     flex: 1 1 auto;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.775fr) minmax(0, 0.775fr);
     min-height: 0;
     margin-top: 0;
   }
@@ -2987,7 +2987,7 @@ textarea:focus-visible, a:focus-visible {
   .home-subpanel > .home-message { flex: 1 1 auto; }
   .home-volume-panel > .home-message { display: flex; }
   .home-volume-comparison-body { width: 100%; }
-  .home-volume-chart { flex: 1 1 190px; min-height: 145px; height: 145px; }
+  .home-volume-chart { flex: 1 1 190px; min-height: 145px; height: 145px; min-width: 0; }
   .home-regional-volume { min-height: 52px; }
   .home-price-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
