@@ -579,10 +579,6 @@ export default function DashboardLayout({ user, onLogout }) {
 
                     </nav>
 
-                    <div className="sidebar-foot">
-                        <span className="status-dot" />
-                        Penyimpanan lokal aktif
-                    </div>
             </aside>
 
             <main className={`app-shell${isWeeklyVolume ? ' weekly-volume-shell' : ''}${isYearly ? ' yearly-shell' : ''}${isMonthly ? ' monthly-shell' : ''}${isHome ? ' home-shell' : ''}`}>

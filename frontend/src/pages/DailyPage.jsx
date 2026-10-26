@@ -285,7 +285,6 @@ export default function DailyPage() {
                     </div>
                 </div>
             </form>
-            <div className="page-heading"><h2>DETAIL DATA HARIAN</h2></div>
             <OperatorTables
                 data={dashboard?.operators ?? {}}
                 dailySummary={dashboard}
