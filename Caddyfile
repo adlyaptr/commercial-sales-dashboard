@@ -1,4 +1,6 @@
 {$DOMAIN} {
 	encode gzip
+	@html path /
+	header @html Cache-Control "no-cache, must-revalidate"
 	reverse_proxy app:8000
 }

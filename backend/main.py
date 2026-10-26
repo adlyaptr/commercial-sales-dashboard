@@ -3300,4 +3300,4 @@ def frontend_app():
             status_code=503,
             detail="React belum dibuild. Jalankan npm install dan npm run build di folder frontend.",
         )
-    return FileResponse(index_file)
+    return FileResponse(index_file, headers={"Cache-Control": "no-cache, must-revalidate"})

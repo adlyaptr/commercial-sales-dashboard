@@ -183,6 +183,28 @@ export default function HomePage() {
             ],
         };
     }, [summary]);
+    const regionalVolumes = useMemo(() => {
+        const totals = {
+            'JAWA BARAT': 0,
+            'JAWA TENGAH': 0,
+            'JAWA TIMUR': 0,
+        };
+        (priceReport?.rows ?? []).forEach((row) => {
+            const normalizedRegion = String(row.region || '').trim().toUpperCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
+            const regionKey = normalizedRegion.includes('JAWA BARAT') || normalizedRegion === 'JABAR'
+                ? 'JAWA BARAT'
+                : normalizedRegion.includes('JAWA TENGAH') || normalizedRegion === 'JATENG'
+                    ? 'JAWA TENGAH'
+                    : normalizedRegion.includes('JAWA TIMUR') || normalizedRegion === 'JATIM'
+                        ? 'JAWA TIMUR'
+                        : null;
+            if (!regionKey) return;
+            totals[regionKey] = (totals[regionKey] ?? 0) + Number(row.actual_sm3 ?? 0);
+        });
+        const labels = { 'JAWA BARAT': 'JABAR', 'JAWA TENGAH': 'JATENG', 'JAWA TIMUR': 'JATIM' };
+        return Object.entries(totals).map(([region, volume]) => ({ region: labels[region], volume }));
+    }, [priceReport]);
+    const totalRegionalVolume = regionalVolumes.reduce((total, item) => total + item.volume, 0);
 
     return (
         <div className="home-page">
@@ -200,6 +222,14 @@ export default function HomePage() {
                     <Message loading={loading} error={errors.summary}>
                         <div className="home-volume-chart">
                             <Bar data={volumeComparison} options={volumeChartOptions} plugins={[volumeValueLabels]} />
+                        </div>
+                        <div className="home-regional-volume">
+                            <strong>{formatVolume(totalRegionalVolume)} <small>Sm3</small></strong>
+                            <div>
+                                {regionalVolumes.map(({ region, volume }) => (
+                                    <span key={region}>{region}: <b>{formatVolume(volume)} Sm3</b></span>
+                                ))}
+                            </div>
                         </div>
                     </Message>
                 </article>
