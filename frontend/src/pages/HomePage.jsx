@@ -220,15 +220,17 @@ export default function HomePage() {
                 <article className="home-subpanel home-volume-panel">
                     <h3><SectionIcon name="volume" />Perbandingan Volume per MS</h3>
                     <Message loading={loading} error={errors.summary}>
-                        <div className="home-volume-chart">
-                            <Bar data={volumeComparison} options={volumeChartOptions} plugins={[volumeValueLabels]} />
-                        </div>
-                        <div className="home-regional-volume">
-                            <strong>{formatVolume(totalRegionalVolume)} <small>Sm3</small></strong>
-                            <div>
-                                {regionalVolumes.map(({ region, volume }) => (
-                                    <span key={region}>{region}: <b>{formatVolume(volume)} Sm3</b></span>
-                                ))}
+                        <div className="home-volume-comparison-body">
+                            <div className="home-regional-volume">
+                                <strong>{formatVolume(totalRegionalVolume)} <small>Sm3</small></strong>
+                                <div>
+                                    {regionalVolumes.map(({ region, volume }) => (
+                                        <span key={region}>{region}: <b>{formatVolume(volume)} Sm3</b></span>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="home-volume-chart">
+                                <Bar data={volumeComparison} options={volumeChartOptions} plugins={[volumeValueLabels]} />
                             </div>
                         </div>
                     </Message>
