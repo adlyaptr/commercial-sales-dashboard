@@ -200,10 +200,6 @@ export default function YearlyPage() {
                     <span className="yearly-kpi-icon teal" aria-hidden="true">%</span>
                     <div><small>SO FULFILLMENT</small><strong>{formatPercent(achievement)}</strong><span>Actual ÷ SO</span></div>
                 </article>
-                <article className="yearly-kpi">
-                    <span className="yearly-kpi-icon purple" aria-hidden="true">♙</span>
-                    <div><small>CUSTOMER AKTIF</small><strong>{filteredCustomers.filter((customer) => customer.actual > 0).length}</strong><span>Dari customer terfilter</span></div>
-                </article>
             </section>
 
             <section className="yearly-content">
@@ -398,11 +394,6 @@ export default function YearlyPage() {
                     </table>
                 </div>
             </section>
-
-            <footer className="yearly-footer">
-                <span>Commercial Sales Monitoring</span>
-                <span>{loading ? 'Sedang mengambil data dari database...' : `Sumber: database penjualan ${rangeStartDate} – ${rangeEndDate}`}</span>
-            </footer>
         </div>
     );
 }

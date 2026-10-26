@@ -2339,7 +2339,7 @@ textarea:focus-visible, a:focus-visible {
 .yearly-kpis {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
 }
 
@@ -2367,7 +2367,7 @@ textarea:focus-visible, a:focus-visible {
 .yearly-kpi-icon.green { color: #138558; background: #e4f5eb; }
 .yearly-kpi-icon.orange { color: #dc8c1f; background: #fff1dc; }
 .yearly-kpi-icon.teal { color: #139c91; background: #e1f6f3; }
-.yearly-kpi-icon.purple { color: #7652b3; background: #f0eafb; }
+
 
 .yearly-kpi > div {
   display: flex;
@@ -2715,22 +2715,8 @@ textarea:focus-visible, a:focus-visible {
   color: #104d34;
 }
 
-.yearly-footer {
-  flex: 0 0 auto;
-}
-
-.yearly-footer {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  padding: 2px 2px 4px;
-  color: #82958a;
-  font-size: 9px;
-}
-
 @media (max-width: 1100px) {
-  .yearly-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .yearly-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
   .yearly-kpi { min-height: 58px; gap: 6px; padding: 5px; }
   .yearly-kpi-icon { width: 25px; height: 25px; flex-basis: 25px; font-size: 13px; }
   .yearly-kpi small { font-size: 7px; }
