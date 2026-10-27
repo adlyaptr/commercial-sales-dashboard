@@ -94,6 +94,31 @@ class MemoryMonthlyAveragePriceWrites:
         raise AssertionError(f"Unexpected SQL in monthly Average Price save test: {statement}")
 
 
+class MemoryCustomerMappings:
+    def __init__(self):
+        self.customers = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def execute(self, statement, parameters=None):
+        if statement.startswith("SELECT customer_key,operator FROM customers"):
+            customer = self.customers.get(parameters[0])
+            return SimpleNamespace(fetchone=lambda: customer)
+        if statement.startswith("INSERT INTO customers"):
+            customer_key, customer_name, operator = parameters
+            self.customers[customer_key] = {
+                "customer_key": customer_key,
+                "customer_name": customer_name,
+                "operator": operator,
+            }
+            return SimpleNamespace(rowcount=1)
+        raise AssertionError(f"Unexpected SQL in customer mapping test: {statement}")
+
+
 class MonthlyAveragePriceTests(unittest.TestCase):
     def test_calculates_monthly_sm3_mmbtu_usd_and_rupiah(self):
         with patch.object(main, "db", return_value=MemoryMonthlyAveragePrice()):
@@ -276,6 +301,60 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             price_insert[:6],
             ("2026-10-01", "customer-1", "JAWA BARAT", "IDR_SM3", 0.0, 8725.0),
         )
+
+    def test_saves_each_customer_once_per_month(self):
+        payload = {
+            "month": "2026-10",
+            "operator_factors": {},
+            "exchange_rate": 17895,
+            "entries": [
+                {"customer_key": "customer-1", "price_usd_per_mmbtu": 12},
+                {"customer_key": "customer-1", "price_usd_per_mmbtu": 13},
+            ],
+            "targets": {},
+        }
+        with patch.object(main, "db", side_effect=AssertionError("database should not be accessed")):
+            with self.assertRaises(main.HTTPException) as error:
+                asyncio.run(main.save_monthly_average_price(FakeRequest(payload)))
+
+        self.assertEqual(error.exception.status_code, 400)
+        self.assertIn("lebih dari sekali", error.exception.detail)
+
+    def test_customer_mapping_is_idempotent_and_returns_stable_key(self):
+        database = MemoryCustomerMappings()
+        payload = {"customer": "Customer Baru", "operator": "SETU"}
+        with patch.object(main, "db", return_value=database):
+            first = asyncio.run(main.save_mapping(FakeRequest(payload)))
+            second = asyncio.run(main.save_mapping(FakeRequest(payload)))
+
+        self.assertEqual(first, {
+            "ok": True,
+            "customer_key": "customerbaru",
+            "created": True,
+        })
+        self.assertEqual(second, {
+            "ok": True,
+            "customer_key": "customerbaru",
+            "created": False,
+        })
+        self.assertEqual(len(database.customers), 1)
+
+    def test_customer_mapping_does_not_overwrite_existing_operator(self):
+        database = MemoryCustomerMappings()
+        database.customers["customerbaru"] = {
+            "customer_key": "customerbaru",
+            "customer_name": "Customer Baru",
+            "operator": "SETU",
+        }
+        with patch.object(main, "db", return_value=database):
+            with self.assertRaises(main.HTTPException) as error:
+                asyncio.run(main.save_mapping(FakeRequest({
+                    "customer": "Customer Baru",
+                    "operator": "KHT",
+                })))
+
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertEqual(database.customers["customerbaru"]["operator"], "SETU")
 
     def test_rejects_invalid_month_before_database_access(self):
         with patch.object(main, "db", side_effect=AssertionError("database should not be accessed")):

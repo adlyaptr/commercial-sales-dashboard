@@ -169,16 +169,50 @@ const workbookCustomerGroups = [
     },
 ];
 const workbookCustomerGroupByRegion = new Map();
+const workbookRegionsByCustomer = new Map();
+const januaryCentralEastCustomers = new Set(
+    workbookCustomerGroups.flatMap((group) => [
+        ...(group.regions['JAWA TENGAH'] || []),
+        ...(group.regions['JAWA TIMUR'] || []),
+    ]).map(normalizeCustomerOrder),
+);
 workbookCustomerGroups.forEach((group, groupIndex) => {
     Object.entries(group.regions).forEach(([region, customers]) => {
         if (!workbookCustomerGroupByRegion.has(region)) {
             workbookCustomerGroupByRegion.set(region, new Map());
         }
         customers.forEach((customer) => {
-            workbookCustomerGroupByRegion.get(region).set(normalizeCustomerOrder(customer), groupIndex);
+            const customerKey = normalizeCustomerOrder(customer);
+            workbookCustomerGroupByRegion.get(region).set(customerKey, groupIndex);
+            if (!workbookRegionsByCustomer.has(customerKey)) {
+                workbookRegionsByCustomer.set(customerKey, new Set());
+            }
+            workbookRegionsByCustomer.get(customerKey).add(region);
         });
     });
 });
+function workbookRegionForCustomer(customer) {
+    const regionsForCustomer = workbookRegionsByCustomer.get(normalizeCustomerOrder(customer));
+    return regionsForCustomer?.size === 1 ? [...regionsForCustomer][0] : '';
+}
+function workbookAreaForCustomer(region, customer, month) {
+    if (
+        month === '2026-01'
+        && januaryCentralEastCustomers.has(normalizeCustomerOrder(customer))
+    ) {
+        return 'JAWA TENGAH DAN TIMUR';
+    }
+    const normalizedRegion = String(region ?? '').trim().toUpperCase()
+        || workbookRegionForCustomer(customer);
+    if (
+        month >= '2026-01'
+        && month < '2026-08'
+        && ['JAWA TENGAH', 'JAWA TIMUR', 'JAWA TENGAH DAN TIMUR'].includes(normalizedRegion)
+    ) {
+        return 'JAWA TENGAH DAN TIMUR';
+    }
+    return normalizedRegion || 'WILAYAH BELUM DIPETAKAN';
+}
 const laterWorkbookCustomerGroups = [
     { region: 'JAWA BARAT', customer: 'greenpulse', fromMonth: '2026-08', groupIndex: 0 },
     { region: 'JAWA BARAT', customer: 'ksnranca', fromMonth: '2026-06', groupIndex: 2 },
@@ -187,7 +221,7 @@ const laterWorkbookCustomerGroups = [
     { region: 'JAWA TENGAH', customer: 'jiuqi', fromMonth: '2026-04', groupIndex: 6 },
 ];
 function workbookGroupForCustomer(row, month) {
-    const region = String(row.region ?? '').trim().toUpperCase();
+    const region = workbookAreaForCustomer(row.region, row.customer, month);
     const customerKey = normalizeCustomerOrder(row.customer);
     if (region === 'JAWA TENGAH DAN TIMUR') {
         const groupIndex = {
@@ -197,11 +231,16 @@ function workbookGroupForCustomer(row, month) {
             rb: 1,
             gfatom: 1,
             hskksogas: 6,
-            suryapamenangjes: 6,
             jiuqi: 6,
-            suryapamenangglobal: 7,
         }[customerKey];
         if (groupIndex != null) {
+            return { index: groupIndex, label: workbookCustomerGroups[groupIndex].label };
+        }
+        if (['suryapamenangglobal', 'suryapamenangjes'].includes(customerKey)) {
+            const isMayOrLater = month >= '2026-05';
+            const groupIndex = customerKey === 'suryapamenangglobal'
+                ? isMayOrLater ? 7 : 6
+                : isMayOrLater ? 6 : 7;
             return { index: groupIndex, label: workbookCustomerGroups[groupIndex].label };
         }
     }
@@ -229,6 +268,13 @@ const formatDecimal = (value, digits = 2) => new Intl.NumberFormat('id-ID', { mi
 const formatDifference = (value) => value < 0
     ? `(${formatInteger(Math.abs(value))})`
     : formatInteger(value);
+const parseExchangeRate = (value) => {
+    const normalized = String(value ?? '').trim().replace(/[.\s]/g, '');
+    if (!normalized) return 0;
+    if (!/^\d+$/.test(normalized)) return null;
+    const parsed = Number(normalized);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+};
 
 const comparisonChartOptions = {
     responsive: true,
@@ -268,6 +314,9 @@ export default function WeeklyAveragePricePage() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
+    const [exchangeRateInput, setExchangeRateInput] = useState('');
+    const [exchangeRateInputError, setExchangeRateInputError] = useState(false);
+    const [exchangeRateInputDirty, setExchangeRateInputDirty] = useState(false);
     const [selectedCustomerKey, setSelectedCustomerKey] = useState('');
     const [customerCatalog, setCustomerCatalog] = useState([]);
     const [customersLoading, setCustomersLoading] = useState(true);
@@ -307,6 +356,9 @@ export default function WeeklyAveragePricePage() {
         setLoading(true);
         setError('');
         setSelectedCustomerKey('');
+        setExchangeRateInput('');
+        setExchangeRateInputError(false);
+        setExchangeRateInputDirty(false);
         setCustomerEntry({
             customer: '',
             operator: '',
@@ -320,6 +372,12 @@ export default function WeeklyAveragePricePage() {
                 if (!active) return;
                 setSelectedCustomerKey('');
                 setReport(data);
+                setExchangeRateInput(data.exchange_rate
+                    ? Number.isInteger(Number(data.exchange_rate))
+                        ? formatInteger(data.exchange_rate)
+                        : String(data.exchange_rate)
+                    : '');
+                setExchangeRateInputDirty(false);
             })
             .catch((requestError) => active && setError(requestError.message))
             .finally(() => active && setLoading(false));
@@ -381,13 +439,20 @@ export default function WeeklyAveragePricePage() {
     }
 
     function updateExchangeRate(value) {
+        setExchangeRateInput(value);
+        setExchangeRateInputDirty(true);
+        const parsedRate = parseExchangeRate(value);
+        setExchangeRateInputError(parsedRate == null);
+        if (parsedRate == null) return;
         setReport((current) => ({
             ...current,
-            exchange_rate: value,
+            exchange_rate: parsedRate,
             rows: current.rows.map((row) => ({
                 ...row,
                 total_usd_override: null,
-                rupiah_override: null,
+                rupiah_override: row.price_unit === 'IDR_SM3'
+                    ? row.rupiah_override
+                    : null,
             })),
         }));
     }
@@ -401,6 +466,14 @@ export default function WeeklyAveragePricePage() {
 
     async function persistReport(nextReport, successMessage) {
         if (!selectedMonth) return;
+        const exchangeRate = exchangeRateInputDirty
+            ? parseExchangeRate(exchangeRateInput)
+            : Number(nextReport.exchange_rate || 0);
+        if (exchangeRate == null) {
+            setExchangeRateInputError(true);
+            setError('Kurs harus berupa angka bulat. Contoh: 18.069 berarti Rp18.069 per USD.');
+            return;
+        }
         setSaving(true);
         setError('');
         setNotice('');
@@ -413,7 +486,7 @@ export default function WeeklyAveragePricePage() {
                         operator,
                         Number(nextReport.operator_factors[operator] || 0),
                     ])),
-                    exchange_rate: Number(nextReport.exchange_rate || 0),
+                    exchange_rate: exchangeRate,
                     targets: Object.fromEntries(activeComparisonAreas.map(({ key }) => [
                         key,
                         nextReport.targets[key] === '' || nextReport.targets[key] == null
@@ -440,6 +513,13 @@ export default function WeeklyAveragePricePage() {
             });
             const refreshed = await api(`/api/monthly-average-price?month=${encodeURIComponent(selectedMonth)}`);
             setReport(refreshed);
+            setExchangeRateInput(refreshed.exchange_rate
+                ? Number.isInteger(Number(refreshed.exchange_rate))
+                    ? formatInteger(refreshed.exchange_rate)
+                    : String(refreshed.exchange_rate)
+                : '');
+            setExchangeRateInputError(false);
+            setExchangeRateInputDirty(false);
             setNotice(successMessage);
         } catch (requestError) {
             setError(requestError.message);
@@ -484,6 +564,15 @@ export default function WeeklyAveragePricePage() {
                     throw new Error('Server tidak mengembalikan identitas customer baru.');
                 }
                 customerKey = createdCustomer.customer_key;
+                setCustomerCatalog((current) => (
+                    current.some((customer) => customer.customer_key === customerKey)
+                        ? current
+                        : [...current, {
+                            customer_key: customerKey,
+                            customer_name: customerName,
+                            operator,
+                        }]
+                ));
             }
 
             const existingRow = row || {
@@ -542,6 +631,12 @@ export default function WeeklyAveragePricePage() {
         );
     }
 
+    const workbookAreaOrder = selectedMonth >= '2026-01' && selectedMonth < '2026-08'
+        ? ['JAWA BARAT', 'JAWA TENGAH DAN TIMUR', 'WILAYAH BELUM DIPETAKAN']
+        : ['JAWA BARAT', 'JAWA TENGAH', 'JAWA TIMUR', 'WILAYAH BELUM DIPETAKAN'];
+    const workbookAreaOrderByName = new Map(
+        workbookAreaOrder.map((area, index) => [area, index]),
+    );
     const calculatedRows = report.rows.map((row) => {
         const sm3 = Number(row.sm3 ?? row.actual_sm3 ?? 0);
         const factor = Number(report.operator_factors[row.operator] || 0);
@@ -568,6 +663,8 @@ export default function WeeklyAveragePricePage() {
         const customer = selectedMonth === '2026-01'
             ? januaryCustomerAliases[customerKey] || customerOrderAliases[customerKey] || row.customer
             : customerOrderAliases[customerKey] || row.customer;
+        const workbookArea = workbookAreaForCustomer(row.region, customer, selectedMonth);
+        const workbookGroup = workbookGroupForCustomer({ customer, region: workbookArea }, selectedMonth);
         return {
             ...row,
             customer,
@@ -576,15 +673,14 @@ export default function WeeklyAveragePricePage() {
             volume_mmbtu: volumeMmbtu,
             total_usd: totalUsd,
             rupiah: totalRp,
-            workbook_group: workbookGroupForCustomer({ customer, region: row.region }, selectedMonth),
+            workbook_group: workbookGroup,
+            workbook_area: workbookArea,
         };
-    }).filter((row) => row.sm3_override != null
-        || row.has_valid_price
-        || (row.price_unit === 'IDR_SM3'
-            ? Number(row.price_rp_per_sm3) > 0
-            : Number(row.price_usd_per_mmbtu) > 0))
-        .map((row, index) => ({ row, index }))
+    }).map((row, index) => ({ row, index }))
         .sort((left, right) => {
+            const leftAreaOrder = workbookAreaOrderByName.get(left.row.workbook_area) ?? Infinity;
+            const rightAreaOrder = workbookAreaOrderByName.get(right.row.workbook_area) ?? Infinity;
+            if (leftAreaOrder !== rightAreaOrder) return leftAreaOrder - rightAreaOrder;
             const groupOrder = left.row.workbook_group.index - right.row.workbook_group.index;
             if (groupOrder !== 0) return groupOrder;
             const leftOrder = customerOrderIndex.get(normalizeCustomerOrder(left.row.customer)) ?? Infinity;
@@ -592,17 +688,38 @@ export default function WeeklyAveragePricePage() {
             return leftOrder - rightOrder || left.index - right.index;
         })
         .map(({ row }) => row);
-    const displayRows = calculatedRows.filter((row) => row.workbook_group.index >= 4);
+    const displayRows = calculatedRows.filter((row) =>
+        row.has_valid_price
+        && (row.sm3 > 0
+            || Number(row.price_usd_per_mmbtu) > 0
+            || Number(row.price_rp_per_sm3) > 0
+            || Number(row.total_usd_override) > 0
+            || Number(row.rupiah_override) > 0),
+    );
     const displayGroups = displayRows.reduce((groups, row) => {
         const currentGroup = groups[groups.length - 1];
-        if (!currentGroup || currentGroup.group.index !== row.workbook_group.index) {
-            groups.push({ group: row.workbook_group, rows: [row] });
+        if (
+            !currentGroup
+            || currentGroup.group.index !== row.workbook_group.index
+            || currentGroup.area !== row.workbook_area
+        ) {
+            groups.push({ area: row.workbook_area, group: row.workbook_group, rows: [row] });
         } else {
             currentGroup.rows.push(row);
         }
         return groups;
     }, []);
-    const displayRowNumbers = new Map(displayRows.map((row, index) => [row.customer_key, index + 1]));
+    const displayRowNumbers = new Map();
+    displayGroups.forEach((group) => {
+        group.rows.forEach((row, index) => {
+            displayRowNumbers.set(row.customer_key, index + 1);
+        });
+    });
+    const displayCustomerNameCounts = displayRows.reduce((counts, row) => {
+        const key = normalizeCustomerOrder(row.customer);
+        counts.set(key, (counts.get(key) || 0) + 1);
+        return counts;
+    }, new Map());
     const totals = calculatedRows.filter((row) =>
         row.has_valid_price && row.include_in_summary !== false,
     ).reduce((sum, row) => ({
@@ -611,6 +728,39 @@ export default function WeeklyAveragePricePage() {
         usd: sum.usd + row.total_usd,
         rupiah: sum.rupiah + row.rupiah,
     }), { sm3: 0, mmbtu: 0, usd: 0, rupiah: 0 });
+    const validRowsByArea = calculatedRows
+        .filter((row) => row.has_valid_price && row.sm3 > 0)
+        .reduce((areas, row) => {
+            const areaRows = areas.get(row.workbook_area) || [];
+            areaRows.push(row);
+            areas.set(row.workbook_area, areaRows);
+            return areas;
+        }, new Map());
+    const standaloneAreas = new Set(
+        Array.from(validRowsByArea.entries())
+            .filter(([, rows]) => !rows.some((row) => row.include_in_summary !== false))
+            .map(([area]) => area),
+    );
+    const regionalTotalsByName = new Map([
+        ['JAWA BARAT', { region: 'JAWA BARAT', sm3: 0, mmbtu: 0, usd: 0, rupiah: 0 }],
+        ['JAWA TENGAH', { region: 'JAWA TENGAH', sm3: 0, mmbtu: 0, usd: 0, rupiah: 0 }],
+        ['JAWA TIMUR', { region: 'JAWA TIMUR', sm3: 0, mmbtu: 0, usd: 0, rupiah: 0 }],
+    ]);
+    calculatedRows.filter((row) =>
+        row.has_valid_price
+        && (row.include_in_summary !== false || standaloneAreas.has(row.workbook_area)),
+    ).forEach((row) => {
+        const region = row.workbook_area || 'WILAYAH BELUM DIPETAKAN';
+        if (!regionalTotalsByName.has(region)) {
+            regionalTotalsByName.set(region, { region, sm3: 0, mmbtu: 0, usd: 0, rupiah: 0 });
+        }
+        const regionTotals = regionalTotalsByName.get(region);
+        regionTotals.sm3 += row.sm3;
+        regionTotals.mmbtu += row.volume_mmbtu;
+        regionTotals.usd += row.total_usd;
+        regionTotals.rupiah += row.rupiah;
+    });
+    const regionalTotals = Array.from(regionalTotalsByName.values());
     const averagePriceRpSm3 = totals.sm3 > 0 ? totals.rupiah / totals.sm3 : 0;
     const hasUncalculatedPriceRows = calculatedRows.some((row) =>
         !row.has_valid_price
@@ -707,7 +857,7 @@ export default function WeeklyAveragePricePage() {
             <section className="average-kpi-grid">
                 <article className="average-kpi average-kpi-blue"><span className="average-kpi-icon">▤</span><div><small>TOTAL SM³</small><strong>{formatInteger(totals.sm3)}</strong><span>Volume sumber perhitungan</span></div></article>
                 <article className="average-kpi average-kpi-green"><span className="average-kpi-icon">◆</span><div><small>TOTAL MMBTU</small><strong>{formatDecimal(totals.mmbtu, 3)}</strong><span>Sm³ ÷ faktor operator</span></div></article>
-                <article className="average-kpi average-kpi-blue"><span className="average-kpi-icon">AVG</span><div><small>AVERAGE Rp/Sm³</small><strong>{formatDecimal(averagePriceRpSm3, 2)}</strong><span>Total Rupiah ÷ volume sumber</span></div></article>
+                <article className="average-kpi average-kpi-teal"><span className="average-kpi-icon">AVG</span><div><small>AVERAGE Rp/Sm³</small><strong>{formatDecimal(averagePriceRpSm3, 2)}</strong><span>Total Rupiah ÷ volume sumber</span></div></article>
             </section>
 
             <section className="average-data-panel">
@@ -716,69 +866,134 @@ export default function WeeklyAveragePricePage() {
                 <div className="average-data-heading">
                     <div className="average-panel-heading">
                         <b>2. Hasil Perhitungan Average Price</b>
-                        <small>{monthLabel(selectedMonth)} · Customer DIRECT tetap masuk total. Baris * dikecualikan dari total Summary.</small>
+                        <small>{monthLabel(selectedMonth)} · Wilayah mengikuti workbook: Jawa Tengah dan Timur satu blok pada Januari–Juli 2026, lalu terpisah mulai Agustus. Customer BELUM DIPETAKAN tetap terpisah; tanda * berarti dikecualikan dari Summary.</small>
                     </div>
                 </div>
                 <form onSubmit={saveReport}>
                     <div className="average-table-wrap average-customer-table-wrap" role="region" aria-label="Tabel data Average Price Customer" tabIndex="0">
                         <table className="average-data-table">
-                            <thead><tr><th>No</th><th>Customer</th><th>Operator</th><th>Sm³</th><th>MMBTU</th><th>Harga Efektif</th><th>Total (USD)</th><th>Total (Rp)</th></tr></thead>
+                            <thead><tr><th>No</th><th>Customer</th><th>Sm³</th><th>MMBTU</th><th>Harga / MMBTU</th><th>Total USD</th><th>Total Rupiah</th></tr></thead>
                             <tbody>
                                 {displayRows.length === 0
                                     ? (
                                         <tr>
-                                            <td colSpan="8" className="empty-row">
+                                            <td colSpan="7" className="empty-row">
                                                 {loading
                                                     ? 'Memuat data...'
-                                                    : report.rows.length === 0
-                                                        ? 'Belum ada data sales untuk bulan ini.'
-                                                        : 'Belum ada hasil. Pilih customer, isi harga, lalu simpan.'}
+                                                    : 'Belum ada data volume untuk bulan ini.'}
                                             </td>
                                         </tr>
                                     )
-                                    : displayGroups.map((group) => {
+                                    : displayGroups.map((group, groupIndex) => {
                                         const groupTotals = group.rows
-                                            .filter((row) => row.has_valid_price)
+                                            .filter((row) => row.has_valid_price
+                                                && (row.include_in_summary !== false
+                                                    || standaloneAreas.has(group.area)))
                                             .reduce((sum, row) => ({
-                                                sm3: sum.sm3 + row.sm3,
-                                                mmbtu: sum.mmbtu + row.volume_mmbtu,
-                                                usd: sum.usd + row.total_usd,
-                                                rupiah: sum.rupiah + row.rupiah,
+                                                    sm3: sum.sm3 + row.sm3,
+                                                    mmbtu: sum.mmbtu + row.volume_mmbtu,
+                                                    usd: sum.usd + row.total_usd,
+                                                    rupiah: sum.rupiah + row.rupiah,
                                             }), { sm3: 0, mmbtu: 0, usd: 0, rupiah: 0 });
-                                        return <React.Fragment key={group.group.index}>
-                                            {group.rows.map((row) => {
-                                                return <tr key={row.customer_key}>
-                                                    <td>{displayRowNumbers.get(row.customer_key)}</td>
-                                                    <td>{row.customer}{row.include_in_summary === false ? ' *' : ''}</td>
-                                                    <td>{row.operator}</td>
-                                                    <td>{formatInteger(row.sm3)}</td>
-                                                    <td>{formatDecimal(row.volume_mmbtu, 3)}</td>
-                                                    <td>{row.price_unit === 'IDR_SM3'
-                                                        ? `Rp ${formatDecimal(row.price_rp_per_sm3, 2)}`
-                                                        : `$ ${formatDecimal(row.price_usd_per_mmbtu, 4)}`}</td>
-                                                    <td>$ {formatDecimal(row.total_usd, 2)}</td>
-                                                    <td>Rp {formatDecimal(row.rupiah, 2)}</td>
-                                                </tr>;
-                                            })}
-                                            <tr className="average-workbook-subtotal">
-                                                <th colSpan="3">JUMLAH</th>
-                                                <th>{formatInteger(groupTotals.sm3)}</th>
-                                                <th>{formatDecimal(groupTotals.mmbtu, 3)}</th>
-                                                <th>—</th>
-                                                <th>$ {formatDecimal(groupTotals.usd, 2)}</th>
-                                                <th>Rp {formatDecimal(groupTotals.rupiah, 2)}</th>
-                                            </tr>
-                                        </React.Fragment>;
+                                        const isUnmappedGroup = group.group.index >= workbookCustomerGroups.length;
+                                        const showAreaHeading = !isUnmappedGroup
+                                            && (groupIndex === 0 || displayGroups[groupIndex - 1].area !== group.area);
+                                        const isLastGroupInArea = groupIndex === displayGroups.length - 1
+                                            || displayGroups[groupIndex + 1].area !== group.area;
+                                        const areaTotals = regionalTotalsByName.get(group.area);
+                                        return <React.Fragment key={`${group.area}:${group.group.index}`}>
+                                                    {showAreaHeading && (
+                                                        <tr className="average-workbook-area">
+                                                                <th colSpan="7">{group.area}</th>
+                                                        </tr>
+                                                        )}
+                                                        <tr className={`average-workbook-group${isUnmappedGroup ? ' average-unmapped-group' : ''}`}>
+                                                            {isUnmappedGroup
+                                                                ? <th colSpan="7">BELUM DIPETAKAN</th>
+                                                                : <>
+                                                                    <th>{group.group.index < 4 ? 'DIRECT' : 'KSO'}</th>
+                                                                    <th>{group.group.label.replace(/^KSO · /, '')}</th>
+                                                                    <th colSpan="5"></th>
+                                                                </>}
+                                                        </tr>
+                                                        {group.rows.map((row) => {
+                                                            return <tr key={row.customer_key}>
+                                                            <td>{displayRowNumbers.get(row.customer_key)}</td>
+                                                            <td>
+                                                                {row.customer}{row.include_in_summary === false ? ' *' : ''}
+                                                                {row.sm3 <= 0
+                                                                    && <small className="average-customer-key">Harga tersimpan · menunggu volume</small>}
+                                                                {displayCustomerNameCounts.get(normalizeCustomerOrder(row.customer)) > 1
+                                                                    && <small className="average-customer-key">key: {row.customer_key}</small>}
+                                                            </td>
+                                                            <td>{formatInteger(row.sm3)}</td>
+                                                            <td>{formatDecimal(row.volume_mmbtu, 3)}</td>
+                                                            <td>{row.price_unit === 'IDR_SM3' ? 'Rp ' : '$ '}
+                                                                {row.price_unit === 'IDR_SM3'
+                                                                    ? formatDecimal(row.price_rp_per_sm3, 2)
+                                                                    : formatDecimal(row.price_usd_per_mmbtu, 2)}
+                                                            </td>
+                                                            <td>$ {formatDecimal(row.total_usd, 2)}</td>
+                                                            <td>Rp {formatDecimal(row.rupiah, 2)}</td>
+                                                    </tr>;
+                                                })}
+                                                <tr className="average-workbook-subtotal">
+                                                    <th colSpan="2">{isUnmappedGroup ? 'JUMLAH BELUM DIPETAKAN' : 'JUMLAH'}</th>
+                                                    <th>{formatInteger(groupTotals.sm3)}</th>
+                                                    <th>{formatDecimal(groupTotals.mmbtu, 3)}</th>
+                                                    <th>—</th>
+                                                    <th>$ {formatDecimal(groupTotals.usd, 2)}</th>
+                                                    <th>Rp {formatDecimal(groupTotals.rupiah, 2)}</th>
+                                                </tr>
+                                                <tr className="average-workbook-average">
+                                                    <th colSpan="2">AVG</th>
+                                                    <th>—</th>
+                                                    <th>—</th>
+                                                    <th>
+                                                        {groupTotals.mmbtu > 0
+                                                            ? `$ ${formatDecimal(groupTotals.usd / groupTotals.mmbtu, 2)}`
+                                                            : '—'}
+                                                    </th>
+                                                    <th>—</th>
+                                                    <th>
+                                                        {groupTotals.sm3 > 0
+                                                            ? `Rp ${formatDecimal(groupTotals.rupiah / groupTotals.sm3, 2)}`
+                                                            : '—'}
+                                                    </th>
+                                                </tr>
+                                                {isLastGroupInArea && areaTotals && (
+                                                    <>
+                                                        <tr className="average-regional-total-row">
+                                                            <th colSpan="2">TOTAL {areaTotals.region}{standaloneAreas.has(group.area) ? ' · DI LUAR KONSOLIDASI' : ''}</th>
+                                                            <th>{formatInteger(areaTotals.sm3)}</th>
+                                                            <th>{formatDecimal(areaTotals.mmbtu, 3)}</th>
+                                                            <th>—</th>
+                                                            <th>$ {formatDecimal(areaTotals.usd, 2)}</th>
+                                                            <th>Rp {formatDecimal(areaTotals.rupiah, 2)}</th>
+                                                        </tr>
+                                                        <tr className="average-regional-average-row">
+                                                            <th colSpan="6">ASP {areaTotals.region}{standaloneAreas.has(group.area) ? ' · DI LUAR KONSOLIDASI' : ''}</th>
+                                                            <th>
+                                                                {areaTotals.sm3 > 0
+                                                                    ? `Rp ${formatDecimal(areaTotals.rupiah / areaTotals.sm3, 2)}`
+                                                                    : '—'}
+                                                            </th>
+                                                        </tr>
+                                                    </>
+                                                )}
+                                            </React.Fragment>;
                                     })}
                             </tbody>
-                            {displayRows.length > 0 && <tfoot><tr>
-                                <th colSpan="3">TOTAL</th>
-                                <th>{formatInteger(totals.sm3)}</th>
-                                <th>{formatDecimal(totals.mmbtu, 3)}</th>
-                                <th>—</th>
-                                <th>$ {formatDecimal(totals.usd, 2)}</th>
-                                <th>Rp {formatDecimal(totals.rupiah, 2)}</th>
-                            </tr></tfoot>}
+                            {displayRows.length > 0 && <tfoot>
+                                <tr>
+                                    <th colSpan="2">TOTAL KESELURUHAN</th>
+                                    <th>{formatInteger(totals.sm3)}</th>
+                                    <th>{formatDecimal(totals.mmbtu, 3)}</th>
+                                    <th>—</th>
+                                    <th>$ {formatDecimal(totals.usd, 2)}</th>
+                                    <th>Rp {formatDecimal(totals.rupiah, 2)}</th>
+                                </tr>
+                            </tfoot>}
                         </table>
                     </div>
                 </form>
@@ -880,11 +1095,25 @@ export default function WeeklyAveragePricePage() {
                     <div className="average-data-heading average-conversion-heading">
                         <div className="average-panel-heading">
                             <b>3. Faktor Konversi Operator dan Kurs</b>
-                            <small>Faktor dan kurs berlaku untuk seluruh customer pada {monthLabel(selectedMonth)}.</small>
+                            <small>Faktor dan kurs berlaku untuk seluruh customer pada {monthLabel(selectedMonth)}. Masukkan kurs dengan format Indonesia; contoh 18.069 berarti Rp18.069/USD.</small>
                         </div>
                         <label className="average-filter-field">
                             <span>Kurs Rp/USD</span>
-                            <input aria-label="Kurs Rupiah per USD" type="number" min="0" step="1" value={report.exchange_rate || ''} onChange={(event) => updateExchangeRate(event.target.value)} />
+                            <input
+                                aria-label="Kurs Rupiah per USD"
+                                type="text"
+                                inputMode="decimal"
+                                value={exchangeRateInput}
+                                aria-invalid={exchangeRateInputError}
+                                onChange={(event) => updateExchangeRate(event.target.value)}
+                                onBlur={() => {
+                                    if (!exchangeRateInputDirty) return;
+                                    const parsedRate = parseExchangeRate(exchangeRateInput);
+                                    if (parsedRate != null) {
+                                        setExchangeRateInput(parsedRate ? formatInteger(parsedRate) : '');
+                                    }
+                                }}
+                            />
                         </label>
                     </div>
                     <div className="average-table-wrap average-conversion-wrap">

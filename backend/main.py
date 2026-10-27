@@ -531,7 +531,10 @@ def normalize_customer_mapping(customer_value, operator_value):
     operator = str(operator_value or "").strip().upper()
     if not customer or operator not in CUSTOMER_ASSIGNMENTS:
         raise HTTPException(status_code=400, detail="Customer dan operator/status OFF wajib diisi dengan benar.")
-    return norm(customer), customer, operator
+    customer_key = norm(customer)
+    if not customer_key or len(customer_key) > 191:
+        raise HTTPException(status_code=400, detail="Nama customer tidak menghasilkan key yang valid.")
+    return customer_key, customer, operator
 
 
 @app.post("/api/login")
@@ -3048,6 +3051,7 @@ async def save_monthly_average_price(request: Request):
         if not math.isfinite(exchange_rate) or exchange_rate < 0:
             raise ValueError
         normalized_entries = []
+        submitted_customer_keys = set()
         for entry in entries:
             customer_key = str(entry.get("customer_key", "")).strip()
             region = str(entry.get("region", "")).strip()
@@ -3068,6 +3072,12 @@ async def save_monthly_average_price(request: Request):
                 or price_rp < 0
             ):
                 raise ValueError
+            if customer_key in submitted_customer_keys:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Customer dikirim lebih dari sekali: {customer_key}.",
+                )
+            submitted_customer_keys.add(customer_key)
             overrides = []
             for field in (
                 "sm3_override",
@@ -3250,10 +3260,25 @@ async def save_mapping(request: Request):
     operator = str(payload.get("operator", "")).strip().upper()
     customer_key, customer, operator = normalize_customer_mapping(customer, operator)
     with db() as con:
-        con.execute("INSERT INTO customers(customer_key,customer_name,operator) VALUES(%s,%s,%s) "
-                "ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),operator=VALUES(operator)",
-                    (customer_key, customer, operator))
-    return {"ok": True}
+        existing = con.execute(
+            "SELECT customer_key,operator FROM customers WHERE customer_key=%s",
+            (customer_key,),
+        ).fetchone()
+        if existing and existing["operator"] != operator:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Key customer ini sudah terdaftar dengan operator berbeda. "
+                    "Pilih customer yang sudah ada atau hubungi admin untuk pemetaan."
+                ),
+            )
+        if not existing:
+            con.execute(
+                "INSERT INTO customers(customer_key,customer_name,operator) "
+                "VALUES(%s,%s,%s)",
+                (customer_key, customer, operator),
+            )
+    return {"ok": True, "customer_key": customer_key, "created": not bool(existing)}
 
 
 @app.post("/api/customer-mapping/bulk")

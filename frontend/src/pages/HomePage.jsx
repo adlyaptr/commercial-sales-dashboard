@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js';
 import { useOutletContext } from 'react-router-dom';
@@ -221,11 +221,15 @@ export default function HomePage() {
                     <h3><SectionIcon name="volume" />Perbandingan Volume per MS</h3>
                     <Message loading={loading} error={errors.summary}>
                         <div className="home-volume-comparison-body">
-                            <div className="home-regional-volume">
-                                <strong>{formatVolume(totalRegionalVolume)} <small>Sm3</small></strong>
-                                <div>
+                            <div className="home-volume-summary">
+                                <div className="home-total-volume">
+                                    <small>Total volume keseluruhan</small>
+                                    <strong>{formatVolume(totalRegionalVolume)} <span>Sm3</span></strong>
+                                </div>
+                                <div className="home-regional-volume">
+                                    <small>Volume per daerah</small>
                                     {regionalVolumes.map(({ region, volume }) => (
-                                        <span key={region}>{region}: <b>{formatVolume(volume)} Sm3</b></span>
+                                        <span key={region}><b>{region}</b>{formatVolume(volume)} Sm3</span>
                                     ))}
                                 </div>
                             </div>
