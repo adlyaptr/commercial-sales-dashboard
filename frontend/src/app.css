@@ -914,13 +914,28 @@ button { cursor: pointer; }
 .operator-table .operator-total-row td.diff-neg { color: #d74a55; }
 .operator-table .empty-row { padding: 12px 6px; }
 #detail-harian.operator-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#detail-harian .operator-column { display: flex; flex-direction: column; align-self: start; gap: 10px; min-width: 0; }
+#detail-harian .operator-card { align-self: start; }
 #detail-harian .table-wrap { max-height: 480px; overflow-x: hidden; overflow-y: auto; }
-#detail-harian .operator-table { width: 100%; min-width: 0; table-layout: fixed; white-space: normal; }
-#detail-harian .operator-table th:first-child { width: 40%; }
-#detail-harian .operator-table th:not(:first-child) { width: 20%; }
+#detail-harian .table-wrap.setu-table-wrap { max-height: none; overflow: visible; }
+#detail-harian .operator-table { width: 100%; max-width: 430px; min-width: 0; table-layout: fixed; white-space: normal; }
+#detail-harian .operator-table th:first-child { width: 34%; }
+#detail-harian .operator-table th:nth-child(2),
+#detail-harian .operator-table th:nth-child(3),
+#detail-harian .operator-table th:nth-child(4) { width: 22%; }
+#detail-harian .operator-table th,
+#detail-harian .operator-table td {
+  padding-left: 3px;
+  padding-right: 3px;
+  border-right: 1px solid #dce9df;
+}
+#detail-harian .operator-table th:last-child,
+#detail-harian .operator-table td:last-child { border-right: 0; }
+#detail-harian .operator-table th:not(:first-child),
+#detail-harian .operator-table td:not(:first-child) { text-align: left; }
 #detail-harian .operator-table td:first-child { max-width: none; overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
-#detail-harian .operator-table td:not(:first-child) { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
-.operator-summary-card { min-width: 0; align-self: start; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+#detail-harian .operator-table td:not(:first-child) { min-width: 0; overflow-wrap: normal; white-space: nowrap; }
+.operator-summary-card { min-width: 0; align-self: stretch; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
 .daily-summary-block + .daily-summary-block { margin-top: 12px; padding-top: 10px; border-top: 1px solid #dcebe1; }
 .daily-summary-block h3 { margin: 0 0 6px; color: #245740; font-size: 10px; line-height: 1.35; }
 .daily-summary-table-wrap { width: 100%; overflow: hidden; }

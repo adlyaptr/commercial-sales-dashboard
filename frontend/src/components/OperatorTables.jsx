@@ -52,6 +52,71 @@ function sumRows(rows) {
     }), { so: 0, actual: 0 });
 }
 
+function OperatorCard({
+    operator,
+    rows,
+    tableHeight,
+    tableRef,
+    onEditManualFob,
+    onDeleteManualFob,
+}) {
+    const groups = [
+        { key: 'direct', label: 'Direct Customer' },
+        { key: 'kso', label: 'KSO Customer' },
+        { key: 'fob', label: 'FOB Customer' },
+    ]
+        .map((group) => ({
+            ...group,
+            rows: rows
+                .filter((row) => getCustomerGroup(row) === group.key)
+                .sort((a, b) => Number(a.diff ?? 0) - Number(b.diff ?? 0)
+                    || a.customer.localeCompare(b.customer, 'id')),
+        }))
+        .filter((group) => group.rows.length > 0);
+    const totals = sumRows(rows);
+
+    return (
+        <article className={`operator-card ${operator.toLowerCase()}`}>
+            <div className="operator-heading"><span className="operator-icon">♟</span><b>{operator}</b><small>{rows.length} Customer</small></div>
+            <div className={`table-wrap ${operator.toLowerCase()}-table-wrap`} ref={tableRef} style={operator === 'SETU' ? undefined : { maxHeight: `${tableHeight}px` }}><table className="operator-table">
+                <thead><tr><th>Customer / Kelompok</th><th>SO</th><th>Actual</th><th>Diff</th></tr></thead>
+                <tbody>
+                    {groups.length === 0 ? <tr><td colSpan="4" className="empty-row">Tidak ada data pada tanggal ini</td></tr> : groups.map((group) => {
+                        const groupTotals = sumRows(group.rows);
+                        const groupDiff = groupTotals.actual - groupTotals.so;
+                        return (
+                            <React.Fragment key={group.key}>
+                                <tr className="operator-group-row">
+                                    <th>{group.label} ({group.rows.length})</th>
+                                    <td>{formatNumber(groupTotals.so)}</td>
+                                    <td>{formatNumber(groupTotals.actual)}</td>
+                                    <td className={groupDiff >= 0 ? 'diff-pos' : 'diff-neg'}>{groupDiff > 0 ? '+' : ''}{formatNumber(groupDiff)}</td>
+                                </tr>
+                                {group.rows.map((row, index) => (
+                                    <tr key={`${group.key}-${row.customer}-${index}`}>
+                                        <td title={row.customer}>
+                                            {row.customer}
+                                            {row.manual_fob && <span className="manual-fob-row-actions">
+                                                <button type="button" onClick={() => onEditManualFob?.(row, operator)}>Edit</button>
+                                                <button type="button" onClick={() => onDeleteManualFob?.(row)}>Hapus</button>
+                                            </span>}
+                                        </td><td>{formatNumber(row.so)}</td><td>{formatNumber(row.actual)}</td>
+                                        <td className={row.diff >= 0 ? 'diff-pos' : 'diff-neg'}>{row.diff > 0 ? '+' : ''}{formatNumber(row.diff)}</td>
+                                    </tr>
+                                ))}
+                            </React.Fragment>
+                        );
+                    })}
+                </tbody>
+                <tfoot><tr className="operator-total-row">
+                    <th>Total {operator}</th><td>{formatNumber(totals.so)}</td><td>{formatNumber(totals.actual)}</td>
+                    <td className={totals.actual - totals.so >= 0 ? 'diff-pos' : 'diff-neg'}>{totals.actual - totals.so > 0 ? '+' : ''}{formatNumber(totals.actual - totals.so)}</td>
+                </tr></tfoot>
+            </table></div>
+        </article>
+    );
+}
+
 export default function OperatorTables({
     data = {},
     dailySummary,
@@ -84,76 +149,62 @@ export default function OperatorTables({
 
     return (
         <section className="operator-grid" id="detail-harian">
-            {operators.map((operator) => {
-                const rows = data[operator] ?? [];
-                const groups = [
-                    { key: 'direct', label: 'Direct Customer' },
-                    { key: 'kso', label: 'KSO Customer' },
-                    { key: 'fob', label: 'FOB Customer' },
-                ]
-                    .map((group) => ({
-                        ...group,
-                        rows: rows
-                            .filter((row) => getCustomerGroup(row) === group.key)
-                            .sort((a, b) => Number(a.diff ?? 0) - Number(b.diff ?? 0)
-                                || a.customer.localeCompare(b.customer, 'id')),
-                    }))
-                    .filter((group) => group.rows.length > 0);
-                const totals = sumRows(rows);
-
-                return (
-                    <article className={`operator-card ${operator.toLowerCase()}`} key={operator}>
-                        <div className="operator-heading"><span className="operator-icon">♟</span><b>{operator}</b><small>{rows.length} Customer</small></div>
-                        <div className="table-wrap" ref={operator === 'KHT' ? khtTableRef : undefined} style={{ maxHeight: `${tableHeight}px` }}><table className="operator-table">
-                            <thead><tr><th>Customer / Kelompok</th><th>SO</th><th>Actual</th><th>Diff</th></tr></thead>
-                            <tbody>
-                                {groups.length === 0 ? <tr><td colSpan="4" className="empty-row">Tidak ada data pada tanggal ini</td></tr> : groups.map((group) => {
-                                    const groupTotals = sumRows(group.rows);
-                                    const groupDiff = groupTotals.actual - groupTotals.so;
-                                    return (
-                                        <React.Fragment key={group.key}>
-                                            <tr className="operator-group-row">
-                                                <th>{group.label} ({group.rows.length})</th>
-                                                <td>{formatNumber(groupTotals.so)}</td>
-                                                <td>{formatNumber(groupTotals.actual)}</td>
-                                                <td className={groupDiff >= 0 ? 'diff-pos' : 'diff-neg'}>{groupDiff > 0 ? '+' : ''}{formatNumber(groupDiff)}</td>
-                                            </tr>
-                                            {group.rows.map((row, index) => (
-                                                <tr key={`${group.key}-${row.customer}-${index}`}>
-                                                    <td title={row.customer}>
-                                                        {row.customer}
-                                                        {row.manual_fob && <span className="manual-fob-row-actions">
-                                                            <button type="button" onClick={() => onEditManualFob?.(row, operator)}>Edit</button>
-                                                            <button type="button" onClick={() => onDeleteManualFob?.(row)}>Hapus</button>
-                                                        </span>}
-                                                    </td><td>{formatNumber(row.so)}</td><td>{formatNumber(row.actual)}</td>
-                                                    <td className={row.diff >= 0 ? 'diff-pos' : 'diff-neg'}>{row.diff > 0 ? '+' : ''}{formatNumber(row.diff)}</td>
-                                                </tr>
-                                            ))}
-                                        </React.Fragment>
-                                    );
-                                })}
-                            </tbody>
-                            <tfoot><tr className="operator-total-row">
-                                <th>Total {operator}</th><td>{formatNumber(totals.so)}</td><td>{formatNumber(totals.actual)}</td>
-                                <td className={totals.actual - totals.so >= 0 ? 'diff-pos' : 'diff-neg'}>{totals.actual - totals.so > 0 ? '+' : ''}{formatNumber(totals.actual - totals.so)}</td>
-                            </tr></tfoot>
-                        </table></div>
-                    </article>
-                );
-            })}
-            <article className="operator-summary-card">
-                <SummaryTable
-                    title={`Penyerapan Harian ${formatDate(dailySummary?.report_date)}`}
-                    totals={{ so: dailySummary?.total_so, actual: dailySummary?.total_actual, diff: dailySummary?.diff }}
+            <div className="operator-column">
+                <OperatorCard
+                    operator="SETU"
+                    rows={data.SETU ?? []}
+                    tableHeight={tableHeight}
+                    onEditManualFob={onEditManualFob}
+                    onDeleteManualFob={onDeleteManualFob}
                 />
-                <SummaryTable
-                    title={`Summary ${summaryMonth ? new Date(`${summaryMonth}-01T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : 'Bulanan'}`}
-                    totals={monthlySummary}
-                    loading={summaryLoading}
-                    error={summaryError}
+            </div>
+            <div className="operator-column">
+                <OperatorCard
+                    operator="KHT"
+                    rows={data.KHT ?? []}
+                    tableHeight={tableHeight}
+                    tableRef={khtTableRef}
+                    onEditManualFob={onEditManualFob}
+                    onDeleteManualFob={onDeleteManualFob}
                 />
-            </article>
+                <article className="operator-summary-card">
+                    <SummaryTable
+                        title={`Penyerapan Harian ${formatDate(dailySummary?.report_date)}`}
+                        totals={{ so: dailySummary?.total_so, actual: dailySummary?.total_actual, diff: dailySummary?.diff }}
+                    />
+                    <SummaryTable
+                        title={`Summary ${summaryMonth ? new Date(`${summaryMonth}-01T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : 'Bulanan'}`}
+                        totals={monthlySummary}
+                        loading={summaryLoading}
+                        error={summaryError}
+                    />
+                </article>
+                <OperatorCard
+                    operator="OFF"
+                    rows={data.OFF ?? []}
+                    tableHeight={tableHeight}
+                    onEditManualFob={onEditManualFob}
+                    onDeleteManualFob={onDeleteManualFob}
+                />
+            </div>
+            <div className="operator-column">
+                <OperatorCard
+                    operator="BLORA"
+                    rows={data.BLORA ?? []}
+                    tableHeight={tableHeight}
+                    onEditManualFob={onEditManualFob}
+                    onDeleteManualFob={onDeleteManualFob}
+                />
+            </div>
+            <div className="operator-column">
+                <OperatorCard
+                    operator="WUNUT"
+                    rows={data.WUNUT ?? []}
+                    tableHeight={tableHeight}
+                    onEditManualFob={onEditManualFob}
+                    onDeleteManualFob={onDeleteManualFob}
+                />
+            </div>
         </section>
     );
 }
