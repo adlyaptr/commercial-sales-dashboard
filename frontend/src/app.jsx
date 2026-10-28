@@ -22,9 +22,6 @@ function DashboardAccess({ user, onLogout }) {
     if (!user && !['/', '/beranda'].includes(location.pathname)) {
         return <Navigate to="/login" replace />;
     }
-    if (user?.role === 'division' && !['/', '/beranda'].includes(location.pathname)) {
-        return <Navigate to="/beranda" replace />;
-    }
     return (
         <DashboardLayout
             user={user || { role: 'public' }}

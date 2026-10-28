@@ -106,7 +106,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const isMonthly = location.pathname === '/bulanan';
     const isHome = location.pathname === '/beranda';
     const canViewAllFeatures = user?.role === 'admin' || user?.role === 'user';
-    const hasAuthenticatedUser = canViewAllFeatures || user?.role === 'division';
+    const hasAuthenticatedUser = canViewAllFeatures;
     const [isCompactViewport, setIsCompactViewport] = useState(
         () => window.matchMedia('(max-width: 1024px)').matches,
     );
@@ -703,10 +703,10 @@ export default function DashboardLayout({ user, onLogout }) {
                         <button
                             className="topbar-profile"
                             type="button"
-                            aria-label={hasAuthenticatedUser ? 'Keluar dari aplikasi' : 'Login Admin'}
+                            aria-label={hasAuthenticatedUser ? 'Keluar dari aplikasi' : 'Login Admin atau User'}
                             title={
                                 !hasAuthenticatedUser
-                                    ? 'Login Admin'
+                                    ? 'Login Admin atau User'
                                     : loggingOut
                                     ? 'Sedang keluar...'
                                     : `Keluar: ${

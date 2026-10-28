@@ -3545,7 +3545,7 @@ textarea:focus-visible, a:focus-visible {
 }
 .users-create-form {
   display: grid;
-  grid-template-columns: minmax(140px, .8fr) minmax(180px, 1fr) minmax(220px, 1.2fr) auto;
+  grid-template-columns: minmax(140px, .8fr) minmax(180px, 1fr) auto;
   align-items: end;
   gap: 10px;
 }
@@ -3634,7 +3634,7 @@ textarea:focus-visible, a:focus-visible {
 .users-actions input {
   width: min(260px, 24vw);
 }
-.users-actions .users-delete {
+.users-actions .users-delete, .users-delete {
   border: 1px solid #e7caca;
   background: #fff5f5;
   color: #a63838;

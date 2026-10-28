@@ -5,9 +5,9 @@ Website Sistem Laporan Commercial
 
 - **Admin** login menggunakan akun yang ditentukan oleh `APP_USERNAME` dan `APP_PASSWORD`. Admin dapat melihat seluruh halaman, mengubah data, dan mengelola akun.
 - **User** login menggunakan akun yang dibuat Admin. User dapat melihat seluruh halaman dan data, tetapi tidak dapat mengubah atau menghapus data maupun mengelola akun.
-- **Divisi** login menggunakan akun yang dibuat Admin dan hanya dapat membuka Beranda, yang menampilkan ringkasan agregat.
+- **Divisi** membuka tautan dashboard tanpa login dan hanya dapat melihat Beranda dengan ringkasan agregat.
 
-Beranda (`/` atau `/beranda`) juga dapat dibuka tanpa login untuk menampilkan ringkasan publik yang terbatas. Pengunjung publik dan Divisi tidak mendapatkan detail customer atau isi keluhan. Admin dapat membuat akun User atau Divisi, mengganti password, dan menghapus akun pada halaman Pengguna. Kolom role ditambahkan otomatis pada tabel `app_users` saat backend dimulai.
+Beranda (`/` atau `/beranda`) dapat dibuka tanpa login dan tidak menampilkan detail customer atau isi keluhan. Hanya Admin yang dapat membuat akun User, mengganti password, dan menghapus akun pada halaman Pengguna. Akun Divisi lama yang masih tersimpan tidak dapat login; Divisi menggunakan tautan dashboard publik. Kolom role ditambahkan otomatis pada tabel `app_users` saat backend dimulai.
 
 ## Average Price
 

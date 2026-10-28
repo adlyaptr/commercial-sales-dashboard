@@ -145,7 +145,7 @@ def logged_in(request: Request) -> bool:
     username = request.session.get("username")
     role = request.session.get("role")
     return bool(username) and (
-        role in {"admin", "user", "division"}
+        role in {"admin", "user"}
         or (username == APP_USERNAME and role is None)
     )
 
@@ -157,6 +157,8 @@ def is_admin(request: Request) -> bool:
 
 def require_login(request: Request):
     if not logged_in(request):
+        if request.session.get("username"):
+            request.session.clear()
         raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
     if is_admin(request):
         return
@@ -181,6 +183,8 @@ def require_admin(request: Request):
 
 def require_home_access(request: Request):
     if not logged_in(request):
+        if request.session.get("username"):
+            request.session.clear()
         return
     username = request.session["username"]
     role = request.session.get("role")
@@ -190,7 +194,7 @@ def require_home_access(request: Request):
         user = con.execute(
             "SELECT role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
-    if not user or user["role"] not in {"user", "division"}:
+    if not user or user["role"] != "user":
         request.session.clear()
         raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
     request.session["role"] = user["role"]
@@ -567,7 +571,7 @@ async def login(request: Request):
         ).fetchone()
     if (
         not row
-        or row["role"] not in {"admin", "user", "division"}
+        or row["role"] not in {"admin", "user"}
         or not verify_user_password(password, row["password_hash"])
     ):
         return JSONResponse({"detail": "Username atau password salah."}, status_code=401)
@@ -586,13 +590,15 @@ def logout(request: Request):
 @app.get("/api/me")
 def me(request: Request):
     if not logged_in(request):
+        if request.session.get("username"):
+            request.session.clear()
         raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
     username = request.session["username"]
     with db() as con:
         user = con.execute(
             "SELECT role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
-    if not user or user["role"] not in {"admin", "user", "division"}:
+    if not user or user["role"] not in {"admin", "user"}:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
     request.session["role"] = user["role"]
@@ -617,7 +623,7 @@ async def create_user(request: Request):
         raise HTTPException(status_code=400, detail="Format akun tidak valid.")
     username = str(payload.get("username", "")).strip()
     password = str(payload.get("password", ""))
-    role = str(payload.get("role", "division")).strip()
+    role = str(payload.get("role", "user")).strip()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{2,63}", username):
         raise HTTPException(
             status_code=400,
@@ -628,8 +634,8 @@ async def create_user(request: Request):
             status_code=400,
             detail="Password akun harus terdiri dari 12-256 karakter.",
         )
-    if role not in {"user", "division"}:
-        raise HTTPException(status_code=400, detail="Role akun harus User atau Divisi.")
+    if role != "user":
+        raise HTTPException(status_code=400, detail="Hanya akun User yang memerlukan login dan dapat dibuat.")
     with db() as con:
         existing = con.execute(
             "SELECT username FROM app_users WHERE username=%s", (username,)
@@ -659,7 +665,7 @@ async def update_user_password(username: str, request: Request):
         user = con.execute(
             "SELECT role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
-        if not user or user["role"] not in {"user", "division"}:
+        if not user or user["role"] != "user":
             raise HTTPException(status_code=404, detail="Akun pengguna tidak ditemukan.")
         con.execute(
             "UPDATE app_users SET password_hash=%s WHERE username=%s",

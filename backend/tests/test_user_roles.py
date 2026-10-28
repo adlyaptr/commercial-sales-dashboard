@@ -12,7 +12,10 @@ import main
 class FakeRequest:
     def __init__(self, payload=None, username=None, role="admin"):
         self.payload = payload or {}
-        self.session = {"username": username or main.APP_USERNAME, "role": role}
+        self.session = {
+            "username": username if username is not None else main.APP_USERNAME,
+            "role": role,
+        }
 
     async def json(self):
         return self.payload
@@ -77,12 +80,12 @@ class UserRoleTests(unittest.TestCase):
         self.db_patch.start()
         self.addCleanup(self.db_patch.stop)
 
-    def test_admin_can_create_list_reset_and_delete_division_users(self):
+    def test_admin_can_create_list_reset_and_delete_user_accounts(self):
         created = asyncio.run(main.create_user(FakeRequest({
             "username": "sales.team",
             "password": "division-password",
         })))
-        self.assertEqual(created, {"username": "sales.team", "role": "division"})
+        self.assertEqual(created, {"username": "sales.team", "role": "user"})
         self.assertTrue(
             self.database.users["sales.team"]["password_hash"].startswith("pbkdf2_sha256$")
         )
@@ -95,7 +98,7 @@ class UserRoleTests(unittest.TestCase):
             main.list_users(FakeRequest()),
             [
                 {"username": main.APP_USERNAME, "role": "admin"},
-                {"username": "sales.team", "role": "division"},
+                {"username": "sales.team", "role": "user"},
             ],
         )
 
@@ -114,6 +117,16 @@ class UserRoleTests(unittest.TestCase):
             {"ok": True},
         )
         self.assertNotIn("sales.team", self.database.users)
+
+    def test_admin_cannot_create_division_login_accounts(self):
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.create_user(FakeRequest({
+                "username": "division.team",
+                "password": "division-password",
+                "role": "division",
+            })))
+        self.assertEqual(error.exception.status_code, 400)
+        self.assertNotIn("division.team", self.database.users)
 
     def test_admin_can_create_user_role_and_manage_user_accounts(self):
         created = asyncio.run(main.create_user(FakeRequest({
@@ -137,7 +150,7 @@ class UserRoleTests(unittest.TestCase):
             {"ok": True},
         )
 
-    def test_division_role_cannot_use_admin_permissions(self):
+    def test_legacy_division_account_cannot_login_or_use_authenticated_features(self):
         self.database.users["division"] = {
             "username": "division",
             "password_hash": "unused",
@@ -146,11 +159,12 @@ class UserRoleTests(unittest.TestCase):
         request = FakeRequest(username="division", role="division")
         with self.assertRaises(main.HTTPException) as error:
             main.require_login(request)
-        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(error.exception.status_code, 401)
+        self.assertEqual(request.session, {})
 
         with self.assertRaises(main.HTTPException) as error:
-            main.list_users(request)
-        self.assertEqual(error.exception.status_code, 403)
+            main.list_users(FakeRequest(username="division", role="division"))
+        self.assertEqual(error.exception.status_code, 401)
 
     def test_user_role_can_read_features_but_cannot_write_or_manage_users(self):
         self.database.users["reader"] = {
@@ -177,18 +191,9 @@ class UserRoleTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 401)
         self.assertEqual(request.session, {})
 
-    def test_home_access_checks_active_division_account(self):
-        self.database.users["division"] = {
-            "username": "division",
-            "password_hash": "unused",
-            "role": "division",
-        }
-        main.require_home_access(FakeRequest(username="division", role="division"))
-        del self.database.users["division"]
+    def test_legacy_division_session_is_cleared_and_public_home_remains_available(self):
         request = FakeRequest(username="division", role="division")
-        with self.assertRaises(main.HTTPException) as error:
-            main.require_home_access(request)
-        self.assertEqual(error.exception.status_code, 401)
+        self.assertIsNone(main.require_home_access(request))
         self.assertEqual(request.session, {})
 
     def test_home_access_checks_active_user_account(self):
@@ -213,9 +218,9 @@ class UserRoleTests(unittest.TestCase):
         request = FakeRequest(username="division", role="division")
         with self.assertRaises(main.HTTPException) as error:
             main.monthly_average_price_range(request, "2026-10-01", "2026-10-31")
-        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(error.exception.status_code, 401)
 
-    def test_login_accepts_admin_legacy_and_division_password_hashes(self):
+    def test_login_accepts_admin_and_user_but_rejects_division(self):
         admin_request = FakeRequest({
             "username": main.APP_USERNAME,
             "password": main.APP_PASSWORD,
@@ -233,8 +238,13 @@ class UserRoleTests(unittest.TestCase):
             username="",
             role="",
         )
-        asyncio.run(main.login(division_request))
-        self.assertEqual(division_request.session["role"], "division")
+        response = asyncio.run(main.login(division_request))
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(division_request.session, {"username": "", "role": ""})
+
+        with self.assertRaises(main.HTTPException) as error:
+            main.me(FakeRequest(username="division", role="division"))
+        self.assertEqual(error.exception.status_code, 401)
 
         self.database.users["reader"] = {
             "username": "reader",
