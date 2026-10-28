@@ -920,8 +920,6 @@ export default function WeeklyAveragePricePage() {
                                                             <td>{displayRowNumbers.get(row.customer_key)}</td>
                                                             <td>
                                                                 {row.customer}{row.include_in_summary === false ? ' *' : ''}
-                                                                {row.sm3 <= 0
-                                                                    && <small className="average-customer-key">Harga tersimpan · menunggu volume</small>}
                                                                 {displayCustomerNameCounts.get(normalizeCustomerOrder(row.customer)) > 1
                                                                     && <small className="average-customer-key">key: {row.customer_key}</small>}
                                                             </td>
