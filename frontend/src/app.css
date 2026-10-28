@@ -2096,7 +2096,7 @@ textarea:focus-visible, a:focus-visible {
   padding: 2px 0;
 }
 
-.monthly-donut {
+.monthly-pie {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2105,39 +2105,6 @@ textarea:focus-visible, a:focus-visible {
   flex: 0 0 auto;
   border-radius: 50%;
   background: #e7eee9;
-}
-
-.monthly-donut > div {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 108px;
-  height: 108px;
-  padding: 10px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 2px 12px rgba(20, 65, 44, .04);
-  text-align: center;
-}
-
-.monthly-donut small {
-  margin-bottom: 7px;
-  color: #82988a;
-  font-size: 10px;
-}
-
-.monthly-donut strong {
-  color: #14613f;
-  font-size: 16px;
-  font-weight: 800;
-  overflow-wrap: anywhere;
-}
-
-.monthly-donut b {
-  margin-top: 7px;
-  color: #07845c;
-  font-size: 14px;
 }
 
 .monthly-region-legend {
@@ -2411,18 +2378,9 @@ textarea:focus-visible, a:focus-visible {
     width: 40%;
   }
 
-  .monthly-donut {
+  .monthly-pie {
     width: 175px;
     height: 175px;
-  }
-
-  .monthly-donut > div {
-    width: 115px;
-    height: 115px;
-  }
-
-  .monthly-donut strong {
-    font-size: 13px;
   }
 
   .monthly-footer {
@@ -3407,29 +3365,9 @@ textarea:focus-visible, a:focus-visible {
     padding: 4px;
   }
 
-  .monthly-donut {
+  .monthly-pie {
     width: clamp(115px, 14vw, 170px);
     height: clamp(115px, 14vw, 170px);
-  }
-
-  .monthly-donut > div {
-    width: 68%;
-    height: 68%;
-    padding: 7px;
-  }
-
-  .monthly-donut small {
-    margin-bottom: 3px;
-    font-size: 8px;
-  }
-
-  .monthly-donut strong {
-    font-size: clamp(11px, 1.1vw, 15px);
-  }
-
-  .monthly-donut b {
-    margin-top: 3px;
-    font-size: 11px;
   }
 
   .monthly-region-legend {

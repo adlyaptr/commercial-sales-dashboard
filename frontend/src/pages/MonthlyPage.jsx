@@ -543,7 +543,9 @@ export default function MonthlyPage() {
 
             <div className="monthly-region-content">
               <div
-                className="monthly-donut"
+                className="monthly-pie"
+                role="img"
+                aria-label={`Realisasi per wilayah: ${regionTotals.map((item) => `${item.name.replace("JAWA ", "Jawa ")}, ${fmt(item.value)} rupiah, ${grandRegionTotal ? (item.value / grandRegionTotal * 100).toLocaleString("id-ID", { maximumFractionDigits: 1 }) : "0"} persen`).join("; ")}`}
                 style={{
                   background: grandRegionTotal
                     ? `conic-gradient(${regionTotals.map((item, index) => {
@@ -561,18 +563,7 @@ export default function MonthlyPage() {
                       }).join(",")})`
                     : "#e7eee9"
                 }}
-              >
-                <div>
-                  <small>Total Actual</small>
-                  <strong>
-                    Rp {(totalActual / 1_000_000).toLocaleString(
-                      "id-ID",
-                      { maximumFractionDigits: 2 }
-                    )} M
-                  </strong>
-                  <b>{fmtPercent(achievement)}</b>
-                </div>
-              </div>
+              />
 
               <div className="monthly-region-legend">
                 {regionTotals.map((item, index) => (
