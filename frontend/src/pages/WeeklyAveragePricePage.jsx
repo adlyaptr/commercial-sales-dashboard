@@ -689,12 +689,11 @@ export default function WeeklyAveragePricePage() {
         })
         .map(({ row }) => row);
     const displayRows = calculatedRows.filter((row) =>
-        row.has_valid_price
-        && (row.sm3 > 0
-            || Number(row.price_usd_per_mmbtu) > 0
-            || Number(row.price_rp_per_sm3) > 0
-            || Number(row.total_usd_override) > 0
-            || Number(row.rupiah_override) > 0),
+        row.sm3 > 0
+        || Number(row.price_usd_per_mmbtu) > 0
+        || Number(row.price_rp_per_sm3) > 0
+        || Number(row.total_usd_override) > 0
+        || Number(row.rupiah_override) > 0,
     );
     const displayGroups = displayRows.reduce((groups, row) => {
         const currentGroup = groups[groups.length - 1];
@@ -928,13 +927,17 @@ export default function WeeklyAveragePricePage() {
                                                             </td>
                                                             <td>{formatInteger(row.sm3)}</td>
                                                             <td>{formatDecimal(row.volume_mmbtu, 3)}</td>
-                                                            <td>{row.price_unit === 'IDR_SM3' ? 'Rp ' : '$ '}
-                                                                {row.price_unit === 'IDR_SM3'
-                                                                    ? formatDecimal(row.price_rp_per_sm3, 2)
-                                                                    : formatDecimal(row.price_usd_per_mmbtu, 2)}
+                                                            <td>{row.has_valid_price
+                                                                ? <>
+                                                                    {row.price_unit === 'IDR_SM3' ? 'Rp ' : '$ '}
+                                                                    {row.price_unit === 'IDR_SM3'
+                                                                        ? formatDecimal(row.price_rp_per_sm3, 2)
+                                                                        : formatDecimal(row.price_usd_per_mmbtu, 2)}
+                                                                </>
+                                                                : '—'}
                                                             </td>
-                                                            <td>$ {formatDecimal(row.total_usd, 2)}</td>
-                                                            <td>Rp {formatDecimal(row.rupiah, 2)}</td>
+                                                            <td>{row.has_valid_price ? `$ ${formatDecimal(row.total_usd, 2)}` : '—'}</td>
+                                                            <td>{row.has_valid_price ? `Rp ${formatDecimal(row.rupiah, 2)}` : '—'}</td>
                                                     </tr>;
                                                 })}
                                                 <tr className="average-workbook-subtotal">
