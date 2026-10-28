@@ -727,12 +727,6 @@ export default function DashboardLayout({ user, onLogout }) {
 
                 <Outlet context={outletContext} />
 
-                {!isYearly && (
-                    <footer>
-                        COMMERCIAL · SALES ORDER MONITORING
-                        <span>Data tersimpan di database</span>
-                    </footer>
-                )}
             </main>
         </div>
     );

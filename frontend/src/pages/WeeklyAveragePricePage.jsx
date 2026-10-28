@@ -862,7 +862,6 @@ export default function WeeklyAveragePricePage() {
                 <div className="average-data-heading">
                     <div className="average-panel-heading">
                         <b>2. Hasil Perhitungan Average Price</b>
-                        <small>{monthLabel(selectedMonth)} · Wilayah mengikuti workbook: Jawa Tengah dan Timur satu blok pada Januari–Juli 2026, lalu terpisah mulai Agustus. Customer BELUM DIPETAKAN tetap terpisah; tanda * berarti dikecualikan dari Summary.</small>
                     </div>
                 </div>
                 <form onSubmit={saveReport}>
@@ -998,7 +997,6 @@ export default function WeeklyAveragePricePage() {
                 <div className="average-data-heading average-customer-entry-heading">
                     <div className="average-panel-heading">
                         <b>1. Input Average Price Customer</b>
-                        <small>Data dari Excel tetap dipertahankan jika harga tidak diubah.</small>
                     </div>
                 </div>
                 <form className="average-entry-form" onSubmit={saveCustomerEntry}>
@@ -1093,7 +1091,6 @@ export default function WeeklyAveragePricePage() {
                     <div className="average-data-heading average-conversion-heading">
                         <div className="average-panel-heading">
                             <b>3. Faktor Konversi Operator dan Kurs</b>
-                            <small>Faktor dan kurs berlaku untuk seluruh customer pada {monthLabel(selectedMonth)}. Masukkan kurs dengan format Indonesia; contoh 18.069 berarti Rp18.069/USD.</small>
                         </div>
                         <label className="average-filter-field">
                             <span>Kurs Rp/USD</span>
@@ -1133,7 +1130,6 @@ export default function WeeklyAveragePricePage() {
                     <div className="average-data-heading average-comparison-heading">
                         <div className="average-panel-heading">
                             <b>4. Target Harga dan Prognosa (Rp/Sm³)</b>
-                            <small>{monthLabel(selectedMonth)} · Prognosa mengikuti ASP per wilayah pada hasil perhitungan Average Price · Selisih = Prognosa − Target</small>
                         </div>
                     </div>
                     <div className="average-comparison-chart">
