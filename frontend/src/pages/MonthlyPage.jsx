@@ -387,7 +387,7 @@ export default function MonthlyPage() {
           <article className="monthly-kpi">
             <div className="monthly-kpi-icon blue">▤</div>
             <div>
-              <span>Total SO Periode</span>
+              <span>Total Target Periode</span>
               <strong>{fmtSO(periodKeys.length === 1 ? manualSO ?? totalSO : totalSO)}</strong>
               {canEdit && <form className="monthly-so-form" onSubmit={saveManualSO}>
                 <div>
@@ -425,6 +425,15 @@ export default function MonthlyPage() {
           </article>
 
           <article className="monthly-kpi">
+            <div className="monthly-kpi-icon purple">♟</div>
+            <div>
+              <span>Total SO</span>
+              <strong>{fmt(totalSO)}</strong>
+              <small>Total SO pada periode terpilih</small>
+            </div>
+          </article>
+
+          <article className="monthly-kpi">
             <div className="monthly-kpi-icon green">◎</div>
             <div>
               <span>Total Actual (Rp)</span>
@@ -445,15 +454,6 @@ export default function MonthlyPage() {
               <span>Pencapaian</span>
               <strong>{fmtPercent(achievement)}</strong>
               <small>Actual dibandingkan SO</small>
-            </div>
-          </article>
-
-          <article className="monthly-kpi">
-            <div className="monthly-kpi-icon purple">♟</div>
-            <div>
-              <span>Total Volume (Sm³)</span>
-              <strong>{fmt(totalActual)}</strong>
-              <small>Actual pada periode terpilih</small>
             </div>
           </article>
         </section>
