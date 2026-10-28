@@ -969,15 +969,15 @@ button { cursor: pointer; }
 #detail-harian .table-wrap { max-height: 480px; overflow-x: hidden; overflow-y: auto; }
 #detail-harian .table-wrap.setu-table-wrap { max-height: none; overflow: visible; }
 #detail-harian .table-wrap.kht-table-wrap { max-height: none; overflow: visible; }
-#detail-harian .operator-table { width: 100%; max-width: 430px; min-width: 0; table-layout: fixed; white-space: normal; font-size: 13px; }
-#detail-harian .operator-table th { font-size: 12px; }
+#detail-harian .operator-table { width: 100%; max-width: 430px; min-width: 0; table-layout: fixed; white-space: normal; font-size: 12px; }
+#detail-harian .operator-table th { font-size: 11px; }
 #detail-harian .operator-table th:first-child { width: 34%; }
 #detail-harian .operator-table th:nth-child(2),
 #detail-harian .operator-table th:nth-child(3),
 #detail-harian .operator-table th:nth-child(4) { width: 22%; }
 #detail-harian .operator-table th,
 #detail-harian .operator-table td {
-  padding: 6px 4px;
+  padding: 5px 3px;
   border: 1px solid #91b6a0;
 }
 #detail-harian .operator-table th { background: #cfe8d8; color: #174b35; font-weight: 800; text-align: center; }
@@ -999,11 +999,11 @@ button { cursor: pointer; }
 .daily-summary-block h3 { margin: 0 0 6px; color: #245740; font-size: 11px; line-height: 1.35; }
 .daily-summary-table-wrap { width: 100%; overflow: visible; }
 .daily-summary-card { box-sizing: border-box; width: 100%; max-width: none; margin-top: 0; padding: 0; border: 0; border-radius: 0; background: transparent; position: relative; z-index: 2; }
-.operator-summary-card .daily-summary-table { width: 100%; min-width: 0; table-layout: auto; white-space: nowrap; font-size: 13px; }
+.operator-summary-card .daily-summary-table { width: 100%; min-width: 0; table-layout: auto; white-space: nowrap; font-size: 12px; }
 .operator-summary-card .daily-summary-table th,
-.operator-summary-card .daily-summary-table td { padding: 6px 4px; text-align: center; border: 1px solid #91b6a0; }
-.operator-summary-card .daily-summary-table th { background: #cfe8d8; color: #174b35; font-size: 12px; font-weight: 800; }
-.operator-summary-card .daily-summary-table td { background: #fff; color: #244b38; font-size: 13px; }
+.operator-summary-card .daily-summary-table td { padding: 5px 3px; text-align: center; border: 1px solid #91b6a0; }
+.operator-summary-card .daily-summary-table th { background: #cfe8d8; color: #174b35; font-size: 11px; font-weight: 800; }
+.operator-summary-card .daily-summary-table td { background: #fff; color: #244b38; font-size: 12px; }
 .operator-summary-card .daily-summary-table.has-target th { padding-left: 5px; padding-right: 5px; }
 .operator-summary-card .summary-percent-row td { padding-top: 2px; padding-bottom: 2px; font-size: 12px; font-weight: 700; }
 .operator-summary-card .daily-summary-table td.diff-pos { color: #08734d; font-weight: 800; }
