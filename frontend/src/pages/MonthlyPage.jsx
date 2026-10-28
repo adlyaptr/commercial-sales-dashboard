@@ -120,7 +120,7 @@ export default function MonthlyPage() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [manualSO, setManualSO] = useState(null);
+  const [monthlySOTargets, setMonthlySOTargets] = useState({});
   const [manualSOInput, setManualSOInput] = useState("");
   const [manualSOSaving, setManualSOSaving] = useState(false);
   const [manualSOError, setManualSOError] = useState("");
@@ -185,26 +185,35 @@ export default function MonthlyPage() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!selectedMonthKey) {
-      setManualSO(null);
+    if (!periodKeys.length) {
+      setMonthlySOTargets({});
       setManualSOInput("");
       return () => { cancelled = true; };
     }
-    setManualSO(null);
+    setMonthlySOTargets({});
     setManualSOInput("");
     setManualSOError("");
     setManualSOSaved(false);
 
-    api(`/api/monthly-so?month=${encodeURIComponent(selectedMonthKey)}`)
-      .then((result) => {
+    Promise.all(
+      periodKeys.map(async (month) => {
+        const result = await api(`/api/monthly-so?month=${encodeURIComponent(month)}`);
+        return [month, result.so];
+      })
+    )
+      .then((targets) => {
         if (cancelled) return;
-        setManualSO(result.so);
-        setManualSOInput(result.so == null ? "" : fmtSO(result.so));
+        const targetMap = Object.fromEntries(targets);
+        setMonthlySOTargets(targetMap);
+        if (selectedMonthKey) {
+          const target = targetMap[selectedMonthKey];
+          setManualSOInput(target == null ? "" : fmtSO(target));
+        }
       })
       .catch((requestError) => {
         if (!cancelled) {
           setManualSOError(
-            requestError.message || "SO manual bulanan gagal dimuat."
+            requestError.message || "Target SO bulanan gagal dimuat."
           );
         }
       });
@@ -212,7 +221,7 @@ export default function MonthlyPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedMonthKey]);
+  }, [periodKeys, selectedMonthKey]);
 
   const saveManualSO = async (event) => {
     event.preventDefault();
@@ -231,7 +240,10 @@ export default function MonthlyPage() {
         method: "PUT",
         body: { month: selectedMonthKey, so: value }
       });
-      setManualSO(result.so);
+      setMonthlySOTargets((current) => ({
+        ...current,
+        [selectedMonthKey]: result.so,
+      }));
       setManualSOInput(fmtSO(result.so));
       setManualSOSaved(true);
     } catch (requestError) {
@@ -278,8 +290,13 @@ export default function MonthlyPage() {
 
   const totalSO = sum(monthlyTotals.map((item) => item.so));
   const totalActual = sum(monthlyTotals.map((item) => item.actual));
-  const achievement = totalSO
-    ? (totalActual / totalSO) * 100
+  const totalPeriodTarget = sum(
+    monthlyTotals.map(
+      (item, index) => monthlySOTargets[periodKeys[index]] ?? item.so
+    )
+  );
+  const achievement = totalPeriodTarget
+    ? (totalActual / totalPeriodTarget) * 100
     : 0;
 
   const currentMonth = monthlyTotals[monthIndex];
@@ -388,8 +405,8 @@ export default function MonthlyPage() {
             <div className="monthly-kpi-icon blue">▤</div>
             <div>
               <span>Total Target Periode</span>
-              <strong>{fmtSO(periodKeys.length === 1 ? manualSO ?? totalSO : totalSO)}</strong>
-              {canEdit && <form className="monthly-so-form" onSubmit={saveManualSO}>
+              <strong>{fmtSO(totalPeriodTarget)}</strong>
+              {canEdit && selectedMonthKey && <form className="monthly-so-form" onSubmit={saveManualSO}>
                 <div>
                   <input
                     id="monthly-so-target"
@@ -398,29 +415,31 @@ export default function MonthlyPage() {
                     placeholder="8.027.252"
                     aria-label="Input Total Target Bulanan"
                     value={manualSOInput}
-                    disabled={periodKeys.length !== 1}
                     onChange={(event) => setManualSOInput(event.target.value)}
                     required
                   />
                   <button
                     type="submit"
-                    disabled={manualSOSaving || periodKeys.length !== 1}
+                    disabled={manualSOSaving}
                   >
                     {manualSOSaving ? "Menyimpan..." : "Simpan"}
                   </button>
                 </div>
-                {periodKeys.length > 1 && <small>Input manual tersedia jika rentang hanya mencakup satu bulan.</small>}
-                {manualSOError && (
-                  <small className="monthly-so-error" role="alert">
-                    {manualSOError}
-                  </small>
-                )}
+                <small>Masukkan target SO untuk bulan terpilih.</small>
                 {manualSOSaved && (
                   <small className="monthly-so-success" role="status">
-                    Target SO tersimpan.
+                    Target bulanan tersimpan.
                   </small>
                 )}
               </form>}
+              {periodKeys.length > 1 && (
+                <small>Total target periode adalah penjumlahan target SO setiap bulan.</small>
+              )}
+              {canEdit && manualSOError && (
+                <small className="monthly-so-error" role="alert">
+                  {manualSOError}
+                </small>
+              )}
             </div>
           </article>
 
@@ -453,7 +472,7 @@ export default function MonthlyPage() {
             <div>
               <span>Pencapaian</span>
               <strong>{fmtPercent(achievement)}</strong>
-              <small>Actual dibandingkan SO</small>
+              <small>Actual dibandingkan target periode</small>
             </div>
           </article>
         </section>
