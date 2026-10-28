@@ -300,7 +300,7 @@ export default function WeeklyAveragePricePage() {
     const selectedMonth = averagePriceMonth || rangeStartDate?.slice(0, 7) || '';
     const activeComparisonAreas = comparisonAreas
         .filter((area) => area.key !== 'JAWA_TENGAH_DAN_TIMUR'
-            || ['2026-06', '2026-07'].includes(selectedMonth))
+            || (selectedMonth >= '2026-01' && selectedMonth < '2026-08'))
         .map((area) => {
         if (area.key !== 'ALL_EXCEPT_JATIM') return area;
         const excludesEastJava = selectedMonth >= '2026-09';
@@ -779,13 +779,22 @@ export default function WeeklyAveragePricePage() {
     const comparisonRows = activeComparisonAreas.map((area) => {
         const areaTotals = area.key === 'ALL_EXCEPT_JATIM'
             ? totals
-            : regionalTotalsByName.get(area.key) || { sm3: 0, rupiah: 0 };
+            : area.regions.reduce((sum, region) => {
+                const regionTotals = regionalTotalsByName.get(region);
+                if (!regionTotals) return sum;
+                return {
+                    sm3: sum.sm3 + regionTotals.sm3,
+                    rupiah: sum.rupiah + regionTotals.rupiah,
+                };
+            }, { sm3: 0, rupiah: 0 });
         const targetValue = report.targets[area.key];
         const target = targetValue == null || targetValue === '' ? null : Number(targetValue);
         const prognosis = areaTotals.sm3 > 0
             ? areaTotals.rupiah / areaTotals.sm3
             : null;
-        const hasRegionalRows = areaTotals.sm3 > 0;
+        const hasRegionalRows = area.key === 'ALL_EXCEPT_JATIM'
+            ? calculatedRows.some((row) => row.include_in_summary !== false)
+            : calculatedRows.some((row) => area.regions.includes(row.workbook_area));
         return {
             ...area,
             target,
@@ -1140,7 +1149,7 @@ export default function WeeklyAveragePricePage() {
                                         ? hasUnassignedWorkbookRegions && !row.hasRegionalRows
                                             ? 'Tidak ada data wilayah'
                                             : '—'
-                                        : formatInteger(row.prognosis)}</td>
+                                        : formatDecimal(row.prognosis, 2)}</td>
                                     <td className={row.difference == null ? '' : row.difference < 0 ? 'diff-neg' : 'diff-pos'}>
                                         {row.difference == null
                                             ? hasUnassignedWorkbookRegions && !row.hasRegionalRows
