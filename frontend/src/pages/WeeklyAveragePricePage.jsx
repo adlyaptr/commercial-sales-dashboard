@@ -714,11 +714,6 @@ export default function WeeklyAveragePricePage() {
             displayRowNumbers.set(row.customer_key, index + 1);
         });
     });
-    const displayCustomerNameCounts = displayRows.reduce((counts, row) => {
-        const key = normalizeCustomerOrder(row.customer);
-        counts.set(key, (counts.get(key) || 0) + 1);
-        return counts;
-    }, new Map());
     const totals = calculatedRows.filter((row) =>
         row.has_valid_price && row.include_in_summary !== false,
     ).reduce((sum, row) => ({
@@ -916,8 +911,6 @@ export default function WeeklyAveragePricePage() {
                                                             <td>{displayRowNumbers.get(row.customer_key)}</td>
                                                             <td>
                                                                 {row.customer}{row.include_in_summary === false ? ' *' : ''}
-                                                                {displayCustomerNameCounts.get(normalizeCustomerOrder(row.customer)) > 1
-                                                                    && <small className="average-customer-key">key: {row.customer_key}</small>}
                                                             </td>
                                                             <td>{formatInteger(row.sm3)}</td>
                                                             <td>{formatDecimal(row.volume_mmbtu, 3)}</td>
