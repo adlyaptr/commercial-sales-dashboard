@@ -760,6 +760,11 @@ export default function WeeklyAveragePricePage() {
         regionTotals.rupiah += row.rupiah;
     });
     const regionalTotals = Array.from(regionalTotalsByName.values());
+    const regionalAspByName = new Map(
+        regionalTotals
+            .filter((area) => area.sm3 > 0)
+            .map((area) => [area.region, area.rupiah / area.sm3]),
+    );
     const averagePriceRpSm3 = totals.sm3 > 0 ? totals.rupiah / totals.sm3 : 0;
     const hasUncalculatedPriceRows = calculatedRows.some((row) =>
         !row.has_valid_price
@@ -777,21 +782,27 @@ export default function WeeklyAveragePricePage() {
             .filter(([customerKey]) => customerKey),
     ).values());
     const comparisonRows = activeComparisonAreas.map((area) => {
-        const areaTotals = area.key === 'ALL_EXCEPT_JATIM'
-            ? totals
-            : area.regions.reduce((sum, region) => {
+        let prognosis = null;
+        if (area.key === 'ALL_EXCEPT_JATIM') {
+            prognosis = totals.sm3 > 0 ? averagePriceRpSm3 : null;
+        } else if (area.regions.length === 1) {
+            prognosis = regionalAspByName.get(area.regions[0]) ?? null;
+        } else {
+            const areaTotals = area.regions.reduce((sum, region) => {
                 const regionTotals = regionalTotalsByName.get(region);
-                if (!regionTotals) return sum;
-                return {
-                    sm3: sum.sm3 + regionTotals.sm3,
-                    rupiah: sum.rupiah + regionTotals.rupiah,
-                };
+                return regionTotals
+                    ? {
+                        sm3: sum.sm3 + regionTotals.sm3,
+                        rupiah: sum.rupiah + regionTotals.rupiah,
+                    }
+                    : sum;
             }, { sm3: 0, rupiah: 0 });
+            prognosis = areaTotals.sm3 > 0
+                ? areaTotals.rupiah / areaTotals.sm3
+                : null;
+        }
         const targetValue = report.targets[area.key];
         const target = targetValue == null || targetValue === '' ? null : Number(targetValue);
-        const prognosis = areaTotals.sm3 > 0
-            ? areaTotals.rupiah / areaTotals.sm3
-            : null;
         const hasRegionalRows = area.key === 'ALL_EXCEPT_JATIM'
             ? calculatedRows.some((row) => row.include_in_summary !== false)
             : calculatedRows.some((row) => area.regions.includes(row.workbook_area));
@@ -961,8 +972,8 @@ export default function WeeklyAveragePricePage() {
                                                         <tr className="average-regional-average-row">
                                                             <th colSpan="6">ASP {areaTotals.region}{standaloneAreas.has(group.area) ? ' · DI LUAR KONSOLIDASI' : ''}</th>
                                                             <th>
-                                                                {areaTotals.sm3 > 0
-                                                                    ? `Rp ${formatDecimal(areaTotals.rupiah / areaTotals.sm3, 2)}`
+                                                                {regionalAspByName.has(areaTotals.region)
+                                                                    ? `Rp ${formatDecimal(regionalAspByName.get(areaTotals.region), 2)}`
                                                                     : '—'}
                                                             </th>
                                                         </tr>
