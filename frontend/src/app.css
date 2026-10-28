@@ -2087,21 +2087,23 @@ textarea:focus-visible, a:focus-visible {
   text-align: center;
 }
 
-/* Region donut */
+/* Regional pie with overlaid value labels */
 .monthly-region-content {
   display: flex;
-  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
   padding: 2px 0;
 }
 
 .monthly-pie {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 165px;
-  height: 165px;
+  width: min(100%, 280px);
+  aspect-ratio: 1;
   flex: 0 0 auto;
   border-radius: 50%;
   background: #e7eee9;
@@ -2110,44 +2112,50 @@ textarea:focus-visible, a:focus-visible {
 .monthly-region-legend {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  width: 100%;
+  gap: 9px;
+  width: 82%;
+  padding: 12px;
+  border: 1px solid rgba(220, 233, 223, .9);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 3px 14px rgba(20, 65, 44, .12);
 }
 
 .monthly-region-legend > div {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
 .monthly-region-legend > div > i {
-  flex: 0 0 10px;
-  width: 10px;
-  height: 10px;
-  margin-top: 4px;
-  border-radius: 3px;
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
 }
 
 .monthly-region-legend p {
   display: flex;
   flex: 1;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: space-between;
-  gap: 6px 12px;
+  gap: 5px;
   min-width: 0;
   margin: 0;
 }
 
 .monthly-region-legend p b {
   color: #355e49;
-  font-size: 10px;
+  font-size: 9px;
+  white-space: nowrap;
 }
 
 .monthly-region-legend p span {
   color: #82978a;
-  font-size: 10px;
+  font-size: 9px;
   text-align: right;
+  white-space: nowrap;
 }
 
 /* Data table */
@@ -2295,18 +2303,6 @@ textarea:focus-visible, a:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .monthly-region-content {
-    flex-direction: row;
-    justify-content: center;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
-  .monthly-region-legend {
-    flex: 1;
-    min-width: 210px;
-    max-width: 400px;
-  }
 }
 
 @media (max-width: 900px) {
@@ -2376,11 +2372,6 @@ textarea:focus-visible, a:focus-visible {
 
   .monthly-pair i {
     width: 40%;
-  }
-
-  .monthly-pie {
-    width: 175px;
-    height: 175px;
   }
 
   .monthly-footer {
@@ -3359,26 +3350,17 @@ textarea:focus-visible, a:focus-visible {
   .monthly-region-content {
     flex: 1 1 auto;
     min-height: 0;
-    flex-direction: row;
     justify-content: center;
-    gap: clamp(10px, 2vw, 26px);
     padding: 4px;
   }
 
   .monthly-pie {
-    width: clamp(115px, 14vw, 170px);
-    height: clamp(115px, 14vw, 170px);
+    width: min(100%, 280px);
   }
 
   .monthly-region-legend {
-    width: auto;
-    min-width: 0;
-    flex: 1 1 auto;
-    gap: 10px;
-  }
-
-  .monthly-region-legend > div {
-    gap: 6px;
+    gap: 7px;
+    padding: 9px;
   }
 
   .monthly-region-legend p b,

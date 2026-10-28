@@ -563,27 +563,27 @@ export default function MonthlyPage() {
                       }).join(",")})`
                     : "#e7eee9"
                 }}
-              />
-
-              <div className="monthly-region-legend">
-                {regionTotals.map((item, index) => (
-                  <div key={item.name}>
-                    <i style={{ background: colors[index] }} />
-                    <p>
-                      <b>{item.name.replace("JAWA ", "Jawa ")}</b>
-                      <span>
-                        Rp {fmt(item.value)} (
-                        {grandRegionTotal
-                          ? (
-                              item.value / grandRegionTotal * 100
-                            ).toLocaleString("id-ID", {
-                              maximumFractionDigits: 1
-                            })
-                          : "0"}%)
-                      </span>
-                    </p>
-                  </div>
-                ))}
+              >
+                <div className="monthly-region-legend">
+                  {regionTotals.map((item, index) => (
+                    <div key={item.name}>
+                      <i style={{ background: colors[index] }} />
+                      <p>
+                        <b>{item.name.replace("JAWA ", "Jawa ")}</b>
+                        <span>
+                          Rp {fmt(item.value)} (
+                          {grandRegionTotal
+                            ? (
+                                item.value / grandRegionTotal * 100
+                              ).toLocaleString("id-ID", {
+                                maximumFractionDigits: 1
+                              })
+                            : "0"}%)
+                        </span>
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </article>
