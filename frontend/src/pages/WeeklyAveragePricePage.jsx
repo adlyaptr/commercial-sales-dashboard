@@ -777,21 +777,35 @@ export default function WeeklyAveragePricePage() {
             .filter(([customerKey]) => customerKey),
     ).values());
     const comparisonRows = activeComparisonAreas.map((area) => {
-        const areaTotals = area.key === 'ALL_EXCEPT_JATIM'
-            ? totals
-            : area.regions.reduce((sum, region) => {
-                const regionTotals = regionalTotalsByName.get(region);
-                if (!regionTotals) return sum;
-                return {
-                    sm3: sum.sm3 + regionTotals.sm3,
-                    rupiah: sum.rupiah + regionTotals.rupiah,
-                };
-            }, { sm3: 0, rupiah: 0 });
+        const eligibleRows = calculatedRows.filter((row) =>
+            (area.key === 'ALL_EXCEPT_JATIM'
+                ? row.include_in_summary !== false
+                : area.regions.includes(row.region))
+            && row.sm3 + Number(row.so_sm3 || 0) > 0
+            && (row.price_unit === 'IDR_SM3'
+                ? Number(row.price_rp_per_sm3) > 0
+                : Number(row.sm3_per_mmbtu) > 0
+                    && Number(row.price_usd_per_mmbtu) > 0
+                    && Number(report.exchange_rate) > 0));
+        const volume = eligibleRows.reduce(
+            (sum, row) => sum + row.sm3 + Number(row.so_sm3 || 0),
+            0,
+        );
+        const rupiah = eligibleRows.reduce((sum, row) => {
+            const actualSm3 = row.sm3;
+            const prognosisSm3 = actualSm3 + Number(row.so_sm3 || 0);
+            const rupiahPerSm3 = actualSm3 > 0
+                ? row.rupiah / actualSm3
+                : row.price_unit === 'IDR_SM3'
+                    ? Number(row.price_rp_per_sm3)
+                    : Number(row.price_usd_per_mmbtu)
+                        / Number(row.sm3_per_mmbtu)
+                        * Number(report.exchange_rate);
+            return sum + prognosisSm3 * rupiahPerSm3;
+        }, 0);
         const targetValue = report.targets[area.key];
         const target = targetValue == null || targetValue === '' ? null : Number(targetValue);
-        const prognosis = areaTotals.sm3 > 0
-            ? areaTotals.rupiah / areaTotals.sm3
-            : null;
+        const prognosis = volume > 0 ? rupiah / volume : null;
         const hasRegionalRows = area.key === 'ALL_EXCEPT_JATIM'
             ? calculatedRows.some((row) => row.include_in_summary !== false)
             : calculatedRows.some((row) => area.regions.includes(row.region));
@@ -1122,7 +1136,7 @@ export default function WeeklyAveragePricePage() {
                     <div className="average-data-heading average-comparison-heading">
                         <div className="average-panel-heading">
                             <b>4. Target Harga dan Prognosa (Rp/Sm³)</b>
-                            <small>{monthLabel(selectedMonth)} · Prognosa mengikuti ASP pada hasil perhitungan Average Price · Selisih = Prognosa − Target</small>
+                            <small>{monthLabel(selectedMonth)} · Prognosa menggunakan (Sm³ actual customer + SO) · Selisih = Prognosa − Target</small>
                         </div>
                     </div>
                     <div className="average-comparison-chart">
