@@ -1454,8 +1454,6 @@ def complaint_record(row):
 def normalize_complaint(
     payload,
     preserve_updated_at=False,
-    previous_status=None,
-    previous_status_changed_at=None,
 ):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format data complain tidak valid.")
@@ -1485,14 +1483,17 @@ def normalize_complaint(
     updated_at = datetime.now().isoformat(timespec="seconds")
     status_changed_at = None
     if status == "Closed":
-        if previous_status == "Closed" and previous_status_changed_at:
-            status_changed_at = (
-                previous_status_changed_at.isoformat(timespec="seconds")
-                if isinstance(previous_status_changed_at, datetime)
-                else str(previous_status_changed_at)
-            )
-        else:
-            status_changed_at = updated_at
+        closing_date = str(payload.get("statusChangedAt", "")).strip()
+        try:
+            parsed_closing_date = date.fromisoformat(closing_date)
+            if parsed_closing_date.isoformat() != closing_date:
+                raise ValueError("Closing date must use YYYY-MM-DD.")
+            status_changed_at = parsed_closing_date.isoformat()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Tanggal Closed wajib diisi dan harus berformat YYYY-MM-DD.",
+            ) from exc
     if preserve_updated_at:
         legacy_updated_at = str(payload.get("updatedAt", "")).strip()
         if legacy_updated_at:
@@ -1535,7 +1536,7 @@ def list_complaints(request: Request):
     if not is_admin(request):
         with db() as con:
             rows = con.execute(
-                "SELECT report_date,status FROM complaints "
+                "SELECT report_date,status,complaint_type FROM complaints "
                 "ORDER BY report_date DESC,id DESC"
             ).fetchall()
         return [
@@ -1544,6 +1545,7 @@ def list_complaints(request: Request):
                 if isinstance(row["report_date"], date)
                 else str(row["report_date"]),
                 "status": row["status"],
+                "type": row["complaint_type"],
             }
             for row in rows
         ]
@@ -1582,16 +1584,12 @@ async def update_complaint(complaint_id: int, request: Request):
         raise HTTPException(status_code=400, detail="ID complain tidak valid.")
     with db() as con:
         current = con.execute(
-            "SELECT status,status_changed_at FROM complaints WHERE id=%s",
+            "SELECT id FROM complaints WHERE id=%s",
             (complaint_id,),
         ).fetchone()
         if not current:
             raise HTTPException(status_code=404, detail="Complain tidak ditemukan.")
-        fields = normalize_complaint(
-            await request.json(),
-            previous_status=current["status"],
-            previous_status_changed_at=current["status_changed_at"],
-        )
+        fields = normalize_complaint(await request.json())
         cursor = con.execute(
             "UPDATE complaints SET report_date=%s,customer=%s,summary=%s,follow_up=%s,complaint_type=%s,"
             "priority=%s,status=%s,status_changed_at=%s,resolution=%s,updated_at=%s WHERE id=%s",

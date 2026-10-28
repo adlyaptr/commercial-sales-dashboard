@@ -8,11 +8,13 @@ const formatDate = (value) => value
     ? new Date(`${value}T00:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
     : '';
 
-function SummaryTable({ title, totals, loading = false, error = '' }) {
+function SummaryTable({ title, totals, target, loading = false, error = '' }) {
     const so = Number(totals?.so ?? 0);
     const actual = Number(totals?.actual ?? 0);
     const diff = Number(totals?.diff ?? actual - so);
     const percent = so ? diff / so * 100 : null;
+    const targetDiff = target == null ? null : actual - Number(target);
+    const targetPercent = targetDiff == null || !Number(target) ? null : targetDiff / Number(target) * 100;
 
     return (
         <section className="daily-summary-block">
@@ -21,14 +23,23 @@ function SummaryTable({ title, totals, loading = false, error = '' }) {
                 <p className="daily-summary-message">Memuat ringkasan...</p>
             ) : (
                 <div className="daily-summary-table-wrap">
-                    <table className="daily-summary-table">
-                        <thead><tr><th>SO</th><th>Actual</th><th>Selisih</th><th>Persentase</th></tr></thead>
+                    <table className={`daily-summary-table${target !== undefined ? ' has-target' : ''}`}>
+                        <thead><tr>{target !== undefined && <th>Target</th>}<th>SO</th><th>Actual</th><th>{target !== undefined ? 'Selisih SO/Act' : 'Selisih'}</th>{target !== undefined ? <th>Selisih Target</th> : <th>Persentase</th>}</tr></thead>
                         <tbody><tr>
+                            {target !== undefined && <td>{target == null ? '—' : formatNumber(target)}</td>}
                             <td>{formatNumber(so)}</td>
                             <td>{formatNumber(actual)}</td>
                             <td className={diff >= 0 ? 'diff-pos' : 'diff-neg'}>{diff > 0 ? '+' : ''}{formatNumber(diff)}</td>
+                            {target !== undefined
+                                ? <td className={targetDiff == null ? '' : targetDiff >= 0 ? 'diff-pos' : 'diff-neg'}>{targetDiff == null ? '—' : `${targetDiff > 0 ? '+' : ''}${formatNumber(targetDiff)}`}</td>
+                                : <td>{percent == null ? '—' : formatPercent(percent)}</td>}
+                        </tr>
+                        {target !== undefined && <tr className="summary-percent-row">
+                            <td colSpan="3" />
                             <td>{percent == null ? '—' : formatPercent(percent)}</td>
-                        </tr></tbody>
+                            <td>{targetPercent == null ? '—' : formatPercent(targetPercent)}</td>
+                        </tr>}
+                        </tbody>
                     </table>
                 </div>
             )}
@@ -78,7 +89,7 @@ function OperatorCard({
     return (
         <article className={`operator-card ${operator.toLowerCase()}`}>
             <div className="operator-heading"><span className="operator-icon">♟</span><b>{operator}</b><small>{rows.length} Customer</small></div>
-            <div className={`table-wrap ${operator.toLowerCase()}-table-wrap`} ref={tableRef} style={operator === 'SETU' ? undefined : { maxHeight: `${tableHeight}px` }}><table className="operator-table">
+            <div className={`table-wrap ${operator.toLowerCase()}-table-wrap`} ref={tableRef} style={operator === 'SETU' || operator === 'KHT' ? undefined : { maxHeight: `${tableHeight}px` }}><table className="operator-table">
                 <thead><tr><th>Customer / Kelompok</th><th>SO</th><th>Actual</th><th>Diff</th></tr></thead>
                 <tbody>
                     {groups.length === 0 ? <tr><td colSpan="4" className="empty-row">Tidak ada data pada tanggal ini</td></tr> : groups.map((group) => {
@@ -148,63 +159,66 @@ export default function OperatorTables({
     }, [data]);
 
     return (
-        <section className="operator-grid" id="detail-harian">
-            <div className="operator-column">
-                <OperatorCard
-                    operator="SETU"
-                    rows={data.SETU ?? []}
-                    tableHeight={tableHeight}
-                    onEditManualFob={onEditManualFob}
-                    onDeleteManualFob={onDeleteManualFob}
-                />
-            </div>
-            <div className="operator-column">
-                <OperatorCard
-                    operator="KHT"
-                    rows={data.KHT ?? []}
-                    tableHeight={tableHeight}
-                    tableRef={khtTableRef}
-                    onEditManualFob={onEditManualFob}
-                    onDeleteManualFob={onDeleteManualFob}
-                />
-                <article className="operator-summary-card">
-                    <SummaryTable
-                        title={`Penyerapan Harian ${formatDate(dailySummary?.report_date)}`}
-                        totals={{ so: dailySummary?.total_so, actual: dailySummary?.total_actual, diff: dailySummary?.diff }}
+        <>
+            <section className="operator-grid" id="detail-harian">
+                <div className="operator-column">
+                    <OperatorCard
+                        operator="SETU"
+                        rows={data.SETU ?? []}
+                        tableHeight={tableHeight}
+                        onEditManualFob={onEditManualFob}
+                        onDeleteManualFob={onDeleteManualFob}
                     />
-                    <SummaryTable
-                        title={`Summary ${summaryMonth ? new Date(`${summaryMonth}-01T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : 'Bulanan'}`}
-                        totals={monthlySummary}
-                        loading={summaryLoading}
-                        error={summaryError}
+                </div>
+                <div className="operator-column">
+                    <OperatorCard
+                        operator="KHT"
+                        rows={data.KHT ?? []}
+                        tableHeight={tableHeight}
+                        tableRef={khtTableRef}
+                        onEditManualFob={onEditManualFob}
+                        onDeleteManualFob={onDeleteManualFob}
                     />
-                </article>
-                <OperatorCard
-                    operator="OFF"
-                    rows={data.OFF ?? []}
-                    tableHeight={tableHeight}
-                    onEditManualFob={onEditManualFob}
-                    onDeleteManualFob={onDeleteManualFob}
-                />
-            </div>
-            <div className="operator-column">
-                <OperatorCard
-                    operator="BLORA"
-                    rows={data.BLORA ?? []}
-                    tableHeight={tableHeight}
-                    onEditManualFob={onEditManualFob}
-                    onDeleteManualFob={onDeleteManualFob}
-                />
-            </div>
-            <div className="operator-column">
-                <OperatorCard
-                    operator="WUNUT"
-                    rows={data.WUNUT ?? []}
-                    tableHeight={tableHeight}
-                    onEditManualFob={onEditManualFob}
-                    onDeleteManualFob={onDeleteManualFob}
-                />
-            </div>
-        </section>
+                    <article className="operator-summary-card daily-summary-card">
+                        <SummaryTable
+                            title={`Penyerapan Harian ${formatDate(dailySummary?.report_date)}`}
+                            totals={{ so: dailySummary?.total_so, actual: dailySummary?.total_actual, diff: dailySummary?.diff }}
+                        />
+                        <SummaryTable
+                            title={`Summary ${summaryMonth ? new Date(`${summaryMonth}-01T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : 'Bulanan'}`}
+                            totals={monthlySummary}
+                            target={monthlySummary?.manual_so}
+                            loading={summaryLoading}
+                            error={summaryError}
+                        />
+                    </article>
+                    <OperatorCard
+                        operator="OFF"
+                        rows={data.OFF ?? []}
+                        tableHeight={tableHeight}
+                        onEditManualFob={onEditManualFob}
+                        onDeleteManualFob={onDeleteManualFob}
+                    />
+                </div>
+                <div className="operator-column">
+                    <OperatorCard
+                        operator="BLORA"
+                        rows={data.BLORA ?? []}
+                        tableHeight={tableHeight}
+                        onEditManualFob={onEditManualFob}
+                        onDeleteManualFob={onDeleteManualFob}
+                    />
+                </div>
+                <div className="operator-column">
+                    <OperatorCard
+                        operator="WUNUT"
+                        rows={data.WUNUT ?? []}
+                        tableHeight={tableHeight}
+                        onEditManualFob={onEditManualFob}
+                        onDeleteManualFob={onDeleteManualFob}
+                    />
+                </div>
+            </section>
+        </>
     );
 }

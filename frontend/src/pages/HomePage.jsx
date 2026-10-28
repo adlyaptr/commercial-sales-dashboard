@@ -8,13 +8,12 @@ import SectionIcon from '../components/SectionIcon';
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 const operators = ['SETU', 'KHT', 'BLORA', 'WUNUT'];
+const complaintColors = ['#16845b', '#e5a12c', '#3885b8', '#8a6bb8', '#d45f62', '#55a6a0'];
 
 const formatNumber = (value, maximumFractionDigits = 2) =>
     new Intl.NumberFormat('id-ID', { maximumFractionDigits }).format(Number(value ?? 0));
 const formatVolume = (value) =>
     new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value ?? 0));
-const formatCurrency = (value) =>
-    `Rp ${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value ?? 0))}`;
 const formatAveragePrice = (value) =>
     `Rp ${new Intl.NumberFormat('id-ID', {
         minimumFractionDigits: 2,
@@ -48,7 +47,7 @@ const volumeValueLabels = {
 const volumeChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    layout: { padding: { top: 18 } },
+    layout: { padding: { top: 8 } },
     interaction: { mode: 'index', intersect: false },
     plugins: {
         legend: {
@@ -79,8 +78,9 @@ function PeriodMetrics({ summary, reportSummary }) {
     const displayedSO = summary?.manual_so ?? reportSummary?.so;
     const displayedActual = reportSummary?.actual ?? 0;
     const displayedDiff = displayedActual - Number(displayedSO ?? 0);
-    const achievement = reportSummary?.so
-        ? displayedActual / reportSummary.so * 100
+    const target = summary?.manual_so;
+    const achievement = target != null && Number(target) > 0
+        ? displayedActual / Number(target) * 100
         : null;
     return (
         <div className="home-period-metrics">
@@ -98,7 +98,7 @@ function PeriodMetrics({ summary, reportSummary }) {
             </article>
             <article className="kpi kpi-purple">
                 <div className="kpi-icon">%</div>
-                <div><span>PENCAPAIAN SO</span><strong>{achievement == null ? '—' : formatPercent(achievement)}</strong><small>{summary?.so ? 'Actual dibanding SO' : 'Target belum tersedia'}</small></div>
+                <div><span>PENCAPAIAN TARGET</span><strong>{achievement == null ? '—' : formatPercent(achievement)}</strong><small>{target != null && Number(target) > 0 ? 'Actual dibanding Target' : 'Target belum tersedia'}</small></div>
             </article>
         </div>
     );
@@ -166,6 +166,21 @@ export default function HomePage() {
     const openComplaints = monthlyComplaints.filter((item) => item.status === 'Open').length;
     const closedComplaints = monthlyComplaints.filter((item) => item.status === 'Closed').length;
     const monitoringComplaints = monthlyComplaints.filter((item) => item.status === 'Monitoring').length;
+    const complaintTypeTotals = Object.entries(monthlyComplaints.reduce((counts, item) => {
+        const type = String(item.type || 'Belum dikategorikan');
+        counts[type] = (counts[type] || 0) + 1;
+        return counts;
+    }, {})).map(([name, value]) => ({ name, value }));
+    const complaintTotal = complaintTypeTotals.reduce((total, item) => total + item.value, 0);
+    let complaintSliceEnd = 0;
+    const complaintDonut = complaintTotal
+        ? `conic-gradient(${complaintTypeTotals.map((item, index) => {
+            const start = complaintSliceEnd / complaintTotal * 100;
+            complaintSliceEnd += item.value;
+            const end = complaintSliceEnd / complaintTotal * 100;
+            return `${complaintColors[index % complaintColors.length]} ${start}% ${end}%`;
+        }).join(', ')})`
+        : '#e7eee9';
     const validPriceRows = priceReport?.rows?.filter((row) =>
         row.price_unit === 'IDR_SM3'
             ? Number(row.price_rp_per_sm3) > 0
@@ -239,29 +254,40 @@ export default function HomePage() {
                         </div>
                     </Message>
                 </article>
-                    <article className="home-subpanel">
-                        <h3><SectionIcon name="price" />Average Price periode terpilih</h3>
-                        <Message loading={loading} error={errors.price} empty={validPriceCount === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
-                            <div className="home-year-summary home-price-summary">
-                                <div><small>Average Rp/Sm³</small><strong>{formatAveragePrice(priceReport?.totals?.average_price_rp_sm3)}</strong></div>
-                                <div><small>Total MMBTU</small><strong>{formatNumber(priceReport?.totals?.mmbtu, 3)}</strong></div>
-                                <div><small>Total USD</small><strong>{formatCurrency(priceReport?.totals?.usd)}</strong></div>
-                                <div><small>Total Rupiah</small><strong>{formatCurrency(priceReport?.totals?.rupiah)}</strong></div>
-                            </div>
-                            <small className="home-data-coverage">Perhitungan mencakup {validPriceCount} customer dengan harga/kurs valid.</small>
-                        </Message>
-                    </article>
-                    <article className="home-subpanel">
-                        <h3><SectionIcon name="complaint" />Complain periode terpilih</h3>
-                        <Message loading={loading} error={errors.complaints}>
-                            <div className="home-complaint-total"><strong>{monthlyComplaints.length}</strong><span>Total keluhan</span></div>
-                            <div className="home-complaint-status">
-                                <span><i className="open" />Open <b>{openComplaints}</b></span>
-                                <span><i className="closed" />Closed <b>{closedComplaints}</b></span>
-                                <span><i className="monitoring" />Monitoring <b>{monitoringComplaints}</b></span>
-                            </div>
-                        </Message>
-                    </article>
+                    <div className="home-insights-stack">
+                        <article className="home-subpanel home-average-panel">
+                            <h3><SectionIcon name="price" />Average Price periode terpilih</h3>
+                            <Message loading={loading} error={errors.price} empty={validPriceCount === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
+                                <div className="home-year-summary home-price-summary">
+                                    <div><small>Average Rp/Sm³</small><strong>{formatAveragePrice(priceReport?.totals?.average_price_rp_sm3)}</strong></div>
+                                    <div><small>Total MMBTU</small><strong>{formatNumber(priceReport?.totals?.mmbtu, 3)}</strong></div>
+                                </div>
+                            </Message>
+                        </article>
+                        <article className="home-subpanel home-complaint-panel">
+                            <h3><SectionIcon name="complaint" />Complain periode terpilih</h3>
+                            <Message loading={loading} error={errors.complaints} empty={monthlyComplaints.length === 0 ? 'Tidak ada complain pada periode terpilih.' : ''}>
+                                <div className="home-complaint-chart">
+                                    <div className="home-complaint-donut" style={{ background: complaintDonut }}>
+                                        <div><small>Total Complain</small><strong>{formatNumber(complaintTotal, 0)}</strong></div>
+                                    </div>
+                                    <div className="home-complaint-legend">
+                                        {complaintTypeTotals.map((item, index) => (
+                                            <div key={item.name}>
+                                                <i style={{ background: complaintColors[index % complaintColors.length] }} />
+                                                <p><b>{item.name}</b><span>{item.value} ({(item.value / complaintTotal * 100).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%)</span></p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="home-complaint-status">
+                                    <span><i className="open" />Open <b>{openComplaints}</b></span>
+                                    <span><i className="closed" />Closed <b>{closedComplaints}</b></span>
+                                    <span><i className="monitoring" />Monitoring <b>{monitoringComplaints}</b></span>
+                                </div>
+                            </Message>
+                        </article>
+                    </div>
                 </div>
             </section>
 

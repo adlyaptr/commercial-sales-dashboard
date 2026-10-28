@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { api } from "../api";
 
@@ -20,6 +20,7 @@ const emptyComplaint = {
   type: COMPLAINT_TYPES[0],
   priority: "Normal",
   status: "Open",
+  statusChangedAt: "",
   resolution: "",
 };
 
@@ -44,17 +45,9 @@ function formatDate(date) {
   });
 }
 
-function formatDateTime(value) {
+function formatClosedDate(value) {
   if (!value) return "Belum ditutup";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Belum ditutup";
-  return parsed.toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDate(String(value).slice(0, 10));
 }
 
 function Icon({ name }) {
@@ -180,7 +173,10 @@ export default function WeeklyComplainPage() {
   }
 
   function editComplaint(item) {
-    setEditing({ ...item });
+    setEditing({
+      ...item,
+      statusChangedAt: String(item.statusChangedAt || "").slice(0, 10),
+    });
     setShowForm(true);
   }
 
@@ -287,6 +283,17 @@ export default function WeeklyComplainPage() {
                 <option>Open</option><option>Closed</option><option>Monitoring</option>
               </select>
             </label>
+            {editing.status === "Closed" && (
+              <label className="complaint-field">
+                <span>Tanggal Closed</span>
+                <input
+                  type="date"
+                  value={editing.statusChangedAt || ""}
+                  onChange={(e) => updateField("statusChangedAt", e.target.value)}
+                  required
+                />
+              </label>
+            )}
             <ComplaintField label="Ringkasan Keluhan" value={editing.summary} multiline onChange={(e) => updateField("summary", e.target.value)} />
             <ComplaintField label="Tindak Lanjut" value={editing.followUp} multiline onChange={(e) => updateField("followUp", e.target.value)} />
             <ComplaintField label="Catatan Penyelesaian" value={editing.resolution} multiline onChange={(e) => updateField("resolution", e.target.value)} />
@@ -337,7 +344,7 @@ export default function WeeklyComplainPage() {
                 <div><small>Jenis Keluhan</small><span className="complaint-tag">{item.type}</span></div>
                 <div><small>Prioritas</small><span className={`complaint-tag priority-${item.priority.toLowerCase()}`}>{item.priority}</span></div>
                 <div><small>Status</small><span className={`complaint-status ${item.status.toLowerCase()}`}>{item.status}</span></div>
-                <div className="complaint-status-date"><small>Tanggal Closed</small><span>{formatDateTime(item.statusChangedAt)}</span></div>
+                <div className="complaint-status-date"><small>Tanggal Closed</small><span>{formatClosedDate(item.statusChangedAt)}</span></div>
                 <div className="complaint-resolution"><small>Catatan Penyelesaian</small><p>{item.resolution || "-"}</p></div>
                 <button className="complaint-edit" type="button" title="Edit complain" onClick={() => editComplaint(item)}><Icon name="edit" /></button>
               </div>

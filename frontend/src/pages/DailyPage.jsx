@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
 import OperatorTables from '../components/OperatorTables';
@@ -227,6 +227,36 @@ export default function DailyPage() {
 
     return (
         <>
+            <OperatorTables
+                data={dashboard?.operators ?? {}}
+                dailySummary={dashboard}
+                monthlySummary={monthlySummary}
+                summaryMonth={dashboard?.report_date?.slice(0, 7)}
+                summaryError={summaryError}
+                summaryLoading={summaryLoading}
+                onEditManualFob={editManualFob}
+                onDeleteManualFob={deleteManualFob}
+            />
+            <form className="manual-fob-panel" onSubmit={saveManualFob}>
+                <div className="manual-fob-heading">
+                    <b>{editingFob ? 'Edit Customer FOB' : 'Input Manual Customer FOB'}</b>
+                    <small>Isi hanya pada tanggal di bulan yang memiliki customer FOB.</small>
+                </div>
+                <div className="manual-fob-fields">
+                    <label><span>Tanggal Laporan</span><input required type="date" value={fobForm.date} onChange={(event) => setFobForm((current) => ({ ...current, date: event.target.value }))} /></label>
+                    <label><span>Nama FOB Customer</span><input required maxLength="150" value={fobForm.customer} onChange={(event) => setFobForm((current) => ({ ...current, customer: event.target.value }))} /></label>
+                    <label><span>Pilihan MS</span><select value={fobForm.operator} onChange={(event) => setFobForm((current) => ({ ...current, operator: event.target.value }))}>
+                        <option value="SETU">SETU</option><option value="KHT">KHT</option><option value="BLORA">BLORA</option><option value="WUNUT">WUNUT</option>
+                    </select></label>
+                    <label><span>SO</span><input required type="text" inputMode="decimal" placeholder="Contoh: 15.000" value={fobForm.so} onChange={(event) => setFobForm((current) => ({ ...current, so: event.target.value }))} /></label>
+                    <label><span>Actual</span><input required type="text" inputMode="decimal" placeholder="Contoh: 2.065" value={fobForm.actual} onChange={(event) => setFobForm((current) => ({ ...current, actual: event.target.value }))} /></label>
+                    <label><span>Diff (Actual − SO)</span><input readOnly value={formatFobNumber(fobDiff)} /></label>
+                    <div className="manual-fob-actions">
+                        {editingFob && <button className="secondary" type="button" onClick={cancelFobEdit} disabled={fobSaving}>Batal</button>}
+                        <button className="primary" type="submit" disabled={fobSaving}>{fobSaving ? 'Menyimpan...' : editingFob ? 'Simpan Perubahan' : 'Simpan FOB'}</button>
+                    </div>
+                </div>
+            </form>
             <section className="import-panel" id="import-data">
                 <label className="dropzone" htmlFor="excelFile">
                     <span className="cloud">☁↑</span><b>Klik untuk memilih file Excel</b><small>Format: .xlsx, .xlsm · Maks. 30 MB</small>
@@ -265,36 +295,6 @@ export default function DailyPage() {
                 )}
             </section>}
             {notice && <div className={`notice${notice.bad ? ' bad' : ''}`} role="status">{notice.text}</div>}
-            <form className="manual-fob-panel" onSubmit={saveManualFob}>
-                <div className="manual-fob-heading">
-                    <b>{editingFob ? 'Edit Customer FOB' : 'Input Manual Customer FOB'}</b>
-                    <small>Isi hanya pada tanggal di bulan yang memiliki customer FOB.</small>
-                </div>
-                <div className="manual-fob-fields">
-                    <label><span>Tanggal Laporan</span><input required type="date" value={fobForm.date} onChange={(event) => setFobForm((current) => ({ ...current, date: event.target.value }))} /></label>
-                    <label><span>Nama FOB Customer</span><input required maxLength="150" value={fobForm.customer} onChange={(event) => setFobForm((current) => ({ ...current, customer: event.target.value }))} /></label>
-                    <label><span>Pilihan MS</span><select value={fobForm.operator} onChange={(event) => setFobForm((current) => ({ ...current, operator: event.target.value }))}>
-                        <option value="SETU">SETU</option><option value="KHT">KHT</option><option value="BLORA">BLORA</option><option value="WUNUT">WUNUT</option>
-                    </select></label>
-                    <label><span>SO</span><input required type="text" inputMode="decimal" placeholder="Contoh: 15.000" value={fobForm.so} onChange={(event) => setFobForm((current) => ({ ...current, so: event.target.value }))} /></label>
-                    <label><span>Actual</span><input required type="text" inputMode="decimal" placeholder="Contoh: 2.065" value={fobForm.actual} onChange={(event) => setFobForm((current) => ({ ...current, actual: event.target.value }))} /></label>
-                    <label><span>Diff (Actual − SO)</span><input readOnly value={formatFobNumber(fobDiff)} /></label>
-                    <div className="manual-fob-actions">
-                        {editingFob && <button className="secondary" type="button" onClick={cancelFobEdit} disabled={fobSaving}>Batal</button>}
-                        <button className="primary" type="submit" disabled={fobSaving}>{fobSaving ? 'Menyimpan...' : editingFob ? 'Simpan Perubahan' : 'Simpan FOB'}</button>
-                    </div>
-                </div>
-            </form>
-            <OperatorTables
-                data={dashboard?.operators ?? {}}
-                dailySummary={dashboard}
-                monthlySummary={monthlySummary}
-                summaryMonth={dashboard?.report_date?.slice(0, 7)}
-                summaryError={summaryError}
-                summaryLoading={summaryLoading}
-                onEditManualFob={editManualFob}
-                onDeleteManualFob={deleteManualFob}
-            />
         </>
     );
 }

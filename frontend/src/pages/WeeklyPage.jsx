@@ -1,4 +1,3 @@
-import React from 'react';
 import PlaceholderPanel from '../components/PlaceholderPanel';
 
 export default function WeeklyPage() {

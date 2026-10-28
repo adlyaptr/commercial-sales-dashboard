@@ -1,5 +1,3 @@
-import React from 'react';
-
 export default function PlaceholderPanel({ icon = '▣', title, description, message }) {
     return (
         <section className="panel placeholder-panel">

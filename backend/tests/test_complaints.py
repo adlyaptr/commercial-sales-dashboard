@@ -38,14 +38,18 @@ class MemoryComplaints:
 
     def execute(self, statement, parameters=None):
         parameters = parameters or ()
-        if statement.startswith("SELECT report_date,status FROM complaints ORDER BY"):
+        if statement.startswith("SELECT report_date,status,complaint_type FROM complaints ORDER BY"):
             rows = sorted(
                 self.rows,
                 key=lambda row: (row["report_date"], row["id"]),
                 reverse=True,
             )
             return SimpleNamespace(fetchall=lambda: [
-                {"report_date": row["report_date"], "status": row["status"]}
+                {
+                    "report_date": row["report_date"],
+                    "status": row["status"],
+                    "complaint_type": row["complaint_type"],
+                }
                 for row in rows
             ])
 
@@ -76,7 +80,7 @@ class MemoryComplaints:
             )
             return SimpleNamespace(fetchone=lambda: row)
 
-        if statement.startswith("SELECT status,status_changed_at FROM complaints WHERE id="):
+        if statement.startswith("SELECT id FROM complaints WHERE id="):
             row = next((item for item in self.rows if item["id"] == parameters[0]), None)
             return SimpleNamespace(fetchone=lambda: row)
 
@@ -288,10 +292,15 @@ class ComplaintApiTests(unittest.TestCase):
 
         updated = asyncio.run(main.update_complaint(
             1,
-            FakeRequest(self.complaint(summary="Keluhan selesai", status="Closed")),
+            FakeRequest(self.complaint(
+                summary="Keluhan selesai",
+                status="Closed",
+                statusChangedAt="2026-10-15",
+            )),
         ))
         self.assertEqual(updated["summary"], "Keluhan selesai")
         self.assertEqual(updated["status"], "Closed")
+        self.assertEqual(updated["statusChangedAt"], "2026-10-15")
 
         listed = main.list_complaints(FakeRequest())
         self.assertEqual(len(listed), 1)
@@ -330,11 +339,11 @@ class ComplaintApiTests(unittest.TestCase):
             ))
             closed = asyncio.run(main.update_complaint(
                 created["id"],
-                FakeRequest(self.complaint(status="Closed")),
+                FakeRequest(self.complaint(status="Closed", statusChangedAt="2026-10-12")),
             ))
             closed_edit = asyncio.run(main.update_complaint(
                 created["id"],
-                FakeRequest(self.complaint(status="Closed", summary="Sudah ditutup")),
+                FakeRequest(self.complaint(status="Closed", statusChangedAt="2026-10-12", summary="Sudah ditutup")),
             ))
             reopened = asyncio.run(main.update_complaint(
                 created["id"],
@@ -342,7 +351,7 @@ class ComplaintApiTests(unittest.TestCase):
             ))
             closed_again = asyncio.run(main.update_complaint(
                 created["id"],
-                FakeRequest(self.complaint(status="Closed")),
+                FakeRequest(self.complaint(status="Closed", statusChangedAt="2026-10-14")),
             ))
 
         self.assertIsNone(created["statusChangedAt"])
@@ -350,10 +359,24 @@ class ComplaintApiTests(unittest.TestCase):
         self.assertEqual(monitoring["status"], "Monitoring")
         self.assertIsNone(monitoring["statusChangedAt"])
         self.assertEqual(closed["status"], "Closed")
+        self.assertEqual(closed["statusChangedAt"], "2026-10-12")
         self.assertEqual(closed_edit["statusChangedAt"], closed["statusChangedAt"])
         self.assertEqual(reopened["status"], "Open")
         self.assertIsNone(reopened["statusChangedAt"])
-        self.assertNotEqual(closed_again["statusChangedAt"], closed["statusChangedAt"])
+        self.assertEqual(closed_again["statusChangedAt"], "2026-10-14")
+
+    def test_closed_complaint_requires_valid_closing_date(self):
+        with self.assertRaises(main.HTTPException) as missing_date:
+            asyncio.run(main.create_complaint(
+                FakeRequest(self.complaint(status="Closed"))
+            ))
+        self.assertEqual(missing_date.exception.status_code, 400)
+
+        with self.assertRaises(main.HTTPException) as invalid_date:
+            asyncio.run(main.create_complaint(
+                FakeRequest(self.complaint(status="Closed", statusChangedAt="tanggal"))
+            ))
+        self.assertEqual(invalid_date.exception.status_code, 400)
 
     def test_public_complaint_list_is_minimal_and_mutations_require_login(self):
         with self.assertRaises(main.HTTPException) as invalid:
@@ -372,7 +395,11 @@ class ComplaintApiTests(unittest.TestCase):
 
         asyncio.run(main.create_complaint(FakeRequest(self.complaint())))
         public_complaints = main.list_complaints(FakeRequest(authenticated=False))
-        self.assertEqual(public_complaints, [{"date": "2026-10-13", "status": "Open"}])
+        self.assertEqual(public_complaints, [{
+            "date": "2026-10-13",
+            "status": "Open",
+            "type": "Keterlambatan Pekerjaan",
+        }])
 
     def test_legacy_import_is_safe_to_retry(self):
         legacy = self.complaint()
