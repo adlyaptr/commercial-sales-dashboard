@@ -128,6 +128,42 @@ class UserRoleTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 400)
         self.assertNotIn("division.team", self.database.users)
 
+    def test_user_passwords_may_be_short_but_not_empty_or_over_256_characters(self):
+        created = asyncio.run(main.create_user(FakeRequest({
+            "username": "short.pass",
+            "password": "a",
+            "role": "user",
+        })))
+        self.assertEqual(created, {"username": "short.pass", "role": "user"})
+        self.assertTrue(main.verify_user_password(
+            "a", self.database.users["short.pass"]["password_hash"]
+        ))
+
+        asyncio.run(main.update_user_password(
+            "short.pass",
+            FakeRequest({"password": "xy"}),
+        ))
+        self.assertTrue(main.verify_user_password(
+            "xy", self.database.users["short.pass"]["password_hash"]
+        ))
+
+        for password in ("", "x" * 257):
+            with self.subTest(password_length=len(password)):
+                with self.assertRaises(main.HTTPException) as error:
+                    asyncio.run(main.update_user_password(
+                        "short.pass",
+                        FakeRequest({"password": password}),
+                    ))
+                self.assertEqual(error.exception.status_code, 400)
+
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.create_user(FakeRequest({
+                "username": "empty.pass",
+                "password": "",
+                "role": "user",
+            })))
+        self.assertEqual(error.exception.status_code, 400)
+
     def test_admin_can_create_user_role_and_manage_user_accounts(self):
         created = asyncio.run(main.create_user(FakeRequest({
             "username": "report.reader",

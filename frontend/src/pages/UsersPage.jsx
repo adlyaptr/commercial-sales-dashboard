@@ -118,7 +118,6 @@ export default function UsersPage() {
                             type="password"
                             autoComplete="new-password"
                             required
-                            minLength={12}
                             maxLength={256}
                             value={password}
                             onChange={(event) => setPassword(event.target.value)}
@@ -129,7 +128,7 @@ export default function UsersPage() {
                     </button>
                 </form>
                 <small className="users-help">
-                    Username 3-64 karakter. Password minimal 12 karakter.
+                    Username 3-64 karakter. Password 1-256 karakter.
                 </small>
             </section>
 
@@ -156,8 +155,7 @@ export default function UsersPage() {
                                                 type="password"
                                                 autoComplete="new-password"
                                                 aria-label={`Password baru untuk ${user.username}`}
-                                                placeholder="Password baru (min. 12 karakter)"
-                                                minLength={12}
+                                                placeholder="Password baru"
                                                 maxLength={256}
                                                 required
                                                 value={passwords[user.username] || ''}

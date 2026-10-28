@@ -629,10 +629,10 @@ async def create_user(request: Request):
             status_code=400,
             detail="Username harus 3-64 karakter dan hanya boleh berisi huruf, angka, titik, garis bawah, atau tanda hubung.",
         )
-    if len(password) < 12 or len(password) > 256:
+    if not password or len(password) > 256:
         raise HTTPException(
             status_code=400,
-            detail="Password akun harus terdiri dari 12-256 karakter.",
+            detail="Password akun harus terdiri dari 1-256 karakter.",
         )
     if role != "user":
         raise HTTPException(status_code=400, detail="Hanya akun User yang memerlukan login dan dapat dibuat.")
@@ -656,10 +656,10 @@ async def update_user_password(username: str, request: Request):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format password tidak valid.")
     password = str(payload.get("password", ""))
-    if len(password) < 12 or len(password) > 256:
+    if not password or len(password) > 256:
         raise HTTPException(
             status_code=400,
-            detail="Password akun harus terdiri dari 12-256 karakter.",
+            detail="Password akun harus terdiri dari 1-256 karakter.",
         )
     with db() as con:
         user = con.execute(
