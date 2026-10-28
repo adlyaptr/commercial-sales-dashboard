@@ -106,7 +106,7 @@ function buildCustomerRows(items = [], periods = []) {
 }
 
 export default function MonthlyPage() {
-  const { rangeStartDate, rangeEndDate } = useOutletContext();
+  const { rangeStartDate, rangeEndDate, canEdit } = useOutletContext();
   const [region, setRegion] = useState("Semua Wilayah");
   const [operator, setOperator] = useState("Semua MS");
 
@@ -389,7 +389,7 @@ export default function MonthlyPage() {
             <div>
               <span>Total SO Periode</span>
               <strong>{fmtSO(periodKeys.length === 1 ? manualSO ?? totalSO : totalSO)}</strong>
-              <form className="monthly-so-form" onSubmit={saveManualSO}>
+              {canEdit && <form className="monthly-so-form" onSubmit={saveManualSO}>
                 <div>
                   <input
                     id="monthly-so-target"
@@ -420,7 +420,7 @@ export default function MonthlyPage() {
                     Target SO tersimpan.
                   </small>
                 )}
-              </form>
+              </form>}
             </div>
           </article>
 

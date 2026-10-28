@@ -1093,7 +1093,7 @@ footer span { float: right; }
 .average-workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: stretch; gap: 12px; }
 .average-workspace-column { min-width: 0; }
 .average-workspace-right { order: -1; display: flex; min-height: 0; }
-.average-workspace-right > form { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.average-workspace-right > div { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .average-workspace-right .average-data-table { width: 100%; min-width: 0; table-layout: fixed; }
 .average-workspace-right .average-comparison-table { min-width: 0; }
 .average-workspace-right .average-comparison-chart { flex: 0 0 250px; min-height: 250px; height: 250px; margin-top: 0; margin-bottom: 4px; }
@@ -3545,7 +3545,7 @@ textarea:focus-visible, a:focus-visible {
 }
 .users-create-form {
   display: grid;
-  grid-template-columns: minmax(150px, .8fr) minmax(220px, 1.2fr) auto;
+  grid-template-columns: minmax(140px, .8fr) minmax(180px, 1fr) minmax(220px, 1.2fr) auto;
   align-items: end;
   gap: 10px;
 }
@@ -3556,7 +3556,7 @@ textarea:focus-visible, a:focus-visible {
   font-size: 11px;
   font-weight: 650;
 }
-.users-create-form input, .users-actions input {
+.users-create-form input, .users-create-form select, .users-actions input {
   min-width: 0;
   height: 36px;
   padding: 0 10px;
@@ -3621,6 +3621,10 @@ textarea:focus-visible, a:focus-visible {
 .users-role.admin {
   background: #e5efff;
   color: #315b8e;
+}
+.users-role.user {
+  background: #f0e9ff;
+  color: #6740a0;
 }
 .users-actions, .users-actions form {
   display: flex;

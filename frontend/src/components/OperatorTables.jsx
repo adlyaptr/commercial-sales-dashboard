@@ -107,9 +107,9 @@ function OperatorCard({
                                     <tr key={`${group.key}-${row.customer}-${index}`}>
                                         <td title={row.customer}>
                                             {row.customer}
-                                            {row.manual_fob && <span className="manual-fob-row-actions">
-                                                <button type="button" onClick={() => onEditManualFob?.(row, operator)}>Edit</button>
-                                                <button type="button" onClick={() => onDeleteManualFob?.(row)}>Hapus</button>
+                                            {row.manual_fob && (onEditManualFob || onDeleteManualFob) && <span className="manual-fob-row-actions">
+                                                {onEditManualFob && <button type="button" onClick={() => onEditManualFob(row, operator)}>Edit</button>}
+                                                {onDeleteManualFob && <button type="button" onClick={() => onDeleteManualFob(row)}>Hapus</button>}
                                             </span>}
                                         </td><td>{formatNumber(row.so)}</td><td>{formatNumber(row.actual)}</td>
                                         <td className={row.diff >= 0 ? 'diff-pos' : 'diff-neg'}>{row.diff > 0 ? '+' : ''}{formatNumber(row.diff)}</td>

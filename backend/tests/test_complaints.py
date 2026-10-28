@@ -12,9 +12,11 @@ import main
 
 
 class FakeRequest:
-    def __init__(self, payload=None, authenticated=True):
+    def __init__(self, payload=None, authenticated=True, username=None, role=None):
         self.payload = payload or {}
-        self.session = {"username": main.APP_USERNAME} if authenticated else {}
+        self.session = {"username": username or main.APP_USERNAME} if authenticated else {}
+        if authenticated and role is not None:
+            self.session["role"] = role
 
     async def json(self):
         return self.payload
@@ -400,6 +402,15 @@ class ComplaintApiTests(unittest.TestCase):
             "status": "Open",
             "type": "Keterlambatan Pekerjaan",
         }])
+
+    def test_user_role_can_view_full_complaint_details(self):
+        asyncio.run(main.create_complaint(FakeRequest(self.complaint())))
+        request = FakeRequest(username="reader", role="user")
+        with patch.object(main, "require_home_access"):
+            result = main.list_complaints(request)
+        self.assertEqual(result[0]["customer"], "PT Contoh")
+        self.assertEqual(result[0]["summary"], "Keluhan pasokan")
+        self.assertIn("resolution", result[0])
 
     def test_legacy_import_is_safe_to_retry(self):
         legacy = self.complaint()

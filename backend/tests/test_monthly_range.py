@@ -133,40 +133,31 @@ class MonthlyRangeTests(unittest.TestCase):
             row["rupiah"] / expected_sm3,
         )
 
-    def test_public_average_price_range_returns_only_aggregate_data(self):
-        with patch.object(main, "db", return_value=MemoryAveragePriceRange()):
-            result = main.monthly_average_price_range(
-                AnonymousRequest(),
-                "2026-10-01",
-                "2026-10-31",
-            )
+    def test_public_and_division_roles_cannot_access_average_price_range(self):
+        for request in (AnonymousRequest(), DivisionRequest()):
+            with self.subTest(role=request.session.get("role")):
+                with self.assertRaises(main.HTTPException) as error:
+                    main.monthly_average_price_range(
+                        request,
+                        "2026-10-01",
+                        "2026-10-31",
+                    )
+                self.assertIn(error.exception.status_code, {401, 403})
 
-        self.assertEqual(
-            set(result),
-            {"start_date", "end_date", "rows", "regions", "valid_price_count", "totals"},
-        )
-        self.assertEqual(result["rows"], [])
-        self.assertEqual(result["valid_price_count"], 1)
-        self.assertEqual(result["regions"], [{
-            "region": "JAWA BARAT",
-            "so_sm3": 50000,
-            "actual_sm3": 28095,
-        }])
-        self.assertEqual(result["totals"]["sm3"], 28095)
-
-    def test_division_average_price_range_does_not_return_customer_details(self):
+    def test_user_average_price_range_can_view_customer_details(self):
+        user_request = SimpleNamespace(session={"username": "reader", "role": "user"})
         with (
+            patch.object(main, "require_login"),
             patch.object(main, "db", return_value=MemoryAveragePriceRange()),
-            patch.object(main, "require_home_access"),
         ):
             result = main.monthly_average_price_range(
-                DivisionRequest(),
+                user_request,
                 "2026-10-01",
                 "2026-10-31",
             )
 
-        self.assertEqual(result["rows"], [])
-        self.assertEqual(result["valid_price_count"], 1)
+        self.assertEqual(result["rows"][0]["customer"], "Customer Contoh")
+        self.assertEqual(result["rows"][0]["sm3"], 28095)
 
     def test_excludes_customers_without_valid_price_from_average_totals(self):
         class IncludesUnpricedCustomer(MemoryAveragePriceRange):

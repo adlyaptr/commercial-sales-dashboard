@@ -92,7 +92,7 @@ function ComplaintField({ label, value, onChange, multiline = false }) {
 }
 
 export default function WeeklyComplainPage() {
-  const { rangeStartDate, rangeEndDate } = useOutletContext();
+  const { rangeStartDate, rangeEndDate, canEdit } = useOutletContext();
   const [complaints, setComplaints] = useState([]);
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -112,7 +112,7 @@ export default function WeeklyComplainPage() {
           throw new Error("Format data complain dari server tidak valid.");
         }
 
-        const legacy = readLegacyComplaints();
+        const legacy = canEdit ? readLegacyComplaints() : [];
         if (legacy.length > 0) {
           const migration = await api("/api/complaints/legacy-import", {
             method: "POST",
@@ -141,7 +141,7 @@ export default function WeeklyComplainPage() {
 
     loadComplaints();
     return () => { active = false; };
-  }, []);
+  }, [canEdit]);
 
   const visibleComplaints = useMemo(
     () => complaints.filter((item) =>
@@ -247,12 +247,12 @@ export default function WeeklyComplainPage() {
           <div><span>Monitoring</span><strong>{monitoringCount}</strong></div>
         </div>
       </section>
-<div className="complain-actions">
+{canEdit && <div className="complain-actions">
   <button className="complain-btn complain-btn-green" onClick={addComplaint}>
             <Icon name="plus" /> Tambah Complain
           </button>
-        </div>
-      {showForm && editing && (
+  </div>}
+{canEdit && showForm && editing && (
         <form className="complain-form" onSubmit={submitComplaint}>
           <div className="complain-form-header">
             <h2>{editing.id ? "Edit Complain" : "Tambah Complain"}</h2>
@@ -346,7 +346,7 @@ export default function WeeklyComplainPage() {
                 <div><small>Status</small><span className={`complaint-status ${item.status.toLowerCase()}`}>{item.status}</span></div>
                 <div className="complaint-status-date"><small>Tanggal Closed</small><span>{formatClosedDate(item.statusChangedAt)}</span></div>
                 <div className="complaint-resolution"><small>Catatan Penyelesaian</small><p>{item.resolution || "-"}</p></div>
-                <button className="complaint-edit" type="button" title="Edit complain" onClick={() => editComplaint(item)}><Icon name="edit" /></button>
+                {canEdit && <button className="complaint-edit" type="button" title="Edit complain" onClick={() => editComplaint(item)}><Icon name="edit" /></button>}
               </div>
             </div>
           </article>

@@ -105,7 +105,8 @@ export default function DashboardLayout({ user, onLogout }) {
     const isYearly = location.pathname === '/tahunan';
     const isMonthly = location.pathname === '/bulanan';
     const isHome = location.pathname === '/beranda';
-    const hasAuthenticatedUser = user?.role === 'admin' || user?.role === 'division';
+    const canViewAllFeatures = user?.role === 'admin' || user?.role === 'user';
+    const hasAuthenticatedUser = canViewAllFeatures || user?.role === 'division';
     const [isCompactViewport, setIsCompactViewport] = useState(
         () => window.matchMedia('(max-width: 1024px)').matches,
     );
@@ -285,7 +286,7 @@ export default function DashboardLayout({ user, onLogout }) {
         let active = true;
 
         async function loadDashboard() {
-            if (user.role !== 'admin') {
+            if (!canViewAllFeatures) {
                 setDashboard(null);
                 return;
             }
@@ -319,7 +320,7 @@ export default function DashboardLayout({ user, onLogout }) {
         return () => {
             active = false;
         };
-    }, [selectedDate, user.role]);
+    }, [selectedDate, canViewAllFeatures]);
 
     // Dipanggil oleh halaman import setelah proses import berhasil.
     // Memuat ulang daftar tanggal dan mempertahankan tanggal lama
@@ -393,6 +394,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
     const outletContext = {
         dashboard,
+        canEdit: user?.role === 'admin',
         selectedDate,
         rangeStartDate,
         rangeEndDate,
@@ -492,7 +494,7 @@ export default function DashboardLayout({ user, onLogout }) {
                             <span>Beranda</span>
                         </NavLink>
 
-                        {user.role === 'admin' && (
+                        {canViewAllFeatures && (
                             <>
                                 <NavLink
                                     className={classForNav}
@@ -570,10 +572,12 @@ export default function DashboardLayout({ user, onLogout }) {
                                     <span>Tahunan</span>
                                 </NavLink>
 
-                                <NavLink className={classForNav} to="/pengguna">
-                                    <span className="nav-ico" aria-hidden="true">♙</span>
-                                    <span>Pengguna</span>
-                                </NavLink>
+                                {user.role === 'admin' && (
+                                    <NavLink className={classForNav} to="/pengguna">
+                                        <span className="nav-ico" aria-hidden="true">♙</span>
+                                        <span>Pengguna</span>
+                                    </NavLink>
+                                )}
                             </>
                         )}
 

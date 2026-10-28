@@ -5,6 +5,7 @@ export default function UsersPage() {
     const [users, setUsers] = useState([]);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [role, setRole] = useState('division');
     const [passwords, setPasswords] = useState({});
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState('');
@@ -34,11 +35,11 @@ export default function UsersPage() {
         try {
             await api('/api/users', {
                 method: 'POST',
-                body: { username, password },
+                body: { username, password, role },
             });
             setUsername('');
             setPassword('');
-            setNotice(`Akun divisi "${username}" berhasil dibuat.`);
+            setNotice(`Akun ${role === 'user' ? 'User' : 'Divisi'} "${username}" berhasil dibuat.`);
             await loadUsers();
         } catch (requestError) {
             setError(requestError.message || 'Akun gagal dibuat.');
@@ -68,7 +69,7 @@ export default function UsersPage() {
     }
 
     async function removeUser(targetUsername) {
-        if (!window.confirm(`Hapus akun divisi "${targetUsername}"?`)) return;
+        if (!window.confirm(`Hapus akun "${targetUsername}"?`)) return;
         setBusy(targetUsername);
         setError('');
         setNotice('');
@@ -90,7 +91,7 @@ export default function UsersPage() {
             <header className="users-heading">
                 <div>
                     <h1>Pengelolaan Pengguna</h1>
-                    <p>Buat akun divisi yang hanya dapat membuka halaman Beranda.</p>
+                    <p>Admin dapat mengelola akun User yang melihat seluruh fitur dan Divisi yang hanya membuka Beranda.</p>
                 </div>
             </header>
 
@@ -98,7 +99,7 @@ export default function UsersPage() {
             {notice && <div className="notice good" role="status">{notice}</div>}
 
             <section className="users-panel">
-                <h2>Buat akun divisi</h2>
+                <h2>Buat akun pengguna</h2>
                 <form className="users-create-form" onSubmit={createDivisionUser}>
                     <label>
                         Username
@@ -111,6 +112,13 @@ export default function UsersPage() {
                             value={username}
                             onChange={(event) => setUsername(event.target.value)}
                         />
+                    </label>
+                    <label>
+                        Role
+                        <select value={role} onChange={(event) => setRole(event.target.value)}>
+                            <option value="user">User — melihat seluruh fitur</option>
+                            <option value="division">Divisi — hanya halaman Beranda</option>
+                        </select>
                     </label>
                     <label>
                         Password sementara
@@ -146,10 +154,10 @@ export default function UsersPage() {
                                 <div className="users-identity">
                                     <strong>{user.username}</strong>
                                     <span className={`users-role ${user.role}`}>
-                                        {user.role === 'admin' ? 'Admin' : 'Divisi'}
+                                        {user.role === 'admin' ? 'Admin' : user.role === 'user' ? 'User' : 'Divisi'}
                                     </span>
                                 </div>
-                                {user.role === 'division' && (
+                                {user.role !== 'admin' && (
                                     <div className="users-actions">
                                         <form onSubmit={(event) => updatePassword(user.username, event)}>
                                             <input

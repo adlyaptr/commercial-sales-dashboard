@@ -145,7 +145,7 @@ def logged_in(request: Request) -> bool:
     username = request.session.get("username")
     role = request.session.get("role")
     return bool(username) and (
-        role in {"admin", "division"}
+        role in {"admin", "user", "division"}
         or (username == APP_USERNAME and role is None)
     )
 
@@ -156,6 +156,23 @@ def is_admin(request: Request) -> bool:
 
 
 def require_login(request: Request):
+    if not logged_in(request):
+        raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
+    if is_admin(request):
+        return
+    if request.session.get("role") != "user":
+        raise HTTPException(status_code=403, detail="Akses hanya tersedia bagi Admin dan User.")
+    username = request.session["username"]
+    with db() as con:
+        user = con.execute(
+            "SELECT role FROM app_users WHERE username=%s", (username,)
+        ).fetchone()
+    if not user or user["role"] != "user":
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
+
+
+def require_admin(request: Request):
     if not logged_in(request):
         raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
     if not is_admin(request):
@@ -173,9 +190,10 @@ def require_home_access(request: Request):
         user = con.execute(
             "SELECT role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
-    if not user or user["role"] != "division":
+    if not user or user["role"] not in {"user", "division"}:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
+    request.session["role"] = user["role"]
 
 
 def hash_user_password(password: str) -> str:
@@ -549,7 +567,7 @@ async def login(request: Request):
         ).fetchone()
     if (
         not row
-        or row["role"] not in {"admin", "division"}
+        or row["role"] not in {"admin", "user", "division"}
         or not verify_user_password(password, row["password_hash"])
     ):
         return JSONResponse({"detail": "Username atau password salah."}, status_code=401)
@@ -574,7 +592,7 @@ def me(request: Request):
         user = con.execute(
             "SELECT role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
-    if not user or user["role"] not in {"admin", "division"}:
+    if not user or user["role"] not in {"admin", "user", "division"}:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
     request.session["role"] = user["role"]
@@ -583,7 +601,7 @@ def me(request: Request):
 
 @app.get("/api/users")
 def list_users(request: Request):
-    require_login(request)
+    require_admin(request)
     with db() as con:
         users = con.execute(
             "SELECT username,role FROM app_users ORDER BY role,username"
@@ -593,12 +611,13 @@ def list_users(request: Request):
 
 @app.post("/api/users")
 async def create_user(request: Request):
-    require_login(request)
+    require_admin(request)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format akun tidak valid.")
     username = str(payload.get("username", "")).strip()
     password = str(payload.get("password", ""))
+    role = str(payload.get("role", "division")).strip()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{2,63}", username):
         raise HTTPException(
             status_code=400,
@@ -607,8 +626,10 @@ async def create_user(request: Request):
     if len(password) < 12 or len(password) > 256:
         raise HTTPException(
             status_code=400,
-            detail="Password akun divisi harus terdiri dari 12-256 karakter.",
+            detail="Password akun harus terdiri dari 12-256 karakter.",
         )
+    if role not in {"user", "division"}:
+        raise HTTPException(status_code=400, detail="Role akun harus User atau Divisi.")
     with db() as con:
         existing = con.execute(
             "SELECT username FROM app_users WHERE username=%s", (username,)
@@ -616,15 +637,15 @@ async def create_user(request: Request):
         if existing:
             raise HTTPException(status_code=409, detail="Username sudah digunakan.")
         con.execute(
-            "INSERT INTO app_users(username,password_hash,role) VALUES(%s,%s,'division')",
-            (username, hash_user_password(password)),
+            "INSERT INTO app_users(username,password_hash,role) VALUES(%s,%s,%s)",
+            (username, hash_user_password(password), role),
         )
-    return {"username": username, "role": "division"}
+    return {"username": username, "role": role}
 
 
 @app.put("/api/users/{username}/password")
 async def update_user_password(username: str, request: Request):
-    require_login(request)
+    require_admin(request)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format password tidak valid.")
@@ -632,39 +653,39 @@ async def update_user_password(username: str, request: Request):
     if len(password) < 12 or len(password) > 256:
         raise HTTPException(
             status_code=400,
-            detail="Password akun divisi harus terdiri dari 12-256 karakter.",
+            detail="Password akun harus terdiri dari 12-256 karakter.",
         )
     with db() as con:
         user = con.execute(
             "SELECT role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
-        if not user or user["role"] != "division":
-            raise HTTPException(status_code=404, detail="Akun divisi tidak ditemukan.")
+        if not user or user["role"] not in {"user", "division"}:
+            raise HTTPException(status_code=404, detail="Akun pengguna tidak ditemukan.")
         con.execute(
             "UPDATE app_users SET password_hash=%s WHERE username=%s",
             (hash_user_password(password), username),
         )
-    return {"username": username, "role": "division"}
+    return {"username": username, "role": user["role"]}
 
 
 @app.delete("/api/users/{username}")
 def delete_user(username: str, request: Request):
-    require_login(request)
+    require_admin(request)
     if username == APP_USERNAME:
         raise HTTPException(status_code=400, detail="Akun admin utama tidak dapat dihapus.")
     with db() as con:
         user = con.execute(
             "SELECT role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
-        if not user or user["role"] != "division":
-            raise HTTPException(status_code=404, detail="Akun divisi tidak ditemukan.")
+        if not user or user["role"] not in {"user", "division"}:
+            raise HTTPException(status_code=404, detail="Akun pengguna tidak ditemukan.")
         con.execute("DELETE FROM app_users WHERE username=%s", (username,))
     return {"ok": True}
 
 
 @app.post("/api/import/preview")
 async def preview_import(request: Request, file: UploadFile = File(...)):
-    require_login(request)
+    require_admin(request)
     filename = Path(file.filename or "upload.xlsx").name
     if Path(filename).suffix.lower() not in {".xlsx", ".xlsm"}:
         raise HTTPException(status_code=400, detail="Gunakan file Excel .xlsx atau .xlsm.")
@@ -732,7 +753,7 @@ async def preview_import(request: Request, file: UploadFile = File(...)):
 
 @app.post("/api/import")
 async def upload_excel(request: Request, file: UploadFile = File(...)):
-    require_login(request)
+    require_admin(request)
     filename = Path(file.filename or "upload.xlsx").name
     if Path(filename).suffix.lower() not in {".xlsx", ".xlsm"}:
         raise HTTPException(status_code=400, detail="Gunakan file Excel .xlsx atau .xlsm.")
@@ -758,7 +779,7 @@ def dates(request: Request):
 
 @app.post("/api/manual-fob-sales")
 async def save_manual_fob_sale(request: Request):
-    require_login(request)
+    require_admin(request)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format data customer FOB tidak valid.")
@@ -828,7 +849,7 @@ async def save_manual_fob_sale(request: Request):
 
 @app.put("/api/manual-fob-sales/{sale_id}")
 async def update_manual_fob_sale(sale_id: int, request: Request):
-    require_login(request)
+    require_admin(request)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format data customer FOB tidak valid.")
@@ -912,7 +933,7 @@ async def update_manual_fob_sale(sale_id: int, request: Request):
 
 @app.delete("/api/manual-fob-sales/{sale_id}")
 def delete_manual_fob_sale(sale_id: int, request: Request):
-    require_login(request)
+    require_admin(request)
     with db() as con:
         sale = con.execute(
             """
@@ -1385,7 +1406,7 @@ def get_monthly_so(request: Request, month: str):
 
 @app.put("/api/monthly-so")
 async def save_monthly_so(request: Request):
-    require_login(request)
+    require_admin(request)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format SO bulanan tidak valid.")
@@ -1533,7 +1554,7 @@ def normalize_complaint(
 @app.get("/api/complaints")
 def list_complaints(request: Request):
     require_home_access(request)
-    if not is_admin(request):
+    if not is_admin(request) and request.session.get("role") != "user":
         with db() as con:
             rows = con.execute(
                 "SELECT report_date,status,complaint_type FROM complaints "
@@ -1560,7 +1581,7 @@ def list_complaints(request: Request):
 
 @app.post("/api/complaints")
 async def create_complaint(request: Request):
-    require_login(request)
+    require_admin(request)
     fields = normalize_complaint(await request.json())
     with db() as con:
         cursor = con.execute(
@@ -1579,7 +1600,7 @@ async def create_complaint(request: Request):
 
 @app.put("/api/complaints/{complaint_id}")
 async def update_complaint(complaint_id: int, request: Request):
-    require_login(request)
+    require_admin(request)
     if complaint_id < 1:
         raise HTTPException(status_code=400, detail="ID complain tidak valid.")
     with db() as con:
@@ -1606,7 +1627,7 @@ async def update_complaint(complaint_id: int, request: Request):
 
 @app.post("/api/complaints/legacy-import")
 async def import_legacy_complaints(request: Request):
-    require_login(request)
+    require_admin(request)
     payload = await request.json()
     complaints = payload.get("complaints") if isinstance(payload, dict) else None
     if not isinstance(complaints, list) or len(complaints) > 5000:
@@ -2815,7 +2836,7 @@ def monthly_average_price(request: Request, month: str):
 
 @app.get("/api/monthly-average-price-range")
 def monthly_average_price_range(request: Request, start_date: str, end_date: str):
-    require_home_access(request)
+    require_login(request)
     try:
         start = date.fromisoformat(start_date)
         end = date.fromisoformat(end_date)
@@ -2992,7 +3013,7 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
     totals["average_price_rp_sm3"] = (
         totals["rupiah"] / totals["sm3"] if totals["sm3"] else 0.0
     )
-    if not is_admin(request):
+    if not is_admin(request) and request.session.get("role") != "user":
         region_totals = {}
         valid_price_count = 0
         for row in rows:
@@ -3024,7 +3045,7 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
 
 @app.post("/api/monthly-average-price")
 async def save_monthly_average_price(request: Request):
-    require_login(request)
+    require_admin(request)
     payload = await request.json()
     month = str(payload.get("month", ""))
     try:
@@ -3200,7 +3221,7 @@ async def save_monthly_average_price(request: Request):
 
 @app.post("/api/weekly-average-price")
 async def save_weekly_average_price(request: Request):
-    require_login(request)
+    require_admin(request)
     payload = await request.json()
     customer_key = str(payload.get("customer_key", "")).strip()
     region = str(payload.get("region", "")).strip()
@@ -3232,7 +3253,7 @@ async def save_weekly_average_price(request: Request):
 
 @app.delete("/api/weekly-average-price")
 def delete_weekly_average_price(request: Request, week_start: str, customer_key: str):
-    require_login(request)
+    require_admin(request)
     try:
         parsed_week = date.fromisoformat(week_start)
     except ValueError as exc:
@@ -3252,7 +3273,7 @@ def import_history(request: Request):
 
 @app.post("/api/customer-mapping")
 async def save_mapping(request: Request):
-    require_login(request)
+    require_admin(request)
     payload = await request.json()
     customer = str(payload.get("customer", "")).strip()
     operator = str(payload.get("operator", "")).strip().upper()
@@ -3281,7 +3302,7 @@ async def save_mapping(request: Request):
 
 @app.post("/api/customer-mapping/bulk")
 async def save_customer_mappings(request: Request):
-    require_login(request)
+    require_admin(request)
     payload = await request.json()
     mappings = payload.get("mappings")
     if not isinstance(mappings, list) or not mappings:

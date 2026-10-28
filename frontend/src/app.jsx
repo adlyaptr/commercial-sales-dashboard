@@ -22,6 +22,9 @@ function DashboardAccess({ user, onLogout }) {
     if (!user && !['/', '/beranda'].includes(location.pathname)) {
         return <Navigate to="/login" replace />;
     }
+    if (user?.role === 'division' && !['/', '/beranda'].includes(location.pathname)) {
+        return <Navigate to="/beranda" replace />;
+    }
     return (
         <DashboardLayout
             user={user || { role: 'public' }}
@@ -65,7 +68,7 @@ function App() {
                 >
                     <Route index element={<Navigate to="/beranda" replace />} />
                     <Route path="beranda" element={<HomePage />} />
-                    {user?.role === 'admin' && (
+                    {(user?.role === 'admin' || user?.role === 'user') && (
                         <>
                             <Route path="harian" element={<DailyPage />} />
                             <Route path="mingguan" element={<WeeklyPage />} />
@@ -82,7 +85,9 @@ function App() {
                                 )}
                             />
                             <Route path="laporan" element={<ReportsPage />} />
-                            <Route path="pengguna" element={<UsersPage />} />
+                            {user.role === 'admin' && (
+                                <Route path="pengguna" element={<UsersPage />} />
+                            )}
                         </>
                     )}
                 </Route>

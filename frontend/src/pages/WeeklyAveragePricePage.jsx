@@ -296,7 +296,7 @@ function monthLabel(value) {
 }
 
 export default function WeeklyAveragePricePage() {
-    const { averagePriceMonth, rangeStartDate } = useOutletContext();
+    const { averagePriceMonth, rangeStartDate, canEdit } = useOutletContext();
     const selectedMonth = averagePriceMonth || rangeStartDate?.slice(0, 7) || '';
     const activeComparisonAreas = comparisonAreas
         .filter((area) => area.key !== 'JAWA_TENGAH_DAN_TIMUR'
@@ -859,7 +859,7 @@ export default function WeeklyAveragePricePage() {
                         <b>2. Hasil Perhitungan Average Price</b>
                     </div>
                 </div>
-                <form onSubmit={saveReport}>
+                <div>
                     <div className="average-table-wrap average-customer-table-wrap" role="region" aria-label="Tabel data Average Price Customer" tabIndex="0">
                         <table className="average-data-table">
                             <thead><tr><th>No</th><th>Customer</th><th>Sm³</th><th>MMBTU</th><th>Harga / MMBTU</th><th>Total USD</th><th>Total Rupiah</th></tr></thead>
@@ -986,7 +986,8 @@ export default function WeeklyAveragePricePage() {
                             </tfoot>}
                         </table>
                     </div>
-                </form>
+                </div>
+                {canEdit && <>
                 <div className="average-data-heading average-customer-entry-heading">
                     <div className="average-panel-heading">
                         <b>1. Input Average Price Customer</b>
@@ -1080,28 +1081,31 @@ export default function WeeklyAveragePricePage() {
                         </button>
                     </div>
                 </form>
-                <form onSubmit={saveReport}>
+                </>}
+                <div>
                     <div className="average-data-heading average-conversion-heading">
                         <div className="average-panel-heading">
                             <b>3. Faktor Konversi Operator dan Kurs</b>
                         </div>
                         <label className="average-filter-field">
                             <span>Kurs Rp/USD</span>
-                            <input
-                                aria-label="Kurs Rupiah per USD"
-                                type="text"
-                                inputMode="decimal"
-                                value={exchangeRateInput}
-                                aria-invalid={exchangeRateInputError}
-                                onChange={(event) => updateExchangeRate(event.target.value)}
-                                onBlur={() => {
-                                    if (!exchangeRateInputDirty) return;
-                                    const parsedRate = parseExchangeRate(exchangeRateInput);
-                                    if (parsedRate != null) {
-                                        setExchangeRateInput(parsedRate ? formatInteger(parsedRate) : '');
-                                    }
-                                }}
-                            />
+                            {canEdit ? (
+                                <input
+                                    aria-label="Kurs Rupiah per USD"
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={exchangeRateInput}
+                                    aria-invalid={exchangeRateInputError}
+                                    onChange={(event) => updateExchangeRate(event.target.value)}
+                                    onBlur={() => {
+                                        if (!exchangeRateInputDirty) return;
+                                        const parsedRate = parseExchangeRate(exchangeRateInput);
+                                        if (parsedRate != null) {
+                                            setExchangeRateInput(parsedRate ? formatInteger(parsedRate) : '');
+                                        }
+                                    }}
+                                />
+                            ) : <span>{report.exchange_rate ? formatInteger(report.exchange_rate) : '—'}</span>}
                         </label>
                     </div>
                     <div className="average-table-wrap average-conversion-wrap">
@@ -1110,16 +1114,18 @@ export default function WeeklyAveragePricePage() {
                             <tbody>{operators.map((operator, index) => <tr key={operator}>
                                 <td>{index + 1}</td>
                                 <td>{operator}</td>
-                                <td><input aria-label={`Faktor konversi ${operator}`} type="number" min="0" step="0.0001" value={report.operator_factors[operator] || ''} onChange={(event) => updateFactor(operator, event.target.value)} /></td>
+                                <td>{canEdit
+                                    ? <input aria-label={`Faktor konversi ${operator}`} type="number" min="0" step="0.0001" value={report.operator_factors[operator] || ''} onChange={(event) => updateFactor(operator, event.target.value)} />
+                                    : report.operator_factors[operator] || '—'}</td>
                                 <td>MMBTU = Sm³ ÷ faktor</td>
                             </tr>)}</tbody>
                         </table>
                     </div>
-                </form>
+                </div>
                     </div>
 
-                    <div className="average-workspace-column average-workspace-right">
-                    <form onSubmit={saveReport}>
+                        <div className="average-workspace-column average-workspace-right">
+                        <div>
                     <div className="average-data-heading average-comparison-heading">
                         <div className="average-panel-heading">
                             <b>4. Target Harga dan Prognosa (Rp/Sm³)</b>
@@ -1135,15 +1141,17 @@ export default function WeeklyAveragePricePage() {
                                 <tr key={row.key}>
                                     <td>{row.label}</td>
                                     <td>
-                                        <input
-                                            aria-label={`Target harga ${row.label}`}
-                                            type="number"
-                                            min="0"
-                                            step="1"
-                                            placeholder="Input target"
-                                            value={report.targets[row.key] ?? ''}
-                                            onChange={(event) => updateTarget(row.key, event.target.value)}
-                                        />
+                                        {canEdit ? (
+                                            <input
+                                                aria-label={`Target harga ${row.label}`}
+                                                type="number"
+                                                min="0"
+                                                step="1"
+                                                placeholder="Input target"
+                                                value={report.targets[row.key] ?? ''}
+                                                onChange={(event) => updateTarget(row.key, event.target.value)}
+                                            />
+                                        ) : report.targets[row.key] == null ? '—' : formatInteger(report.targets[row.key])}
                                     </td>
                                     <td>{row.prognosis == null
                                         ? hasUnassignedWorkbookRegions && !row.hasRegionalRows
@@ -1161,12 +1169,12 @@ export default function WeeklyAveragePricePage() {
                             ))}</tbody>
                         </table>
                     </div>
-                    <div className="average-toolbar average-monthly-save">
-                        <button className="average-add-button" type="submit" disabled={saving || loading || !selectedMonth}>
+                    {canEdit && <div className="average-toolbar average-monthly-save">
+                        <button className="average-add-button" type="button" onClick={saveReport} disabled={saving || loading || !selectedMonth}>
                             {saving ? 'Menyimpan...' : 'Simpan Data Bulan Ini'}
                         </button>
+                    </div>}
                     </div>
-                    </form>
                     </div>
                 </div>
             </section>

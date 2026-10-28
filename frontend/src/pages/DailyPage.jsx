@@ -21,7 +21,7 @@ function parseIndonesianNumber(value) {
 }
 
 export default function DailyPage() {
-    const { dashboard, selectedDate, refreshDashboard } = useOutletContext();
+    const { dashboard, selectedDate, refreshDashboard, canEdit } = useOutletContext();
     const [file, setFile] = useState(null);
     const [fileInputKey, setFileInputKey] = useState(0);
     const [notice, setNotice] = useState(null);
@@ -234,9 +234,10 @@ export default function DailyPage() {
                 summaryMonth={dashboard?.report_date?.slice(0, 7)}
                 summaryError={summaryError}
                 summaryLoading={summaryLoading}
-                onEditManualFob={editManualFob}
-                onDeleteManualFob={deleteManualFob}
+                onEditManualFob={canEdit ? editManualFob : undefined}
+                onDeleteManualFob={canEdit ? deleteManualFob : undefined}
             />
+            {canEdit && <>
             <form className="manual-fob-panel" onSubmit={saveManualFob}>
                 <div className="manual-fob-heading">
                     <b>{editingFob ? 'Edit Customer FOB' : 'Input Manual Customer FOB'}</b>
@@ -294,6 +295,7 @@ export default function DailyPage() {
                     <p className="mapping-complete">Semua customer sudah memiliki pemetaan. File siap diimpor.</p>
                 )}
             </section>}
+            </>}
             {notice && <div className={`notice${notice.bad ? ' bad' : ''}`} role="status">{notice.text}</div>}
         </>
     );
