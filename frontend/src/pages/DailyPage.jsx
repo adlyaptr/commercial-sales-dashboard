@@ -251,7 +251,7 @@ export default function DailyPage() {
                     </select></label>
                     <label><span>SO</span><input required type="text" inputMode="decimal" placeholder="Contoh: 15.000" value={fobForm.so} onChange={(event) => setFobForm((current) => ({ ...current, so: event.target.value }))} /></label>
                     <label><span>Actual</span><input required type="text" inputMode="decimal" placeholder="Contoh: 2.065" value={fobForm.actual} onChange={(event) => setFobForm((current) => ({ ...current, actual: event.target.value }))} /></label>
-                    <label><span>Diff (Actual − SO)</span><input readOnly value={formatFobNumber(fobDiff)} /></label>
+                    <label><span>Diff (Actual − SO)</span><input className={fobDiff < 0 ? 'diff-neg' : 'diff-pos'} readOnly value={formatFobNumber(fobDiff)} /></label>
                     <div className="manual-fob-actions">
                         {editingFob && <button className="secondary" type="button" onClick={cancelFobEdit} disabled={fobSaving}>Batal</button>}
                         <button className="primary" type="submit" disabled={fobSaving}>{fobSaving ? 'Menyimpan...' : editingFob ? 'Simpan Perubahan' : 'Simpan FOB'}</button>
