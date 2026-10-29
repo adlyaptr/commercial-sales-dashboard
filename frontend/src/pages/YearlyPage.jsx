@@ -90,6 +90,7 @@ export default function YearlyPage() {
     const [region, setRegion] = useState('Semua Wilayah');
     const [operator, setOperator] = useState('Semua MS');
     const [records, setRecords] = useState([]);
+    const [periodSummary, setPeriodSummary] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
@@ -102,17 +103,25 @@ export default function YearlyPage() {
             try {
                 if (!rangeStartDate || !rangeEndDate) {
                     setRecords([]);
+                    setPeriodSummary(null);
                     return;
                 }
                 const params = new URLSearchParams({
                     start_date: rangeStartDate,
                     end_date: rangeEndDate,
                 });
-                const result = await api(`/api/monthly-range?${params.toString()}`);
-                if (!cancelled) setRecords(buildCustomerRows(result.items || [], periodKeys));
+                const [result, summary] = await Promise.all([
+                    api(`/api/monthly-range?${params.toString()}`),
+                    api(`/api/home-summary-range?${params.toString()}`),
+                ]);
+                if (!cancelled) {
+                    setRecords(buildCustomerRows(result.items || [], periodKeys));
+                    setPeriodSummary(summary);
+                }
             } catch (loadError) {
                 if (!cancelled) {
                     setRecords([]);
+                    setPeriodSummary(null);
                     setError(loadError.message || 'Data tahunan gagal dimuat dari database.');
                 }
             } finally {
@@ -168,8 +177,11 @@ export default function YearlyPage() {
         actual: total(filteredCustomers.map((customer) => customer.actual)),
     }), [filteredCustomers]);
 
-    const achievement = totals.so ? totals.actual / totals.so * 100 : 0;
-    const variance = totals.actual - totals.so;
+    const totalTarget = periodSummary?.month_summary?.manual_so
+        ?? periodSummary?.summary_report?.so
+        ?? 0;
+    const achievement = totalTarget ? totals.actual / totalTarget * 100 : 0;
+    const variance = totals.actual - totalTarget;
     const topCustomers = useMemo(() => [...filteredCustomers]
         .sort((left, right) => right.actual - left.actual)
         .slice(0, 10), [filteredCustomers]);
@@ -191,15 +203,15 @@ export default function YearlyPage() {
                 </article>
                 <article className="yearly-kpi">
                     <span className="yearly-kpi-icon green" aria-hidden="true">◎</span>
-                    <div><small>TARGET SO</small><strong>{formatNumber(totals.so)} Sm³</strong><span>Target dari data SO</span></div>
+                    <div><small>TOTAL TARGET</small><strong>{formatNumber(totalTarget)} Sm³</strong><span>{periodSummary?.month_summary?.manual_so == null ? 'Data pada periode terpilih' : 'Target bulanan dari halaman Bulanan'}</span></div>
                 </article>
                 <article className={`yearly-kpi ${variance < 0 ? 'is-negative' : ''}`}>
                     <span className="yearly-kpi-icon orange" aria-hidden="true">↗</span>
-                    <div><small>VARIANCE / SELISIH</small><strong>{variance < 0 ? '−' : '+'}{formatNumber(Math.abs(variance))} Sm³</strong><span>Actual dikurangi SO</span></div>
+                    <div><small>VARIANCE / SELISIH</small><strong>{variance < 0 ? '−' : '+'}{formatNumber(Math.abs(variance))} Sm³</strong><span>Actual dikurangi target</span></div>
                 </article>
                 <article className="yearly-kpi">
                     <span className="yearly-kpi-icon teal" aria-hidden="true">%</span>
-                    <div><small>SO FULFILLMENT</small><strong>{formatPercent(achievement)}</strong><span>Actual ÷ SO</span></div>
+                    <div><small>TARGET FULFILLMENT</small><strong>{formatPercent(achievement)}</strong><span>Actual ÷ target</span></div>
                 </article>
             </section>
 
