@@ -2615,6 +2615,10 @@ textarea:focus-visible, a:focus-visible {
   text-align: right;
 }
 
+.yearly-table td {
+  text-align: left;
+}
+
 .yearly-table th {
   background: #105d98;
   color: #fff;
@@ -2625,7 +2629,7 @@ textarea:focus-visible, a:focus-visible {
 .yearly-table th:first-child,
 .yearly-table td:first-child {
   width: 8%;
-  text-align: center;
+  text-align: left;
 }
 
 .yearly-table th:nth-child(2),
