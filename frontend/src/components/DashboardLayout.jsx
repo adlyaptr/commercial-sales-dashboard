@@ -7,7 +7,7 @@ import {
     useNavigate,
 } from 'react-router-dom';
 import { api } from '../api';
-import logoImage from '../assets/logo.png';
+import logoImage from '../assets/reethau.png';
 
 const classForNav = ({ isActive }) =>
     `nav-link${isActive ? ' active' : ''}`;
@@ -479,7 +479,7 @@ export default function DashboardLayout({ user, onLogout }) {
                     >
                         <img
                             src={logoImage}
-                            alt="Logo"
+                            alt="Logo Reethau"
                             style={{
                                 height: '50px',
                                 width: 'auto',
