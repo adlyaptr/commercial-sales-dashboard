@@ -2148,21 +2148,21 @@ textarea:focus-visible, a:focus-visible {
 
 .monthly-region-legend {
   display: grid;
-  width: min(100%, 330px);
-  gap: 5px;
+  width: min(100%, 360px);
+  gap: 7px;
 }
 
 .monthly-region-legend > div {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
 }
 
 .monthly-region-legend > div > i {
-  width: 9px;
-  height: 9px;
-  flex: 0 0 9px;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
   border-radius: 50%;
 }
 
@@ -2179,7 +2179,7 @@ textarea:focus-visible, a:focus-visible {
 .monthly-region-legend p b,
 .monthly-region-legend p span,
 .monthly-region-legend > div > strong {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .monthly-region-legend p b {
@@ -2196,7 +2196,7 @@ textarea:focus-visible, a:focus-visible {
 }
 
 .monthly-region-legend > div > strong {
-  min-width: 38px;
+  min-width: 44px;
   color: #174b35;
   text-align: right;
 }
@@ -3401,15 +3401,18 @@ textarea:focus-visible, a:focus-visible {
     width: min(100%, 250px);
   }
 
-  .monthly-pie-center,
-  .monthly-region-legend p b,
-  .monthly-region-legend p span,
-  .monthly-region-legend > div > strong {
+  .monthly-pie-center {
     font-size: 8px;
   }
 
+  .monthly-region-legend p b,
+  .monthly-region-legend p span,
+  .monthly-region-legend > div > strong {
+    font-size: 10px;
+  }
+
   .monthly-region-content { gap: 7px; }
-  .monthly-region-legend { gap: 4px; }
+  .monthly-region-legend { gap: 6px; }
 
   .monthly-footer {
     display: none;
@@ -3424,7 +3427,10 @@ textarea:focus-visible, a:focus-visible {
   .monthly-card { padding: 6px; }
   .monthly-region-content { gap: 4px; }
   .monthly-pie { width: min(100%, 210px); }
-  .monthly-region-legend { gap: 3px; }
+  .monthly-region-legend { gap: 5px; }
+  .monthly-region-legend p b,
+  .monthly-region-legend p span,
+  .monthly-region-legend > div > strong { font-size: 10px; }
 }
 
 @media (min-width: 761px) and (min-height: 560px) {
