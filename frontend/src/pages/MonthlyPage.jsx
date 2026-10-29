@@ -564,38 +564,29 @@ export default function MonthlyPage() {
                     : "#e7eee9"
                 }}
               >
-                {grandRegionTotal
-                  ? regionTotals.map((item, index) => {
-                      const before = sum(
-                        regionTotals
-                          .slice(0, index)
-                          .map((entry) => entry.value)
-                      );
-                      const midpoint = (
-                        (before + item.value / 2) / grandRegionTotal
-                      ) * 2 * Math.PI - Math.PI / 2;
-                      const radius = 31;
-                      const percentage = (
-                        item.value / grandRegionTotal * 100
-                      ).toLocaleString("id-ID", {
-                        maximumFractionDigits: 1
-                      });
-
-                      return item.value > 0 && (
-                        <div
-                          className="monthly-region-label"
-                          key={item.name}
-                          style={{
-                            left: `${50 + Math.cos(midpoint) * radius}%`,
-                            top: `${50 + Math.sin(midpoint) * radius}%`
-                          }}
-                        >
-                          <strong>{item.name.replace("JAWA ", "Jawa ")}</strong>
-                          <span>{percentage}%</span>
-                        </div>
-                      );
-                    })
-                  : <span className="monthly-region-empty">Belum ada data</span>}
+                <div className="monthly-pie-center">
+                  <span>Total Realisasi</span>
+                  <strong>Rp {fmt(grandRegionTotal)}</strong>
+                </div>
+              </div>
+              <div className="monthly-region-legend">
+                {regionTotals.map((item, index) => (
+                  <div key={item.name}>
+                    <i style={{ background: colors[index] }} />
+                    <p>
+                      <b>{item.name.replace("JAWA ", "Jawa ")}</b>
+                      <span>Rp {fmt(item.value)}</span>
+                    </p>
+                    <strong>
+                      {grandRegionTotal
+                        ? (item.value / grandRegionTotal * 100).toLocaleString(
+                            "id-ID",
+                            { maximumFractionDigits: 1 }
+                          )
+                        : "0"}%
+                    </strong>
+                  </div>
+                ))}
               </div>
             </div>
           </article>

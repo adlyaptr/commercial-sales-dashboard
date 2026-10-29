@@ -2092,13 +2092,15 @@ textarea:focus-visible, a:focus-visible {
   text-align: center;
 }
 
-/* Regional pie with labels positioned inside each slice */
+/* Regional doughnut chart and legend */
 .monthly-region-content {
   display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   padding: 2px 0;
 }
 
@@ -2107,36 +2109,96 @@ textarea:focus-visible, a:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: min(100%, 280px);
+  width: min(100%, 220px);
   aspect-ratio: 1;
   flex: 0 0 auto;
   border-radius: 50%;
   background: #e7eee9;
 }
 
-.monthly-region-label {
+.monthly-pie::before {
   position: absolute;
+  inset: 29%;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #edf3ef;
+  content: "";
+}
+
+.monthly-pie-center {
+  position: relative;
+  z-index: 1;
   display: flex;
-  width: 40%;
+  width: 64%;
   flex-direction: column;
   align-items: center;
-  transform: translate(-50%, -50%);
-  color: #fff;
-  font-size: clamp(9px, 1.15vw, 14px);
-  font-weight: 700;
-  line-height: 1.25;
-  text-align: center;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, .45);
-  pointer-events: none;
-}
-
-.monthly-region-label strong {
-  font-weight: 700;
-}
-
-.monthly-region-empty {
+  gap: 3px;
   color: #789183;
-  font-size: 12px;
+  font-size: 10px;
+  text-align: center;
+}
+
+.monthly-pie-center strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: #174b35;
+  font-size: clamp(9px, 1.1vw, 13px);
+  line-height: 1.2;
+}
+
+.monthly-region-legend {
+  display: grid;
+  width: min(100%, 330px);
+  gap: 5px;
+}
+
+.monthly-region-legend > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.monthly-region-legend > div > i {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+}
+
+.monthly-region-legend p {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+}
+
+.monthly-region-legend p b,
+.monthly-region-legend p span,
+.monthly-region-legend > div > strong {
+  font-size: 10px;
+}
+
+.monthly-region-legend p b {
+  color: #355e49;
+  white-space: nowrap;
+}
+
+.monthly-region-legend p span {
+  overflow: hidden;
+  color: #82978a;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monthly-region-legend > div > strong {
+  min-width: 38px;
+  color: #174b35;
+  text-align: right;
 }
 
 /* Data table */
@@ -3336,12 +3398,18 @@ textarea:focus-visible, a:focus-visible {
   }
 
   .monthly-pie {
-    width: min(100%, 280px);
+    width: min(100%, 200px);
   }
 
-  .monthly-region-label {
+  .monthly-pie-center,
+  .monthly-region-legend p b,
+  .monthly-region-legend p span,
+  .monthly-region-legend > div > strong {
     font-size: 8px;
   }
+
+  .monthly-region-content { gap: 7px; }
+  .monthly-region-legend { gap: 4px; }
 
   .monthly-footer {
     display: none;
@@ -3354,7 +3422,9 @@ textarea:focus-visible, a:focus-visible {
   .monthly-kpi { min-height: 54px; padding: 5px 7px; }
   .monthly-so-form input { height: 21px; }
   .monthly-card { padding: 6px; }
-  .monthly-region-label { font-size: 8px; }
+  .monthly-region-content { gap: 5px; }
+  .monthly-pie { width: min(100%, 170px); }
+  .monthly-region-legend { gap: 3px; }
 }
 
 @media (min-width: 761px) and (min-height: 560px) {
