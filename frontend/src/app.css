@@ -2624,6 +2624,7 @@ textarea:focus-visible, a:focus-visible {
   color: #fff;
   font-size: 10px;
   font-weight: 800;
+  text-align: left;
 }
 
 .yearly-table th:first-child,
