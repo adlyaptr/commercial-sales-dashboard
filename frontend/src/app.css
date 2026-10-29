@@ -2601,15 +2601,16 @@ textarea:focus-visible, a:focus-visible {
 
 .yearly-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   color: #385d49;
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .yearly-table th,
 .yearly-table td {
-  padding: 6px 5px;
+  padding: 8px 7px;
   border-bottom: 1px solid #e8efea;
   text-align: right;
 }
@@ -2617,19 +2618,30 @@ textarea:focus-visible, a:focus-visible {
 .yearly-table th {
   background: #105d98;
   color: #fff;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
 }
 
 .yearly-table th:first-child,
-.yearly-table td:first-child,
+.yearly-table td:first-child {
+  width: 8%;
+  text-align: center;
+}
+
 .yearly-table th:nth-child(2),
 .yearly-table td:nth-child(2) {
+  width: 34%;
   text-align: left;
 }
 
+.yearly-table th:nth-child(3),
+.yearly-table td:nth-child(3) { width: 24%; }
+.yearly-table th:nth-child(4),
+.yearly-table td:nth-child(4) { width: 17%; }
+.yearly-table th:nth-child(5),
+.yearly-table td:nth-child(5) { width: 17%; }
+
 .yearly-table td:nth-child(2) {
-  max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
