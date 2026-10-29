@@ -7,7 +7,7 @@ import {
     useNavigate,
 } from 'react-router-dom';
 import { api } from '../api';
-import logoImage from '../assets/reethau.jpeg';
+import logoImage from '../assets/reethau.png';
 
 const classForNav = ({ isActive }) =>
     `nav-link${isActive ? ' active' : ''}`;
