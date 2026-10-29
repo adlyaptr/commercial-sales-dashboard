@@ -2099,8 +2099,8 @@ textarea:focus-visible, a:focus-visible {
   flex-direction: column;
   min-height: 0;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  justify-content: space-evenly;
+  gap: 6px;
   padding: 2px 0;
 }
 
@@ -2109,7 +2109,7 @@ textarea:focus-visible, a:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: min(100%, 220px);
+  width: min(100%, 280px);
   aspect-ratio: 1;
   flex: 0 0 auto;
   border-radius: 50%;
@@ -3398,7 +3398,7 @@ textarea:focus-visible, a:focus-visible {
   }
 
   .monthly-pie {
-    width: min(100%, 200px);
+    width: min(100%, 250px);
   }
 
   .monthly-pie-center,
@@ -3422,8 +3422,8 @@ textarea:focus-visible, a:focus-visible {
   .monthly-kpi { min-height: 54px; padding: 5px 7px; }
   .monthly-so-form input { height: 21px; }
   .monthly-card { padding: 6px; }
-  .monthly-region-content { gap: 5px; }
-  .monthly-pie { width: min(100%, 170px); }
+  .monthly-region-content { gap: 4px; }
+  .monthly-pie { width: min(100%, 210px); }
   .monthly-region-legend { gap: 3px; }
 }
 
