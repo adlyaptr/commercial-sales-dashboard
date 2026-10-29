@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import faviconImage from '../assets/favicon.png';
 
 export default function LoginPage({ onLogin }) {
     const navigate = useNavigate();
@@ -27,7 +28,7 @@ export default function LoginPage({ onLogin }) {
     return (
         <main className="login-page">
             <section className="login-card">
-                <div className="login-mark">↗</div>
+                <div className="login-mark"><img src={faviconImage} alt="Logo" /></div>
                 <p className="eyebrow">COMMERCIAL · SALES MONITORING</p>
                 <h1>Selamat datang</h1>
                 <p className="muted">Masuk untuk membuka Commercial Dashboard.</p>
