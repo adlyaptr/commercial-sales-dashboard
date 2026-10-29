@@ -407,10 +407,18 @@ export default function DashboardLayout({ user, onLogout }) {
         setSelectedDate,
     };
 
-    function updateDailyDate(value) {
-        setSelectedDate(value);
+    function updateDailyRangeStart(value) {
         setRangeStartDate(value);
+        if (!rangeEndDate || value > rangeEndDate) {
+            setRangeEndDate(value);
+            setSelectedDate(value);
+        }
+    }
+
+    function updateDailyRangeEnd(value) {
         setRangeEndDate(value);
+        setSelectedDate(value);
+        if (!rangeStartDate || value < rangeStartDate) setRangeStartDate(value);
     }
 
     function updateRangeStart(value) {
@@ -625,7 +633,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
             
                     <div className="topbar-actions">
-                        <div className={`topbar-period-control${isDaily || isAveragePrice ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
+                        <div className={`topbar-period-control${isAveragePrice ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
                                 <span
                                     className="topbar-calendar"
                                     aria-hidden="true"
@@ -635,15 +643,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
                                 <div className="topbar-period-content">
                                     <small>Periode Data</small>
-                                    {isDaily ? (
-                                        <input
-                                            aria-label="Tanggal laporan"
-                                            type="date"
-                                            value={selectedDate}
-                                            disabled={loadingDates || dates.length === 0}
-                                            onChange={(event) => updateDailyDate(event.target.value)}
-                                        />
-                                    ) : isAveragePrice ? (
+                                    {isAveragePrice ? (
                                         <input
                                             aria-label="Bulan Average Price"
                                             type="month"
@@ -660,7 +660,11 @@ export default function DashboardLayout({ user, onLogout }) {
                                                 aria-expanded={rangePickerOpen}
                                                 onClick={() => setRangePickerOpen((open) => !open)}
                                             >
-                                                <span>{formatPeriodDate(rangeStartDate)}</span>
+                                                <span>
+                                                    {isDaily
+                                                        ? `${formatPeriodDate(rangeStartDate)} - ${formatPeriodDate(rangeEndDate)}`
+                                                        : formatPeriodDate(rangeStartDate)}
+                                                </span>
                                                 <span className="topbar-period-summary-icon" aria-hidden="true">▾</span>
                                             </button>
                                             {rangePickerOpen && (
@@ -672,7 +676,9 @@ export default function DashboardLayout({ user, onLogout }) {
                                                             type="date"
                                                             value={rangeStartDate}
                                                             disabled={loadingDates || dates.length === 0}
-                                                            onChange={(event) => updateRangeStart(event.target.value)}
+                                                            onChange={(event) => isDaily
+                                                                ? updateDailyRangeStart(event.target.value)
+                                                                : updateRangeStart(event.target.value)}
                                                         />
                                                     </label>
                                                     <label>
@@ -683,7 +689,9 @@ export default function DashboardLayout({ user, onLogout }) {
                                                             value={rangeEndDate}
                                                             min={rangeStartDate || undefined}
                                                             disabled={loadingDates || dates.length === 0}
-                                                            onChange={(event) => updateRangeEnd(event.target.value)}
+                                                            onChange={(event) => isDaily
+                                                                ? updateDailyRangeEnd(event.target.value)
+                                                                : updateRangeEnd(event.target.value)}
                                                         />
                                                     </label>
                                                     <button

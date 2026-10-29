@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
 import OperatorTables from '../components/OperatorTables';
@@ -21,7 +21,7 @@ function parseIndonesianNumber(value) {
 }
 
 export default function DailyPage() {
-    const { dashboard, selectedDate, refreshDashboard, canEdit } = useOutletContext();
+    const { dashboard, selectedDate, rangeStartDate, rangeEndDate, refreshDashboard, canEdit } = useOutletContext();
     const [file, setFile] = useState(null);
     const [fileInputKey, setFileInputKey] = useState(0);
     const [notice, setNotice] = useState(null);
@@ -34,6 +34,10 @@ export default function DailyPage() {
     const [monthlySummary, setMonthlySummary] = useState(null);
     const [summaryError, setSummaryError] = useState('');
     const [summaryLoading, setSummaryLoading] = useState(false);
+    const [periodRows, setPeriodRows] = useState([]);
+    const [periodError, setPeriodError] = useState('');
+    const [periodLoading, setPeriodLoading] = useState(false);
+    const isDateRange = Boolean(rangeStartDate && rangeEndDate && rangeStartDate !== rangeEndDate);
     const unmappedCount = customerMappings.filter((item) => !item.operator).length;
     const autoMappedCount = customerMappings.filter((item) => !item.requiresMapping).length;
     const manualMappedCount = customerMappings.filter((item) => item.requiresMapping && item.operator).length;
@@ -75,6 +79,73 @@ export default function DailyPage() {
 
         return () => { active = false; };
     }, [dashboard]);
+
+    useEffect(() => {
+        if (!isDateRange) {
+            setPeriodRows([]);
+            setPeriodError('');
+            setPeriodLoading(false);
+            return undefined;
+        }
+
+        let active = true;
+        setPeriodLoading(true);
+        setPeriodError('');
+
+        const query = new URLSearchParams({
+            start_date: rangeStartDate,
+            end_date: rangeEndDate,
+        });
+        api(`/api/monthly-range?${query.toString()}`)
+            .then((result) => {
+                if (active) setPeriodRows(result.items || []);
+            })
+            .catch((error) => {
+                if (active) setPeriodError(error.message || 'Data periode gagal dimuat.');
+            })
+            .finally(() => {
+                if (active) setPeriodLoading(false);
+            });
+
+        return () => { active = false; };
+    }, [isDateRange, rangeStartDate, rangeEndDate]);
+
+    const periodDashboard = useMemo(() => {
+        if (!isDateRange || periodLoading || periodError) return null;
+
+        const customers = new Map();
+        for (const item of periodRows) {
+            const key = `${item.operator}:${item.customer_key}`;
+            const customer = customers.get(key) ?? {
+                customer: item.customer,
+                customer_key: item.customer_key,
+                operator: item.operator,
+                so: 0,
+                actual: 0,
+                manual_fob: String(item.customer_key).startsWith('manualfob-'),
+            };
+            customer.so += Number(item.so) || 0;
+            customer.actual += Number(item.actual) || 0;
+            customers.set(key, customer);
+        }
+
+        const operators = { SETU: [], KHT: [], BLORA: [], WUNUT: [], OFF: [] };
+        let totalSo = 0;
+        let totalActual = 0;
+        for (const customer of customers.values()) {
+            customer.diff = customer.actual - customer.so;
+            totalSo += customer.so;
+            totalActual += customer.actual;
+            operators[customer.operator]?.push(customer);
+        }
+
+        return {
+            operators,
+            total_so: totalSo,
+            total_actual: totalActual,
+            diff: totalActual - totalSo,
+        };
+    }, [isDateRange, periodRows, periodLoading, periodError]);
 
     async function selectFile(selectedFile) {
         setFile(selectedFile);
@@ -225,17 +296,30 @@ export default function DailyPage() {
         }));
     }
 
+    const formatDateRange = (startDate, endDate) =>
+        `${startDate?.split('-').reverse().join('/') ?? ''} - ${endDate?.split('-').reverse().join('/') ?? ''}`;
+    const displayedDashboard = isDateRange ? periodDashboard : dashboard;
+
     return (
         <>
+            {isDateRange && periodLoading && (
+                <div className="notice" role="status">Memuat data periode...</div>
+            )}
+            {isDateRange && periodError && (
+                <div className="notice bad" role="alert">{periodError}</div>
+            )}
             <OperatorTables
-                data={dashboard?.operators ?? {}}
-                dailySummary={dashboard}
+                data={displayedDashboard?.operators ?? {}}
+                dailySummary={displayedDashboard}
+                dailySummaryTitle={isDateRange
+                    ? `Penyerapan Periode ${formatDateRange(rangeStartDate, rangeEndDate)}`
+                    : undefined}
                 monthlySummary={monthlySummary}
                 summaryMonth={dashboard?.report_date?.slice(0, 7)}
                 summaryError={summaryError}
                 summaryLoading={summaryLoading}
-                onEditManualFob={canEdit ? editManualFob : undefined}
-                onDeleteManualFob={canEdit ? deleteManualFob : undefined}
+                onEditManualFob={canEdit && !isDateRange ? editManualFob : undefined}
+                onDeleteManualFob={canEdit && !isDateRange ? deleteManualFob : undefined}
             />
             {canEdit && <>
             <form className="manual-fob-panel" onSubmit={saveManualFob}>

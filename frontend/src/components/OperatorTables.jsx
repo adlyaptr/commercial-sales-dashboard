@@ -133,6 +133,7 @@ export default function OperatorTables({
     dailySummary,
     monthlySummary,
     summaryMonth,
+    dailySummaryTitle,
     summaryError = '',
     summaryLoading = false,
     onEditManualFob,
@@ -181,7 +182,7 @@ export default function OperatorTables({
                     />
                     <article className="operator-summary-card daily-summary-card">
                         <SummaryTable
-                            title={`Penyerapan Harian ${formatDate(dailySummary?.report_date)}`}
+                            title={dailySummaryTitle ?? `Penyerapan Harian ${formatDate(dailySummary?.report_date)}`}
                             totals={{ so: dailySummary?.total_so, actual: dailySummary?.total_actual, diff: dailySummary?.diff }}
                         />
                         <SummaryTable
