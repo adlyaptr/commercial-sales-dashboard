@@ -2880,6 +2880,20 @@ textarea:focus-visible, a:focus-visible {
   background: #e8f6ee;
 }
 
+.yearly-recap .monthly-table th,
+.yearly-recap .monthly-table td {
+  border-right: 1px solid #91b6a0;
+  border-bottom: 1px solid #91b6a0;
+}
+
+.yearly-recap .monthly-table tr > :first-child {
+  border-left: 1px solid #91b6a0;
+}
+
+.yearly-recap .monthly-table thead tr:first-child > th {
+  border-top: 1px solid #91b6a0;
+}
+
 .yearly-recap .monthly-table .monthly-region-row td {
   background: #d8eee1;
   color: #155b3d;
