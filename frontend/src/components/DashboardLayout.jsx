@@ -126,7 +126,6 @@ export default function DashboardLayout({ user, onLogout }) {
     const [selectedDate, setSelectedDate] = useState('');
     const [rangeStartDate, setRangeStartDate] = useState('');
     const [rangeEndDate, setRangeEndDate] = useState('');
-    const [dailyRangeSelected, setDailyRangeSelected] = useState(false);
     const [averagePriceMonth, setAveragePriceMonth] = useState('');
     const [rangePickerOpen, setRangePickerOpen] = useState(false);
     const [dashboard, setDashboard] = useState(null);
@@ -405,7 +404,6 @@ export default function DashboardLayout({ user, onLogout }) {
         selectedDate,
         rangeStartDate,
         rangeEndDate,
-        dailyRangeSelected,
         averagePriceMonth,
         setAveragePriceMonth,
         dates,
@@ -416,7 +414,6 @@ export default function DashboardLayout({ user, onLogout }) {
     };
 
     function updateDailyRangeStart(value) {
-        setDailyRangeSelected(true);
         setRangeStartDate(value);
         if (!rangeEndDate || value > rangeEndDate) {
             setRangeEndDate(value);
@@ -425,7 +422,6 @@ export default function DashboardLayout({ user, onLogout }) {
     }
 
     function updateDailyRangeEnd(value) {
-        setDailyRangeSelected(true);
         setRangeEndDate(value);
         setSelectedDate(value);
         if (!rangeStartDate || value < rangeStartDate) setRangeStartDate(value);

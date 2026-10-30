@@ -21,7 +21,7 @@ function parseIndonesianNumber(value) {
 }
 
 export default function DailyPage() {
-    const { dashboard, selectedDate, rangeStartDate, rangeEndDate, dailyRangeSelected, refreshDashboard, canEdit } = useOutletContext();
+    const { dashboard, selectedDate, rangeStartDate, rangeEndDate, refreshDashboard, canEdit } = useOutletContext();
     const [file, setFile] = useState(null);
     const [fileInputKey, setFileInputKey] = useState(0);
     const [notice, setNotice] = useState(null);
@@ -115,9 +115,15 @@ export default function DailyPage() {
 
         const customers = new Map();
         for (const item of periodRows) {
-            const key = `${item.operator}:${item.customer_key}`;
+            const customerName = String(item.customer ?? '');
+            const isFobCustomer = String(item.customer_key).startsWith('manualfob-')
+                || customerName.toLocaleUpperCase('id-ID').includes('FOB');
+            const customerKey = isFobCustomer
+                ? customerName.trim().replace(/\s+/g, ' ').toLocaleLowerCase('id-ID')
+                : item.customer_key;
+            const key = `${item.operator}:${customerKey}`;
             const customer = customers.get(key) ?? {
-                customer: item.customer,
+                customer: customerName,
                 customer_key: item.customer_key,
                 operator: item.operator,
                 so: 0,
@@ -318,7 +324,6 @@ export default function DailyPage() {
                 summaryMonth={dashboard?.report_date?.slice(0, 7)}
                 summaryError={summaryError}
                 summaryLoading={summaryLoading}
-                summarizeFobCustomers={isDateRange || dailyRangeSelected}
                 onEditManualFob={canEdit && !isDateRange ? editManualFob : undefined}
                 onDeleteManualFob={canEdit && !isDateRange ? deleteManualFob : undefined}
             />

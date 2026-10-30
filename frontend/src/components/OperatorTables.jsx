@@ -68,7 +68,6 @@ function OperatorCard({
     rows,
     tableHeight,
     tableRef,
-    summarizeFobCustomers,
     onEditManualFob,
     onDeleteManualFob,
 }) {
@@ -104,7 +103,7 @@ function OperatorCard({
                                     <td>{formatNumber(groupTotals.actual)}</td>
                                     <td className={groupDiff >= 0 ? 'diff-pos' : 'diff-neg'}>{groupDiff > 0 ? '+' : ''}{formatNumber(groupDiff)}</td>
                                 </tr>
-                                {!(summarizeFobCustomers && group.key === 'fob') && group.rows.map((row, index) => (
+                                {group.rows.map((row, index) => (
                                     <tr key={`${group.key}-${row.customer}-${index}`}>
                                         <td title={row.customer}>
                                             {row.customer}
@@ -137,7 +136,6 @@ export default function OperatorTables({
     dailySummaryTitle,
     summaryError = '',
     summaryLoading = false,
-    summarizeFobCustomers = false,
     onEditManualFob,
     onDeleteManualFob,
 }) {
@@ -169,7 +167,6 @@ export default function OperatorTables({
                         operator="SETU"
                         rows={data.SETU ?? []}
                         tableHeight={tableHeight}
-                        summarizeFobCustomers={summarizeFobCustomers}
                         onEditManualFob={onEditManualFob}
                         onDeleteManualFob={onDeleteManualFob}
                     />
@@ -180,7 +177,6 @@ export default function OperatorTables({
                         rows={data.KHT ?? []}
                         tableHeight={tableHeight}
                         tableRef={khtTableRef}
-                        summarizeFobCustomers={summarizeFobCustomers}
                         onEditManualFob={onEditManualFob}
                         onDeleteManualFob={onDeleteManualFob}
                     />
@@ -201,7 +197,6 @@ export default function OperatorTables({
                         operator="OFF"
                         rows={data.OFF ?? []}
                         tableHeight={tableHeight}
-                        summarizeFobCustomers={summarizeFobCustomers}
                         onEditManualFob={onEditManualFob}
                         onDeleteManualFob={onDeleteManualFob}
                     />
@@ -211,7 +206,6 @@ export default function OperatorTables({
                         operator="BLORA"
                         rows={data.BLORA ?? []}
                         tableHeight={tableHeight}
-                        summarizeFobCustomers={summarizeFobCustomers}
                         onEditManualFob={onEditManualFob}
                         onDeleteManualFob={onDeleteManualFob}
                     />
@@ -221,7 +215,6 @@ export default function OperatorTables({
                         operator="WUNUT"
                         rows={data.WUNUT ?? []}
                         tableHeight={tableHeight}
-                        summarizeFobCustomers={summarizeFobCustomers}
                         onEditManualFob={onEditManualFob}
                         onDeleteManualFob={onDeleteManualFob}
                     />
