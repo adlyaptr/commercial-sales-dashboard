@@ -59,19 +59,6 @@ function statusClass(status) {
     return status.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-function issueLinks(value) {
-    return String(value || '')
-        .split(/,\s*(?=https?:\/\/)/i)
-        .map((url) => url.trim())
-        .filter((url) => {
-            try {
-                return new URL(url).protocol === 'https:';
-            } catch {
-                return false;
-            }
-        });
-}
-
 function DetailField({ label, children }) {
     return (
         <div className="issue-detail-field">
@@ -408,19 +395,6 @@ export default function IssuePage() {
                             <DetailField label="Tindakan Segera">{selectedIssue.immediateAction}</DetailField>
                             <DetailField label="Update Terakhir">{selectedIssue.latestUpdate}</DetailField>
                             <DetailField label="Tindakan Corrective">{selectedIssue.correctiveAction}</DetailField>
-                            <DetailField label="File Pendukung">
-                                {issueLinks(selectedIssue.supportingFiles).length ? (
-                                    <div className="issue-evidence-links">
-                                        {issueLinks(selectedIssue.supportingFiles).map((url, index) => (
-                                            <a href={url} key={`${url}-${index}`} target="_blank" rel="noreferrer">Buka file {index + 1}</a>
-                                        ))}
-                                    </div>
-                                ) : selectedIssue.supportingFiles || '—'}
-                            </DetailField>
-                        </div>
-                        <div className="issue-readonly-note">
-                            <SectionIcon name="calendar" />
-                            Data dikelola di spreadsheet. Perubahan di halaman ini dinonaktifkan.
                         </div>
                     </>
                 ) : (
