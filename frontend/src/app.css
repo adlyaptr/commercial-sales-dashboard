@@ -3742,7 +3742,7 @@ textarea:focus-visible, a:focus-visible {
 }
 
 /* ===== BUDGET MONITORING ===== */
-.budget-page { display: grid; gap: 12px; min-width: 0; color: #183f35; }
+.budget-page { display: flex; flex: 1 1 auto; flex-direction: column; gap: 9px; min-width: 0; min-height: 0; color: #183f35; }
 .budget-header { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
 .budget-title { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .budget-title-icon { display: grid; flex: 0 0 36px; width: 36px; height: 36px; place-items: center; border-radius: 50%; background: #e4f6ed; color: #138b61; font-size: 19px; }
@@ -3762,38 +3762,47 @@ textarea:focus-visible, a:focus-visible {
 .budget-alert { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #efc3bd; border-radius: 7px; background: #fff5f3; color: #a13331; font-size: 10px; }
 .budget-alert button { padding: 5px 9px; border: 1px solid #e8b3ab; border-radius: 4px; background: #fff; color: #a13331; font-weight: 700; }
 .budget-loading { display: grid; min-height: 220px; place-items: center; border: 1px solid #e3ece6; border-radius: 8px; background: #fff; color: #71877c; font-size: 12px; }
-.budget-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.budget-metric { display: flex; align-items: flex-start; gap: 11px; min-width: 0; min-height: 86px; padding: 13px; border: 1px solid #e3ece6; border-radius: 8px; background: #fff; box-shadow: 0 2px 6px rgb(22 66 47 / 4%); }
-.budget-metric-icon { display: grid; flex: 0 0 36px; width: 36px; height: 36px; place-items: center; border-radius: 50%; background: #e4f6ed; color: #16885f; font-size: 17px; font-weight: 800; }
-.budget-metric.actual .budget-metric-icon { background: #e9f2ff; color: #438ce1; }
-.budget-metric.remaining .budget-metric-icon { background: #fff4e3; color: #d38b22; }
-.budget-metric.percentage .budget-metric-icon { background: #e9f2ff; color: #438ce1; }
+.budget-metrics { display: grid; flex: 0 0 auto; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.budget-metric { position: relative; display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 82px; overflow: hidden; padding: 12px 15px; border: 1px solid #e1ebe5; border-top: 3px solid #16885f; border-radius: 10px; background: linear-gradient(135deg, #fff 40%, #effaf4); box-shadow: 0 5px 16px rgb(22 66 47 / 7%); }
+.budget-metric.actual { border-top-color: #438ce1; background: linear-gradient(135deg, #fff 40%, #f0f6ff); }
+.budget-metric.remaining { border-top-color: #e2a53a; background: linear-gradient(135deg, #fff 40%, #fff8eb); }
+.budget-metric.percentage { border-top-color: #7765d3; background: linear-gradient(135deg, #fff 40%, #f5f2ff); }
+.budget-metric-icon { display: grid; flex: 0 0 40px; width: 40px; height: 40px; place-items: center; border: 1px solid rgb(22 136 95 / 10%); border-radius: 12px; background: #dcf4e7; color: #16885f; font-size: 19px; font-weight: 800; box-shadow: inset 0 1px 0 rgb(255 255 255 / 90%); }
+.budget-metric.actual .budget-metric-icon { border-color: #438ce122; background: #e4efff; color: #367dd0; }
+.budget-metric.remaining .budget-metric-icon { border-color: #e2a53a22; background: #fff0d3; color: #bf8018; }
+.budget-metric.percentage .budget-metric-icon { border-color: #7765d322; background: #ece8ff; color: #6654c0; }
 .budget-metric-content { display: grid; gap: 3px; min-width: 0; }
-.budget-metric-content small { color: #60796b; font-size: 9px; }
-.budget-metric-content strong { overflow: hidden; color: #183f35; font-size: clamp(14px, 1.4vw, 19px); line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.budget-metric-content small { color: #60796b; font-size: 10px; font-weight: 650; }
+.budget-metric-content strong { overflow: hidden; color: #183f35; font-size: clamp(15px, 1.45vw, 20px); font-weight: 800; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .budget-metric-content > span { color: #82978a; font-size: 8px; }
-.budget-charts { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 10px; }
+.budget-charts { display: grid; flex: 0 1 35%; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 9px; min-height: 175px; }
 .budget-panel { min-width: 0; padding: 13px; border: 1px solid #e3ece6; border-radius: 8px; background: #fff; box-shadow: 0 2px 6px rgb(22 66 47 / 4%); }
 .budget-panel h2 { margin: 0; color: #1d4037; font-size: 12px; font-weight: 800; }
-.budget-chart-panel { min-height: 245px; }
-.budget-chart { position: relative; height: 205px; margin-top: 10px; }
+.budget-chart-panel { display: flex; min-height: 0; flex-direction: column; }
+.budget-chart { position: relative; flex: 1 1 auto; height: auto; min-height: 130px; margin-top: 7px; }
 .budget-empty { display: grid; min-height: 125px; place-items: center; color: #82978a; font-size: 10px; }
-.budget-detail-panel { padding-bottom: 10px; }
+.budget-detail-panel { display: flex; flex: 1 1 0; flex-direction: column; min-height: 205px; padding-bottom: 8px; }
 .budget-detail-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
 .budget-filters { display: flex; gap: 7px; }
 .budget-filters input, .budget-filters select { width: 155px; min-width: 0; height: 31px; padding: 0 9px; border: 1px solid #dce8df; border-radius: 5px; background: #fff; color: #3e6150; font-size: 9px; }
-.budget-table-wrap { width: 100%; overflow-x: auto; border: 1px solid #dbe7df; border-radius: 5px; }
-.budget-table { width: 100%; min-width: 720px; border-collapse: collapse; color: #496e5b; font-size: 9px; }
-.budget-table th, .budget-table td { padding: 8px 9px; border: 1px solid #e5ede7; text-align: left; vertical-align: middle; }
-.budget-table th { background: #f0f7f2; color: #496858; font-size: 8px; font-weight: 800; }
+.budget-table-wrap { width: 100%; min-height: 0; overflow: auto; border: 1px solid #dbe7df; border-radius: 5px; }
+.budget-table { width: 100%; min-width: 720px; border-collapse: collapse; color: #3d624e; font-size: 11px; }
+.budget-table th, .budget-table td { padding: 7px 10px; border: 1px solid #e5ede7; text-align: left; vertical-align: middle; }
+.budget-table th { background: #f0f7f2; color: #3e5e4d; font-size: 10px; font-weight: 800; }
 .budget-table td:not(:nth-child(2)), .budget-table th:not(:nth-child(2)) { white-space: nowrap; }
 .budget-table tbody tr:hover td { background: #f7fbf8; }
 .budget-table tfoot th, .budget-table tfoot td { background: #edf7f1; color: #254c3d; font-weight: 800; }
-.budget-status { display: inline-flex; min-height: 19px; align-items: center; padding: 3px 8px; border-radius: 16px; font-size: 8px; font-weight: 750; }
+.budget-status { display: inline-flex; min-height: 20px; align-items: center; padding: 3px 9px; border-radius: 16px; font-size: 9px; font-weight: 750; }
 .budget-status.track { background: #dcf5ea; color: #15845f; }
 .budget-status.over { background: #fff0e7; color: #bc4b2b; }
 .budget-over { color: #d94848 !important; }
-.budget-table-footer { padding: 8px 4px 0; color: #82978a; font-size: 8px; }
+.budget-table-footer { flex: 0 0 auto; padding: 6px 4px 0; color: #82978a; font-size: 9px; }
+
+@media (min-width: 901px) and (min-height: 680px) {
+  .app-shell.budget-shell { display: flex; height: 100vh; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; padding-bottom: 8px; }
+  .budget-shell > .topbar { flex: 0 0 auto; }
+  .budget-shell > .budget-page { overflow: hidden; }
+}
 
 /* ===== ISSUE MANAGEMENT ===== */
 .issue-page {
@@ -3884,6 +3893,9 @@ textarea:focus-visible, a:focus-visible {
   .issue-page { grid-template-columns: minmax(0, 1fr) 255px; }
   .issue-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .issue-date-range { grid-column: span 2; }
+  .budget-metric { gap: 8px; padding: 9px; }
+  .budget-metric-icon { flex-basis: 32px; width: 32px; height: 32px; font-size: 16px; }
+  .budget-metric-content strong { font-size: clamp(12px, 1.3vw, 17px); }
 }
 @media (max-width: 900px) {
   .issue-page { grid-template-columns: minmax(0, 1fr); }

@@ -634,7 +634,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
             </aside>
 
-            <main className={`app-shell${isWeeklyVolume ? ' weekly-volume-shell' : ''}${isYearly ? ' yearly-shell' : ''}${isMonthly ? ' monthly-shell' : ''}${isHome ? ' home-shell' : ''}`}>
+            <main className={`app-shell${isWeeklyVolume ? ' weekly-volume-shell' : ''}${isYearly ? ' yearly-shell' : ''}${isMonthly ? ' monthly-shell' : ''}${isHome ? ' home-shell' : ''}${isBudget ? ' budget-shell' : ''}`}>
                 <header className="topbar">
                     <div className="topbar-brand">
                         <button
