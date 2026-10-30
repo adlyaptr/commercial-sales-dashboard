@@ -21,7 +21,7 @@ function parseIndonesianNumber(value) {
 }
 
 export default function DailyPage() {
-    const { dashboard, selectedDate, rangeStartDate, rangeEndDate, refreshDashboard, canEdit } = useOutletContext();
+    const { dashboard, selectedDate, rangeStartDate, rangeEndDate, dailyRangeSelected, refreshDashboard, canEdit } = useOutletContext();
     const [file, setFile] = useState(null);
     const [fileInputKey, setFileInputKey] = useState(0);
     const [notice, setNotice] = useState(null);
@@ -318,7 +318,7 @@ export default function DailyPage() {
                 summaryMonth={dashboard?.report_date?.slice(0, 7)}
                 summaryError={summaryError}
                 summaryLoading={summaryLoading}
-                summarizeFobCustomers={isDateRange}
+                summarizeFobCustomers={isDateRange || dailyRangeSelected}
                 onEditManualFob={canEdit && !isDateRange ? editManualFob : undefined}
                 onDeleteManualFob={canEdit && !isDateRange ? deleteManualFob : undefined}
             />
