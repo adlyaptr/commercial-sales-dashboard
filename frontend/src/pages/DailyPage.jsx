@@ -318,6 +318,7 @@ export default function DailyPage() {
                 summaryMonth={dashboard?.report_date?.slice(0, 7)}
                 summaryError={summaryError}
                 summaryLoading={summaryLoading}
+                summarizeFobCustomers={isDateRange}
                 onEditManualFob={canEdit && !isDateRange ? editManualFob : undefined}
                 onDeleteManualFob={canEdit && !isDateRange ? deleteManualFob : undefined}
             />
