@@ -51,7 +51,16 @@ function getCustomerGroup(row) {
     if (row.manual_fob) return 'fob';
     const customer = row.customer;
     const name = customer.toLocaleUpperCase('id-ID');
-    if (name.includes('KSO')) return 'kso';
+    const customerKey = String(row.customer_key ?? '')
+        .toLocaleLowerCase('id-ID')
+        .replace(/[^a-z0-9]/g, '');
+    if (
+        name.includes('KSO')
+        || name.startsWith('PUJ')
+        || name.trim() === 'KF'
+        || customerKey === 'puj'
+        || customerKey === 'kf'
+    ) return 'kso';
     if (name.includes('FOB')) return 'fob';
     return 'direct';
 }
