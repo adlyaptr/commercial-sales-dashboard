@@ -220,13 +220,6 @@ export default function BudgetPage() {
     return (
         <main className="budget-page">
             <header className="budget-header">
-                <div className="budget-title">
-                    <span className="budget-title-icon" aria-hidden="true">▣</span>
-                    <div>
-                        <h1>Budget Monitoring</h1>
-                        <p>Pemantauan anggaran dan realisasi keuangan</p>
-                    </div>
-                </div>
                 <div className="budget-toolbar">
                     <button className="budget-sync-button" type="button" onClick={() => loadBudget(true)} disabled={refreshing}>
                         <span aria-hidden="true">⟳</span>{refreshing ? 'Menyinkronkan...' : 'Sinkronkan Google Sheets'}
