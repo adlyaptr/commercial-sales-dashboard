@@ -67,6 +67,11 @@ ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv(
 ISSUE_SHEET_CACHE_SECONDS = 300
 _issue_sheet_cache = {"expires_at": 0.0, "data": None}
 _issue_sheet_lock = threading.Lock()
+BUDGET_TARGET_SHEET_GID = os.getenv("BUDGET_TARGET_SHEET_GID", "737662524").strip()
+BUDGET_FINANCE_SHEET_TITLE = os.getenv("BUDGET_FINANCE_SHEET_TITLE", "Summary Finance").strip()
+BUDGET_CACHE_SECONDS = 300
+_budget_cache = {"expires_at": 0.0, "data": None}
+_budget_lock = threading.Lock()
 
 
 def validate_runtime_config():
@@ -1743,6 +1748,333 @@ def get_issue_spreadsheet_data(refresh=False):
 def list_issues(request: Request, refresh: bool = False):
     require_login(request)
     return get_issue_spreadsheet_data(refresh=refresh)
+
+
+BUDGET_MONTHS = (
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+)
+BUDGET_CATEGORIES = {
+    "1.1": ("Potensial", "potensialcustomer"),
+    "1.2": ("Source", "pencarianevaluasisumbergas"),
+    "1.3": ("Canvassing", "canvassing"),
+    "2.1": ("Kunjungan Rutin Existing Customer", "kunjunganrutinexistingcustomer"),
+    "3.1": ("Meeting Manajemen (HO)", "meetingmanajemenho"),
+}
+
+
+def parse_budget_amount(value):
+    text = str(value or "").strip().replace("Rp", "").replace(" ", "")
+    if not text:
+        return 0.0
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    elif re.fullmatch(r"-?\d{1,3}(?:\.\d{3})+", text):
+        text = text.replace(".", "")
+    try:
+        amount = float(text)
+    except ValueError as exc:
+        raise ValueError(f"Nominal budget tidak valid: {value}") from exc
+    if not math.isfinite(amount):
+        raise ValueError(f"Nominal budget tidak valid: {value}")
+    return amount
+
+
+def parse_budget_spreadsheets(finance_csv, target_csv):
+    finance_rows = list(csv.reader(StringIO(finance_csv, newline="")))
+    target_rows = list(csv.reader(StringIO(target_csv, newline="")))
+    if not finance_rows or not target_rows:
+        raise ValueError("Spreadsheet Budget kosong atau tidak memiliki data.")
+
+    finance_category_keys = {
+        "kunjunganrutinexistingcustomer": "kunjunganrutinexistingcustomer",
+        "meetingmanajemenho": "meetingmanajemenho",
+        "canvassing": "canvassing",
+        "potensialcustomer": "potensialcustomer",
+        "pencarianevaluasisumbergas": "pencarianevaluasisumbergas",
+    }
+    finance_actuals = {}
+    payment_type_index = next(
+        (
+            index for index, row in enumerate(finance_rows)
+            if row and norm(row[0]) == "paymenttype"
+        ),
+        None,
+    )
+    if payment_type_index is None:
+        raise ValueError("Bagian kategori pada tab Summary Finance tidak ditemukan.")
+
+    expense_index = next(
+        (
+            index for index, row in enumerate(finance_rows)
+            if row and norm(row[0]) == "pengeluaran"
+        ),
+        None,
+    )
+    monthly_expenses = None
+    if expense_index is not None:
+        for row in finance_rows[expense_index + 1:payment_type_index]:
+            if not row or norm(row[0]) != "bulan":
+                continue
+            year_index = next(
+                (index for index, value in enumerate(row) if str(value).strip() == "2026"),
+                None,
+            )
+            if year_index is None:
+                break
+            expenses_by_month = {}
+            for expense_row in finance_rows[expense_index + 1:payment_type_index]:
+                if not expense_row:
+                    continue
+                month_index = next(
+                    (
+                        index for index, month_name in enumerate(BUDGET_MONTHS)
+                        if norm(expense_row[0]) == norm(month_name)
+                    ),
+                    None,
+                )
+                if month_index is not None:
+                    expenses_by_month[month_index] = parse_budget_amount(
+                        expense_row[year_index] if year_index < len(expense_row) else ""
+                    )
+            if len(expenses_by_month) == len(BUDGET_MONTHS):
+                monthly_expenses = [
+                    expenses_by_month[index] for index in range(len(BUDGET_MONTHS))
+                ]
+            break
+    if monthly_expenses is None:
+        raise ValueError("Realisasi bulanan 2026 pada bagian PENGELUARAN tidak ditemukan.")
+
+    for row in finance_rows[payment_type_index + 1:]:
+        if not row or norm(row[0]) == "area":
+            break
+        category_key = finance_category_keys.get(norm(row[0]))
+        if category_key:
+            finance_actuals[category_key] = [
+                parse_budget_amount(row[index] if index < len(row) else "")
+                for index in range(1, 13)
+            ]
+
+    header_index = next(
+        (
+            index for index, row in enumerate(target_rows)
+            if len(row) > 5 and norm(row[0]) == "workplan" and norm(row[2]) == "listcost"
+        ),
+        None,
+    )
+    if header_index is None:
+        raise ValueError("Header WORK PLAN/LIST COST pada sheet target tidak ditemukan.")
+
+    target_categories = {}
+    for row in target_rows[header_index + 1:]:
+        if len(row) <= 17:
+            continue
+        work_plan = str(row[2] or "").strip()
+        match = re.match(r"(\d+\.\d+)\b", work_plan)
+        if not match:
+            continue
+        category = BUDGET_CATEGORIES.get(match.group(1))
+        if not category:
+            continue
+        label, finance_key = category
+        target_categories[label] = {
+            "finance_key": finance_key,
+            "targets": [parse_budget_amount(row[6 + index]) for index in range(12)],
+        }
+
+    if not target_categories:
+        raise ValueError("Baris target kategori Budget tidak ditemukan pada sheet target.")
+
+    month_names = BUDGET_MONTHS
+    records = []
+    for label, category in target_categories.items():
+        actuals = finance_actuals.get(category["finance_key"], [0.0] * 12)
+        for month_index, month_name in enumerate(month_names):
+            records.append({
+                "month": f"2026-{month_index + 1:02d}",
+                "month_name": month_name,
+                "category": label,
+                "target": category["targets"][month_index],
+                "actual": actuals[month_index],
+            })
+
+    return {
+        "months": [
+            {
+                "value": f"2026-{index + 1:02d}",
+                "label": f"{month} 2026",
+                "actual": monthly_expenses[index],
+            }
+            for index, month in enumerate(month_names)
+        ],
+        "records": records,
+        "syncedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+
+
+def fetch_budget_spreadsheets_with_service_account():
+    credential_path = Path(ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE)
+    if not credential_path.is_file() or credential_path.stat().st_size == 0:
+        return None
+
+    try:
+        service_account_info = json.loads(credential_path.read_text(encoding="utf-8"))
+        credentials = Credentials.from_service_account_info(
+            service_account_info,
+            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+        )
+    except (OSError, ValueError, TypeError, KeyError, GoogleAuthError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Kredensial Google service account tidak valid atau belum lengkap.",
+        ) from exc
+
+    session = AuthorizedSession(credentials)
+    api_base = f"https://sheets.googleapis.com/v4/spreadsheets/{ISSUE_SHEET_ID}"
+    try:
+        metadata_response = session.get(
+            f"{api_base}?fields=sheets(properties(sheetId,title))",
+            timeout=15,
+        )
+        if metadata_response.status_code in {401, 403}:
+            raise HTTPException(
+                status_code=502,
+                detail="Google Sheets API menolak akses service account. Pastikan spreadsheet dibagikan dengan izin Viewer.",
+            )
+        metadata_response.raise_for_status()
+        metadata = metadata_response.json()
+        sheets = metadata.get("sheets", []) if isinstance(metadata, dict) else []
+        finance_sheet = next(
+            (
+                item.get("properties", {})
+                for item in sheets
+                if isinstance(item, dict)
+                and norm(item.get("properties", {}).get("title")) == norm(BUDGET_FINANCE_SHEET_TITLE)
+            ),
+            None,
+        )
+        target_sheet = next(
+            (
+                item.get("properties", {})
+                for item in sheets
+                if isinstance(item, dict)
+                and str(item.get("properties", {}).get("sheetId")) == BUDGET_TARGET_SHEET_GID
+            ),
+            None,
+        )
+        if not finance_sheet or not target_sheet:
+            raise HTTPException(
+                status_code=502,
+                detail="Tab Summary Finance atau sheet target (GID 737662524) tidak ditemukan.",
+            )
+
+        def fetch_values(sheet, cell_range):
+            encoded_range = quote(f"'{sheet['title']}'!{cell_range}", safe="")
+            response = session.get(f"{api_base}/values/{encoded_range}", timeout=15)
+            if response.status_code in {401, 403}:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Service account tidak dapat membaca tab Budget. Pastikan izin Viewer tersedia.",
+                )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or not isinstance(payload.get("values", []), list):
+                raise HTTPException(
+                    status_code=502,
+                    detail="Respons data Google Sheets Budget tidak valid.",
+                )
+            return payload.get("values", [])
+
+        return (
+            fetch_values(finance_sheet, "A1:M120"),
+            fetch_values(target_sheet, "A1:AG120"),
+        )
+    except HTTPException:
+        raise
+    except RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Google Sheets API tidak merespons. Coba sinkronkan kembali beberapa saat lagi.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Google Sheets API mengembalikan respons JSON yang tidak valid.",
+        ) from exc
+
+
+def rows_to_csv(rows):
+    buffer = StringIO(newline="")
+    csv.writer(buffer).writerows(rows)
+    return buffer.getvalue()
+
+
+def fetch_public_budget_sheet(sheet_name=None, sheet_gid=None):
+    if sheet_gid:
+        sheet_query = f"gid={quote(sheet_gid, safe='')}"
+    else:
+        sheet_query = f"sheet={quote(sheet_name or '', safe='')}"
+    sheet_url = (
+        f"https://docs.google.com/spreadsheets/d/{ISSUE_SHEET_ID}"
+        f"/gviz/tq?tqx=out%3Acsv&{sheet_query}"
+    )
+    request = URLRequest(
+        sheet_url,
+        headers={"User-Agent": "CommercialSalesDashboard/1.0"},
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            csv_bytes = response.read(5_000_001)
+    except (URLError, TimeoutError, OSError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Server tidak dapat membaca Google Sheets Budget. "
+                "Konfigurasikan service account dan bagikan spreadsheet kepadanya sebagai Viewer."
+            ),
+        ) from exc
+    if len(csv_bytes) > 5_000_000:
+        raise HTTPException(status_code=502, detail="Ukuran spreadsheet Budget melebihi batas 5 MB.")
+    return csv_bytes.decode("utf-8-sig")
+
+
+def get_budget_spreadsheet_data(refresh=False):
+    now = time.monotonic()
+    cached = _budget_cache["data"]
+    if not refresh and cached and now < _budget_cache["expires_at"]:
+        return cached
+
+    with _budget_lock:
+        now = time.monotonic()
+        cached = _budget_cache["data"]
+        if not refresh and cached and now < _budget_cache["expires_at"]:
+            return cached
+
+        service_account_data = fetch_budget_spreadsheets_with_service_account()
+        if service_account_data is None:
+            finance_csv = fetch_public_budget_sheet(BUDGET_FINANCE_SHEET_TITLE)
+            target_csv = fetch_public_budget_sheet(sheet_gid=BUDGET_TARGET_SHEET_GID)
+        else:
+            finance_csv = rows_to_csv(service_account_data[0])
+            target_csv = rows_to_csv(service_account_data[1])
+
+        try:
+            result = parse_budget_spreadsheets(finance_csv, target_csv)
+        except (csv.Error, ValueError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Data Google Sheets Budget tidak valid: {exc}",
+            ) from exc
+
+        _budget_cache["data"] = result
+        _budget_cache["expires_at"] = time.monotonic() + BUDGET_CACHE_SECONDS
+        return result
+
+
+@app.get("/api/budget")
+def get_budget(request: Request, refresh: bool = False):
+    require_login(request)
+    return get_budget_spreadsheet_data(refresh=refresh)
 
 
 def complaint_record(row):

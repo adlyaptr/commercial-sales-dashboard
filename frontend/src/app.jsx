@@ -17,6 +17,7 @@ import UsersPage from './pages/UsersPage';
 
 const YearlyPage = lazy(() => import('./pages/YearlyPage'));
 const IssuePage = lazy(() => import('./pages/IssuePage'));
+const BudgetPage = lazy(() => import('./pages/BudgetPage'));
 
 function DashboardAccess({ user, onLogout }) {
     const location = useLocation();
@@ -74,6 +75,14 @@ function App() {
                                 element={(
                                     <Suspense fallback={<div className="app-loading">Memuat halaman Issue...</div>}>
                                         <IssuePage />
+                                    </Suspense>
+                                )}
+                            />
+                            <Route
+                                path="budget"
+                                element={(
+                                    <Suspense fallback={<div className="app-loading">Memuat halaman Budget...</div>}>
+                                        <BudgetPage />
                                     </Suspense>
                                 )}
                             />

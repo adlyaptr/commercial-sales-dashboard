@@ -42,6 +42,12 @@ function NavigationIcon({ name }) {
                 <path d="M8 8h8M8 12h8m-8 4h5" />
             </>
         ),
+        budget: (
+            <>
+                <rect x="3.5" y="5" width="17" height="15" rx="2" />
+                <path d="M7 9h10M7 13h3m3 0h4M7 16h2m4 0h4M8 3v4m8-4v4" />
+            </>
+        ),
         weekly: (
             <>
                 <rect x="3.5" y="5" width="17" height="16" rx="2" />
@@ -110,6 +116,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const isAveragePrice = location.pathname === '/mingguan/average-price';
     const isYearly = location.pathname === '/tahunan';
     const isMonthly = location.pathname === '/bulanan';
+    const isBudget = location.pathname === '/budget';
     const isHome = location.pathname === '/beranda';
     const canViewAllFeatures = user?.role === 'admin' || user?.role === 'user';
     const hasAuthenticatedUser = canViewAllFeatures;
@@ -411,7 +418,19 @@ export default function DashboardLayout({ user, onLogout }) {
         dataError,
         loadingDates,
         setSelectedDate,
+        setRangeStartDate,
+        setRangeEndDate,
     };
+
+    const availablePeriodMonths = [...new Set(dates.map((date) => date.slice(0, 7)))];
+
+    function selectBudgetPeriodMonth(month) {
+        const monthDate = dates.find((date) => date.startsWith(`${month}-`));
+        if (!monthDate) return;
+        setSelectedDate(monthDate);
+        setRangeStartDate(monthDate);
+        setRangeEndDate(monthDate);
+    }
 
     function updateDailyRangeStart(value) {
         setRangeStartDate(value);
@@ -524,6 +543,14 @@ export default function DashboardLayout({ user, onLogout }) {
                                 >
                                     <NavigationIcon name="issue" />
                                     <span>Issue</span>
+                                </NavLink>
+
+                                <NavLink
+                                    className={classForNav}
+                                    to="/budget"
+                                >
+                                    <NavigationIcon name="budget" />
+                                    <span>Budget</span>
                                 </NavLink>
 
                                 <button
@@ -647,7 +674,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
             
                     <div className="topbar-actions">
-                        <div className={`topbar-period-control${isAveragePrice ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
+                        <div className={`topbar-period-control${isAveragePrice || isBudget ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
                                 <span
                                     className="topbar-calendar"
                                     aria-hidden="true"
@@ -665,6 +692,22 @@ export default function DashboardLayout({ user, onLogout }) {
                                             disabled={loadingDates || dates.length === 0}
                                             onChange={(event) => setAveragePriceMonth(event.target.value)}
                                         />
+                                    ) : isBudget ? (
+                                        <select
+                                            aria-label="Bulan Periode Data Budget"
+                                            value={selectedDate.slice(0, 7)}
+                                            disabled={loadingDates || availablePeriodMonths.length === 0}
+                                            onChange={(event) => selectBudgetPeriodMonth(event.target.value)}
+                                        >
+                                            {availablePeriodMonths.map((month) => (
+                                                <option key={month} value={month}>
+                                                    {new Date(`${month}-01T00:00:00`).toLocaleDateString('id-ID', {
+                                                        month: 'long',
+                                                        year: 'numeric',
+                                                    })}
+                                                </option>
+                                            ))}
+                                        </select>
                                     ) : (
                                         <>
                                             <button
