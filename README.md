@@ -9,6 +9,12 @@ Website Sistem Laporan Commercial
 
 Beranda (`/` atau `/beranda`) dapat dibuka tanpa login dan tidak menampilkan detail customer atau isi keluhan. Hanya Admin yang dapat membuat akun User, mengganti password, dan menghapus akun pada halaman Pengguna. Akun Divisi lama yang masih tersimpan tidak dapat login; Divisi menggunakan tautan dashboard publik. Kolom role ditambahkan otomatis pada tabel `app_users` saat backend dimulai.
 
+## Issue Management
+
+Halaman Issue (`/issue`) hanya menampilkan data dari Google Sheets yang dikonfigurasi dengan `ISSUE_SHEET_ID` dan `ISSUE_SHEET_GID`. Jika tidak diatur, halaman menggunakan spreadsheet Issue saat ini. Spreadsheet harus dapat dibaca oleh server melalui ekspor CSV Google Sheets; endpoint dashboard hanya tersedia bagi Admin dan User. Data dimuat saat halaman dibuka, dapat diperbarui dengan tombol Sinkronkan Google Sheets, dan disegarkan otomatis setiap lima menit. Cache backend juga berlaku lima menit.
+
+Halaman ini tidak mengubah spreadsheet. Perubahan data dilakukan langsung di Google Sheets. Kolom yang digunakan meliputi Customer (PT), Customer PIC, Terjadinya keluhan, Jenis Keluhan, Root cause, Dampak keluhan, File Pendukung, Tindakan Segera, Update terakhir, Tindakan Corrective, Target Date, dan Status.
+
 ## Average Price
 
 Perhitungan bulanan menggunakan nilai volume dan hasil dari sheet `AVG` workbook 2026 untuk Januari–November; daftar customer diurutkan mengikuti sheet masing-masing bulan. Nilai impor disimpan sebagai override per customer dan faktor konversi mengikuti nilai presisi pada workbook. Nilai hasil workbook tetap digunakan saat faktor atau kurs diubah selama harga customer tidak berubah. Jika harga customer diubah, total dihitung ulang menggunakan volume dan MMBTU workbook. Total konsolidasi mengikuti sheet `Summary`: KSN Ranca pada Juni dan customer Jawa Timur pada September–November tetap ditampilkan sebagai detail, tetapi tidak masuk total. Untuk rentang tanggal parsial, sistem memakai volume sales aktual agar tidak memakai total satu bulan penuh. Data November 2026 pada workbook berstatus prognosa; detail Desember belum tersedia.

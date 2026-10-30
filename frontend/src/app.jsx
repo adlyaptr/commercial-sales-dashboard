@@ -16,6 +16,7 @@ import WeeklyVolumePage from './pages/WeeklyVolumePage';
 import UsersPage from './pages/UsersPage';
 
 const YearlyPage = lazy(() => import('./pages/YearlyPage'));
+const IssuePage = lazy(() => import('./pages/IssuePage'));
 
 function DashboardAccess({ user, onLogout }) {
     const location = useLocation();
@@ -68,6 +69,14 @@ function App() {
                     {(user?.role === 'admin' || user?.role === 'user') && (
                         <>
                             <Route path="harian" element={<DailyPage />} />
+                            <Route
+                                path="issue"
+                                element={(
+                                    <Suspense fallback={<div className="app-loading">Memuat halaman Issue...</div>}>
+                                        <IssuePage />
+                                    </Suspense>
+                                )}
+                            />
                             <Route path="mingguan" element={<WeeklyPage />} />
                             <Route path="mingguan/volume" element={<WeeklyVolumePage />} />
                             <Route path="mingguan/average-price" element={<WeeklyAveragePricePage />} />

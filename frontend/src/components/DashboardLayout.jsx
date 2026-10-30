@@ -36,6 +36,12 @@ function NavigationIcon({ name }) {
                 <path d="M8 3v4m8-4v4M4 10h16m-11 4h2m3 0h2m-7 3h2" />
             </>
         ),
+        issue: (
+            <>
+                <rect x="4" y="3.5" width="16" height="17" rx="2" />
+                <path d="M8 8h8M8 12h8m-8 4h5" />
+            </>
+        ),
         weekly: (
             <>
                 <rect x="3.5" y="5" width="17" height="16" rx="2" />
@@ -510,6 +516,14 @@ export default function DashboardLayout({ user, onLogout }) {
                                 >
                                     <NavigationIcon name="daily" />
                                     <span>Harian</span>
+                                </NavLink>
+
+                                <NavLink
+                                    className={classForNav}
+                                    to="/issue"
+                                >
+                                    <NavigationIcon name="issue" />
+                                    <span>Issue</span>
                                 </NavLink>
 
                                 <button

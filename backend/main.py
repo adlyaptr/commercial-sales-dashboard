@@ -1,15 +1,20 @@
+import csv
+import hashlib
+import hmac
+import math
 import os
 import re
-import hmac
-import hashlib
-import math
 import secrets
+import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Optional
+from urllib.error import URLError
 from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.request import Request as URLRequest, urlopen
 
 import pymysql
 from dotenv import load_dotenv
@@ -46,6 +51,14 @@ SESSION_COOKIE_SECURE = os.getenv(
     "true" if APP_ENV == "production" else "false",
 ).strip().lower() == "true"
 PASSWORD_HASH_ITERATIONS = 310_000
+ISSUE_SHEET_ID = os.getenv(
+    "ISSUE_SHEET_ID",
+    "19vQxh81PDViOVTKMcIdd8qmG3gHrk374PV_ofVe6kdQ",
+).strip()
+ISSUE_SHEET_GID = os.getenv("ISSUE_SHEET_GID", "418759575").strip()
+ISSUE_SHEET_CACHE_SECONDS = 300
+_issue_sheet_cache = {"expires_at": 0.0, "data": None}
+_issue_sheet_lock = threading.Lock()
 
 
 def validate_runtime_config():
@@ -1454,6 +1467,153 @@ def health():
     with db() as con:
         con.execute("SELECT 1").fetchone()
     return {"status": "ok", "database": "connected"}
+
+
+def parse_issue_spreadsheet(csv_text):
+    reader = csv.DictReader(StringIO(csv_text, newline=""))
+    if not reader.fieldnames:
+        raise ValueError("Spreadsheet Issue tidak memiliki header.")
+
+    headers = {norm(header): header for header in reader.fieldnames if header}
+    columns = {
+        "customer": "customerpt",
+        "customerPic": "customerpic",
+        "date": "terjadinyakeluhan",
+        "type": "jeniskeluhan",
+        "rootCause": "rootcause",
+        "impact": "dampakkeluhan",
+        "supportingFiles": "filependukungfotovideosuratscreenshoot",
+        "immediateAction": "tindakansegera",
+        "latestUpdate": "updateterakhir",
+        "correctiveAction": "tindakancorrective",
+        "targetDate": "targetdate",
+        "status": "status",
+    }
+    required = ("customer", "date", "type", "status")
+    missing = [key for key in required if columns[key] not in headers]
+    if missing:
+        raise ValueError(
+            "Header wajib spreadsheet Issue tidak ditemukan: "
+            + ", ".join(missing)
+        )
+
+    issues = []
+    try:
+        for row_number, row in enumerate(reader, start=2):
+            if not any(str(value or "").strip() for value in row.values()):
+                continue
+            values = {
+                key: str(row.get(headers[header_key]) or "").strip()
+                for key, header_key in columns.items()
+                if header_key in headers
+            }
+            if not values["customer"]:
+                raise ValueError(f"Customer kosong pada baris {row_number}.")
+            try:
+                issue_date = datetime.strptime(values["date"], "%d/%m/%Y").date()
+            except ValueError:
+                try:
+                    issue_date = date.fromisoformat(values["date"])
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Tanggal keluhan tidak valid pada baris {row_number}."
+                    ) from exc
+
+            status_key = norm(values["status"])
+            status = {
+                "open": "Open",
+                "inprogress": "In Progress",
+                "onprogress": "In Progress",
+                "monitoring": "In Progress",
+                "closed": "Closed",
+                "resolved": "Closed",
+                "completed": "Closed",
+                "selesai": "Closed",
+            }.get(status_key, values["status"] or "Belum diisi")
+            issues.append({
+                "id": f"sheet-row-{row_number}",
+                "date": issue_date.isoformat(),
+                "customer": values["customer"],
+                "customerPic": values["customerPic"],
+                "type": values["type"],
+                "rootCause": values["rootCause"],
+                "impact": values["impact"],
+                "supportingFiles": values["supportingFiles"],
+                "immediateAction": values["immediateAction"],
+                "latestUpdate": values["latestUpdate"],
+                "correctiveAction": values["correctiveAction"],
+                "targetDate": values["targetDate"],
+                "status": status,
+            })
+    except csv.Error as exc:
+        raise ValueError("Format CSV spreadsheet Issue tidak valid.") from exc
+
+    issues.sort(key=lambda item: (item["date"], item["id"]), reverse=True)
+    return issues
+
+
+def get_issue_spreadsheet_data(refresh=False):
+    now = time.monotonic()
+    cached = _issue_sheet_cache["data"]
+    if not refresh and cached and now < _issue_sheet_cache["expires_at"]:
+        return cached
+
+    with _issue_sheet_lock:
+        now = time.monotonic()
+        cached = _issue_sheet_cache["data"]
+        if not refresh and cached and now < _issue_sheet_cache["expires_at"]:
+            return cached
+
+        if not ISSUE_SHEET_ID or not ISSUE_SHEET_GID:
+            raise HTTPException(
+                status_code=500,
+                detail="Konfigurasi sumber Google Sheets Issue belum lengkap.",
+            )
+
+        sheet_url = (
+            f"https://docs.google.com/spreadsheets/d/{ISSUE_SHEET_ID}"
+            f"/export?format=csv&gid={ISSUE_SHEET_GID}"
+        )
+        request = URLRequest(
+            sheet_url,
+            headers={"User-Agent": "CommercialSalesDashboard/1.0"},
+        )
+        try:
+            with urlopen(request, timeout=15) as response:
+                csv_bytes = response.read(5_000_001)
+        except (URLError, TimeoutError, OSError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Google Sheets Issue tidak dapat diakses. Periksa koneksi dan izin spreadsheet.",
+            ) from exc
+
+        if len(csv_bytes) > 5_000_000:
+            raise HTTPException(
+                status_code=502,
+                detail="Ukuran spreadsheet Issue melebihi batas 5 MB.",
+            )
+
+        try:
+            issues = parse_issue_spreadsheet(csv_bytes.decode("utf-8-sig"))
+        except (UnicodeDecodeError, csv.Error, ValueError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Data Google Sheets Issue tidak valid: {exc}",
+            ) from exc
+
+        result = {
+            "issues": issues,
+            "syncedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        _issue_sheet_cache["data"] = result
+        _issue_sheet_cache["expires_at"] = time.monotonic() + ISSUE_SHEET_CACHE_SECONDS
+        return result
+
+
+@app.get("/api/issues")
+def list_issues(request: Request, refresh: bool = False):
+    require_login(request)
+    return get_issue_spreadsheet_data(refresh=refresh)
 
 
 def complaint_record(row):
