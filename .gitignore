@@ -5,3 +5,4 @@ venv/
 .env
 node_modules/
 database/imports/
+/secrets/*.json

@@ -114,7 +114,7 @@ export default function IssuePage() {
         try {
             const result = await api(
                 `/api/issues${forceRefresh ? '?refresh=true' : ''}`,
-                { signal: AbortSignal.timeout(20000) },
+                { signal: AbortSignal.timeout(40000) },
             );
             if (!result || !Array.isArray(result.issues)) {
                 throw new Error('Format data Issue dari Google Sheets tidak valid.');

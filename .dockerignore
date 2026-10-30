@@ -8,3 +8,4 @@
 backend/static/react
 backend/tests
 database/imports
+secrets

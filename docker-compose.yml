@@ -30,8 +30,10 @@ services:
       APP_USERNAME: ${APP_USERNAME:?isi APP_USERNAME di .env}
       APP_PASSWORD: ${APP_PASSWORD:?isi APP_PASSWORD di .env}
       SESSION_SECRET: ${SESSION_SECRET:?isi SESSION_SECRET di .env}
+      ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/issue-google-service-account.json
     volumes:
       - imports:/app/database/imports
+      - ./secrets:/run/secrets:ro
 
   caddy:
     image: caddy:2-alpine

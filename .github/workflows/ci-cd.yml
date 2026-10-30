@@ -64,7 +64,20 @@ jobs:
       - name: Tarik kode prod lalu rebuild container
         env:
           VM_HOST: ${{ secrets.VM_HOST }}
+          ISSUE_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.ISSUE_GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: |
+          if [ -n "$ISSUE_GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
+            credential_file="$(mktemp)"
+            trap 'rm -f "$credential_file"' EXIT
+            printf '%s' "$ISSUE_GOOGLE_SERVICE_ACCOUNT_JSON" > "$credential_file"
+            chmod 600 "$credential_file"
+            ssh -o StrictHostKeyChecking=accept-new "deploy@$VM_HOST" \
+              'mkdir -p /srv/commercial/secrets && chmod 700 /srv/commercial/secrets'
+            scp -o StrictHostKeyChecking=accept-new "$credential_file" \
+              "deploy@$VM_HOST:/srv/commercial/secrets/issue-google-service-account.json.tmp"
+            ssh -o StrictHostKeyChecking=accept-new "deploy@$VM_HOST" \
+              'chmod 600 /srv/commercial/secrets/issue-google-service-account.json.tmp && mv /srv/commercial/secrets/issue-google-service-account.json.tmp /srv/commercial/secrets/issue-google-service-account.json'
+          fi
           ssh -o StrictHostKeyChecking=accept-new "deploy@$VM_HOST" bash -se <<'EOF'
           set -euo pipefail
           cd /srv/commercial

@@ -13,15 +13,19 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Optional
 from urllib.error import URLError
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 from urllib.request import Request as URLRequest, urlopen
 
 import pymysql
+from google.auth.exceptions import GoogleAuthError
+from google.auth.transport.requests import AuthorizedSession
+from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pymysql.cursors import DictCursor
+from requests.exceptions import RequestException
 from starlette.middleware.sessions import SessionMiddleware
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -56,6 +60,10 @@ ISSUE_SHEET_ID = os.getenv(
     "19vQxh81PDViOVTKMcIdd8qmG3gHrk374PV_ofVe6kdQ",
 ).strip()
 ISSUE_SHEET_GID = os.getenv("ISSUE_SHEET_GID", "418759575").strip()
+ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv(
+    "ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE",
+    "/run/secrets/issue-google-service-account.json",
+).strip()
 ISSUE_SHEET_CACHE_SECONDS = 300
 _issue_sheet_cache = {"expires_at": 0.0, "data": None}
 _issue_sheet_lock = threading.Lock()
@@ -1552,6 +1560,119 @@ def parse_issue_spreadsheet(csv_text):
     return issues
 
 
+def fetch_issue_sheet_with_service_account():
+    credential_path = Path(ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE)
+    if not credential_path.is_file() or credential_path.stat().st_size == 0:
+        return None
+
+    try:
+        import json
+
+        service_account_info = json.loads(credential_path.read_text(encoding="utf-8"))
+        credentials = Credentials.from_service_account_info(
+            service_account_info,
+            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+        )
+    except (OSError, ValueError, TypeError, KeyError, GoogleAuthError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Kredensial Google service account tidak valid atau belum lengkap.",
+        ) from exc
+
+    session = AuthorizedSession(credentials)
+    api_base = f"https://sheets.googleapis.com/v4/spreadsheets/{ISSUE_SHEET_ID}"
+    try:
+        metadata_response = session.get(
+            f"{api_base}?fields=sheets(properties(sheetId,title))",
+            timeout=15,
+        )
+        if metadata_response.status_code in {401, 403}:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Google Sheets API menolak akses service account. Aktifkan Google Sheets API "
+                    "dan bagikan spreadsheet sebagai Viewer ke email client_email pada kredensial service account."
+                ),
+            )
+        if metadata_response.status_code == 404:
+            raise HTTPException(
+                status_code=502,
+                detail="Spreadsheet Issue tidak ditemukan. Periksa ISSUE_SHEET_ID.",
+            )
+        metadata_response.raise_for_status()
+        metadata = metadata_response.json()
+        if not isinstance(metadata, dict):
+            raise HTTPException(
+                status_code=502,
+                detail="Respons metadata Google Sheets tidak valid.",
+            )
+        sheet = next(
+            (
+                item.get("properties", {})
+                for item in metadata.get("sheets", [])
+                if isinstance(item, dict)
+                and str(item.get("properties", {}).get("sheetId")) == ISSUE_SHEET_GID
+            ),
+            None,
+        )
+        if not sheet or not sheet.get("title"):
+            raise HTTPException(
+                status_code=502,
+                detail="Tab Google Sheets dengan ISSUE_SHEET_GID tersebut tidak ditemukan.",
+            )
+
+        encoded_range = quote(f"'{sheet['title']}'!A1:M5000", safe="")
+        values_response = session.get(
+            f"{api_base}/values/{encoded_range}",
+            timeout=15,
+        )
+        if values_response.status_code in {401, 403}:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Service account tidak dapat membaca tab Issue. "
+                    "Pastikan Google Sheets API aktif dan spreadsheet dibagikan dengan izin Viewer."
+                ),
+            )
+        values_response.raise_for_status()
+        values_payload = values_response.json()
+        if not isinstance(values_payload, dict):
+            raise HTTPException(
+                status_code=502,
+                detail="Respons data Google Sheets tidak valid.",
+            )
+        values = values_payload.get("values", [])
+    except HTTPException:
+        raise
+    except RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Google Sheets API tidak merespons. Coba sinkronkan kembali beberapa saat lagi.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Google Sheets API mengembalikan respons JSON yang tidak valid.",
+        ) from exc
+
+    if not values:
+        raise HTTPException(
+            status_code=502,
+            detail="Tab Google Sheets Issue kosong atau tidak memiliki header.",
+        )
+
+    csv_buffer = StringIO(newline="")
+    csv_writer = csv.writer(csv_buffer)
+    csv_writer.writerows(values)
+    csv_text = csv_buffer.getvalue()
+    if len(csv_text.encode("utf-8")) > 5_000_000:
+        raise HTTPException(
+            status_code=502,
+            detail="Ukuran spreadsheet Issue melebihi batas 5 MB.",
+        )
+    return csv_text
+
+
 def get_issue_spreadsheet_data(refresh=False):
     now = time.monotonic()
     cached = _issue_sheet_cache["data"]
@@ -1570,31 +1691,39 @@ def get_issue_spreadsheet_data(refresh=False):
                 detail="Konfigurasi sumber Google Sheets Issue belum lengkap.",
             )
 
-        sheet_url = (
-            f"https://docs.google.com/spreadsheets/d/{ISSUE_SHEET_ID}"
-            f"/export?format=csv&gid={ISSUE_SHEET_GID}"
-        )
-        request = URLRequest(
-            sheet_url,
-            headers={"User-Agent": "CommercialSalesDashboard/1.0"},
-        )
+        service_account_csv = fetch_issue_sheet_with_service_account()
         try:
-            with urlopen(request, timeout=15) as response:
-                csv_bytes = response.read(5_000_001)
-        except (URLError, TimeoutError, OSError) as exc:
-            raise HTTPException(
-                status_code=502,
-                detail="Google Sheets Issue tidak dapat diakses. Periksa koneksi dan izin spreadsheet.",
-            ) from exc
+            if service_account_csv is not None:
+                csv_text = service_account_csv
+            else:
+                sheet_url = (
+                    f"https://docs.google.com/spreadsheets/d/{ISSUE_SHEET_ID}"
+                    f"/export?format=csv&gid={ISSUE_SHEET_GID}"
+                )
+                request = URLRequest(
+                    sheet_url,
+                    headers={"User-Agent": "CommercialSalesDashboard/1.0"},
+                )
+                try:
+                    with urlopen(request, timeout=15) as response:
+                        csv_bytes = response.read(5_000_001)
+                except (URLError, TimeoutError, OSError) as exc:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=(
+                            "Server tidak dapat membaca Google Sheets. "
+                            "Akses Editor akun Anda tidak otomatis memberi akses kepada server. "
+                            "Konfigurasikan service account dan bagikan spreadsheet kepadanya sebagai Viewer."
+                        ),
+                    ) from exc
 
-        if len(csv_bytes) > 5_000_000:
-            raise HTTPException(
-                status_code=502,
-                detail="Ukuran spreadsheet Issue melebihi batas 5 MB.",
-            )
-
-        try:
-            issues = parse_issue_spreadsheet(csv_bytes.decode("utf-8-sig"))
+                if len(csv_bytes) > 5_000_000:
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Ukuran spreadsheet Issue melebihi batas 5 MB.",
+                    )
+                csv_text = csv_bytes.decode("utf-8-sig")
+            issues = parse_issue_spreadsheet(csv_text)
         except (UnicodeDecodeError, csv.Error, ValueError) as exc:
             raise HTTPException(
                 status_code=502,
