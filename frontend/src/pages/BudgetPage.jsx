@@ -220,6 +220,12 @@ export default function BudgetPage() {
     return (
         <main className="budget-page">
             <header className="budget-header">
+                <section className="budget-metrics" aria-label="Ringkasan budget">
+                    <MetricCard icon="▤" label="Total Budget" value={formatCurrency(totals.target)} note={`Target untuk ${selectedMonthLabel}`} tone="target" />
+                    <MetricCard icon="◴" label="Total Realisasi" value={formatCurrency(totals.actual)} note={`${formatPercent(realizationPercent)} dari total budget`} tone="actual" />
+                    <MetricCard icon="▣" label="Sisa Budget" value={formatCurrency(remaining)} note={remaining < 0 ? 'Melebihi anggaran' : 'Sisa anggaran periode ini'} tone="remaining" />
+                    <MetricCard icon="%" label="Persentase Realisasi" value={formatPercent(realizationPercent)} note="dari total budget" tone="percentage" />
+                </section>
                 <div className="budget-toolbar">
                     <button className="budget-sync-button" type="button" onClick={() => loadBudget(true)} disabled={refreshing}>
                         <span aria-hidden="true">⟳</span>{refreshing ? 'Menyinkronkan...' : 'Sinkronkan Google Sheets'}
@@ -236,12 +242,6 @@ export default function BudgetPage() {
                 <div className="budget-loading" role="status">Memuat data Budget dari Google Sheets...</div>
             ) : budget && (
                 <>
-                    <section className="budget-metrics" aria-label="Ringkasan budget">
-                        <MetricCard icon="▤" label="Total Budget" value={formatCurrency(totals.target)} note={`Target untuk ${selectedMonthLabel}`} tone="target" />
-                        <MetricCard icon="◴" label="Total Realisasi" value={formatCurrency(totals.actual)} note={`${formatPercent(realizationPercent)} dari total budget`} tone="actual" />
-                        <MetricCard icon="▣" label="Sisa Budget" value={formatCurrency(remaining)} note={remaining < 0 ? 'Melebihi anggaran' : 'Sisa anggaran periode ini'} tone="remaining" />
-                        <MetricCard icon="%" label="Persentase Realisasi" value={formatPercent(realizationPercent)} note="dari total budget" tone="percentage" />
-                    </section>
 
                     <section className="budget-charts">
                         <BudgetChart title="Target vs Aktual per Kategori">
@@ -296,7 +296,6 @@ export default function BudgetPage() {
                                 </tr></tfoot>
                             </table>
                         </div>
-                        <footer className="budget-table-footer">Menampilkan {visibleRows.length} dari {monthRecords.length} kategori</footer>
                     </section>
                 </>
             )}

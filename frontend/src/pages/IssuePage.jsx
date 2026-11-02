@@ -212,13 +212,12 @@ export default function IssuePage() {
         <div className="issue-page">
             <div className="issue-main">
                 <header className="issue-header">
-                    <div className="issue-heading">
-                        <span className="issue-brand-icon" aria-hidden="true">▤</span>
-                        <div>
-                            <h1>Issue Management</h1>
-                            <p>Monitoring dan tindak lanjut permasalahan customer</p>
-                        </div>
-                    </div>
+                    <section className="issue-metrics" aria-label="Ringkasan issue">
+                        <MetricCard tone="total" icon="▤" label="Total Issue" value={loading ? '…' : visibleIssues.length} note="Berdasarkan filter aktif" />
+                        <MetricCard tone="open" icon="!" label="Open" value={loading ? '…' : openCount} note="Perlu ditindaklanjuti" />
+                        <MetricCard tone="progress" icon="◷" label="In Progress" value={loading ? '…' : progressCount} note="Sedang ditangani" />
+                        <MetricCard tone="closed" icon="✓" label="Closed" value={loading ? '…' : closedCount} note="Sesuai status spreadsheet" />
+                    </section>
                     <div className="issue-sync">
                         <button type="button" onClick={() => loadIssues(true)} disabled={refreshing}>
                             <span aria-hidden="true">{refreshing ? '◌' : '⟳'}</span>
@@ -234,13 +233,6 @@ export default function IssuePage() {
                         <button type="button" onClick={() => loadIssues(true)}>Coba lagi</button>
                     </div>
                 )}
-
-                <section className="issue-metrics" aria-label="Ringkasan issue">
-                    <MetricCard tone="total" icon="▤" label="Total Issue" value={loading ? '…' : visibleIssues.length} note="Berdasarkan filter aktif" />
-                    <MetricCard tone="open" icon="!" label="Open" value={loading ? '…' : openCount} note="Perlu ditindaklanjuti" />
-                    <MetricCard tone="progress" icon="◷" label="In Progress" value={loading ? '…' : progressCount} note="Sedang ditangani" />
-                    <MetricCard tone="closed" icon="✓" label="Closed" value={loading ? '…' : closedCount} note="Sesuai status spreadsheet" />
-                </section>
 
                 <section className="issue-charts">
                     <article className="issue-panel issue-trend-panel">
