@@ -856,7 +856,7 @@ export default function WeeklyAveragePricePage() {
                     <div className="average-workspace-column average-workspace-left">
                 <div className="average-data-heading">
                     <div className="average-panel-heading">
-                        <b>2. Hasil Perhitungan Average Price</b>
+                        <b>Hasil Perhitungan Average Price</b>
                     </div>
                 </div>
                 <div>
@@ -990,7 +990,7 @@ export default function WeeklyAveragePricePage() {
                 {canEdit && <>
                 <div className="average-data-heading average-customer-entry-heading">
                     <div className="average-panel-heading">
-                        <b>1. Input Average Price Customer</b>
+                        <b>Input Average Price Customer</b>
                     </div>
                 </div>
                 <form className="average-entry-form" onSubmit={saveCustomerEntry}>
@@ -1085,7 +1085,7 @@ export default function WeeklyAveragePricePage() {
                 <div>
                     <div className="average-data-heading average-conversion-heading">
                         <div className="average-panel-heading">
-                            <b>3. Faktor Konversi Operator dan Kurs</b>
+                            <b>Faktor Konversi Operator dan Kurs</b>
                         </div>
                         <label className="average-filter-field">
                             <span>Kurs Rp/USD</span>
@@ -1128,7 +1128,7 @@ export default function WeeklyAveragePricePage() {
                         <div>
                     <div className="average-data-heading average-comparison-heading">
                         <div className="average-panel-heading">
-                            <b>4. Target Harga dan Prognosa (Rp/Sm³)</b>
+                            <b>Target Harga dan Prognosa (Rp/Sm³)</b>
                         </div>
                     </div>
                     <div className="average-comparison-chart">
