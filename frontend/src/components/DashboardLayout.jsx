@@ -408,7 +408,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const outletContext = {
         dashboard,
         canEdit: user?.role === 'admin',
-        canViewHomeAverage: user?.role === 'admin' || !canViewAllFeatures,
+        canViewHomeAverage: canViewAllFeatures,
         selectedDate,
         rangeStartDate,
         rangeEndDate,
@@ -587,7 +587,7 @@ export default function DashboardLayout({ user, onLogout }) {
                                         Volume
                                     </NavLink>
 
-                                    {user.role === 'admin' && (
+                                    {canViewAllFeatures && (
                                         <NavLink
                                             className={({ isActive }) =>
                                                 `nav-sublink${isActive ? ' active' : ''}`

@@ -88,7 +88,7 @@ function App() {
                             />
                             <Route path="mingguan" element={<WeeklyPage />} />
                             <Route path="mingguan/volume" element={<WeeklyVolumePage />} />
-                            {user.role === 'admin' && (
+                            {(user.role === 'admin' || user.role === 'user') && (
                                 <Route path="mingguan/average-price" element={<WeeklyAveragePricePage />} />
                             )}
                             <Route path="mingguan/complain" element={<WeeklyComplainPage />} />

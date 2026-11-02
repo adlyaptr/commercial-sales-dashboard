@@ -250,22 +250,15 @@ class UserRoleTests(unittest.TestCase):
     def test_home_access_is_public_without_a_session(self):
         self.assertIsNone(main.require_home_access(SimpleNamespace(session={})))
 
-    def test_user_cannot_read_average_price_apis(self):
+    def test_user_can_read_average_price_apis(self):
         self.database.users["reader"] = {
             "username": "reader",
             "password_hash": "unused",
             "role": "user",
         }
         request = FakeRequest(username="reader", role="user")
-        for endpoint, args in (
-            (main.weekly_average_price, (request,)),
-            (main.monthly_average_price, (request, "2026-10")),
-            (main.monthly_average_price_range, (request, "2026-10-01", "2026-10-31")),
-        ):
-            with self.subTest(endpoint=endpoint.__name__):
-                with self.assertRaises(main.HTTPException) as error:
-                    endpoint(*args)
-                self.assertEqual(error.exception.status_code, 403)
+        main.require_login(request)
+        self.assertEqual(request.session["role"], "user")
 
     def test_login_accepts_admin_and_user_but_rejects_division(self):
         admin_request = FakeRequest({

@@ -3411,7 +3411,7 @@ def weekly_average_price(
     region: Optional[str] = None,
     operator: Optional[str] = None,
 ):
-    require_admin(request)
+    require_login(request)
     with db() as con:
         if not start_date or not end_date:
             latest = con.execute("SELECT MAX(report_date) AS latest_date FROM sales").fetchone()["latest_date"]
@@ -3595,7 +3595,7 @@ def has_valid_average_price(
 
 @app.get("/api/monthly-average-price")
 def monthly_average_price(request: Request, month: str):
-    require_admin(request)
+    require_login(request)
     try:
         month_start = date.fromisoformat(f"{month}-01")
     except ValueError as exc:
@@ -3751,8 +3751,6 @@ def monthly_average_price(request: Request, month: str):
 @app.get("/api/monthly-average-price-range")
 def monthly_average_price_range(request: Request, start_date: str, end_date: str):
     require_home_access(request)
-    if logged_in(request) and not is_admin(request):
-        raise HTTPException(status_code=403, detail="Akses Average Price hanya tersedia di Beranda publik dan bagi Admin.")
     try:
         start = date.fromisoformat(start_date)
         end = date.fromisoformat(end_date)

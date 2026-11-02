@@ -171,14 +171,19 @@ class MonthlyRangeTests(unittest.TestCase):
         self.assertEqual(result["rows"], [])
         self.assertEqual(result["valid_price_count"], 1)
 
-    def test_user_cannot_access_average_price_range(self):
+    def test_user_can_view_average_price_customer_details(self):
         user_request = SimpleNamespace(session={"username": "reader", "role": "user"})
         with (
             patch.object(main, "require_home_access"),
-            self.assertRaises(main.HTTPException) as error,
+            patch.object(main, "db", return_value=MemoryAveragePriceRange()),
         ):
-            main.monthly_average_price_range(user_request, "2026-10-01", "2026-10-31")
-        self.assertEqual(error.exception.status_code, 403)
+            result = main.monthly_average_price_range(
+                user_request,
+                "2026-10-01",
+                "2026-10-31",
+            )
+        self.assertEqual(result["rows"][0]["customer"], "Customer Contoh")
+        self.assertEqual(result["rows"][0]["sm3"], 28095)
 
     def test_excludes_customers_without_valid_price_from_average_totals(self):
         class IncludesUnpricedCustomer(MemoryAveragePriceRange):
