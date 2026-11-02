@@ -440,7 +440,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const outletContext = {
         dashboard,
         canEdit: user?.role === 'admin',
-        canViewHomeAverage: canViewAllFeatures,
+        canViewHomeAverage: isHome,
         forecastRefreshKey,
         selectedDate,
         rangeStartDate,
