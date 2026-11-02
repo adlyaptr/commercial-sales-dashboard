@@ -15,6 +15,7 @@ from typing import Optional
 from urllib.error import URLError
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 from urllib.request import Request as URLRequest, urlopen
+from zoneinfo import ZoneInfo
 
 import pymysql
 from google.auth.exceptions import GoogleAuthError
@@ -67,6 +68,14 @@ ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv(
 ISSUE_SHEET_CACHE_SECONDS = 300
 _issue_sheet_cache = {"expires_at": 0.0, "data": None}
 _issue_sheet_lock = threading.Lock()
+SALES_ORDER_SHEET_ID = os.getenv(
+    "SALES_ORDER_SHEET_ID",
+    "1_xx5K5PFaUF9A6VQgmagQ1QiOEh98YmsQcZtswu1CNI",
+).strip()
+SALES_ORDER_SHEET_GID = os.getenv("SALES_ORDER_SHEET_GID", "694583576").strip()
+SALES_ORDER_CACHE_SECONDS = 300
+_sales_order_cache = {"expires_at": 0.0, "data": None}
+_sales_order_lock = threading.Lock()
 BUDGET_TARGET_SHEET_GID = os.getenv("BUDGET_TARGET_SHEET_GID", "737662524").strip()
 BUDGET_FINANCE_SHEET_TITLE = os.getenv("BUDGET_FINANCE_SHEET_TITLE", "Summary Finance").strip()
 BUDGET_CACHE_SECONDS = 300
@@ -295,6 +304,227 @@ def parse_date(value) -> Optional[str]:
         except ValueError:
             pass
     return None
+
+
+def parse_sales_order_number(value):
+    if value is None:
+        return None
+    text = str(value).strip().replace("\u00a0", "").replace(" ", "")
+    if not text or text in {"-", "—"}:
+        return None
+
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            normalized = text.replace(".", "").replace(",", ".")
+        else:
+            normalized = text.replace(",", "")
+    elif "," in text:
+        parts = text.split(",")
+        normalized = (
+            "".join(parts)
+            if len(parts) > 1 and len(parts[-1]) == 3
+            else ".".join(parts)
+        )
+    elif "." in text:
+        if text.count(".") > 1:
+            normalized = text.replace(".", "")
+        elif re.fullmatch(r"\d{1,3}\.\d{3}", text):
+            normalized = text.replace(".", "")
+        else:
+            normalized = text
+    else:
+        normalized = text
+
+    try:
+        number = float(normalized)
+    except ValueError as exc:
+        raise ValueError(f"Nilai SO tidak valid: {value}") from exc
+    if not math.isfinite(number) or number < 0:
+        raise ValueError(f"Nilai SO harus berupa angka non-negatif: {value}")
+    return number
+
+
+def parse_sales_order_spreadsheet(csv_text):
+    rows = list(csv.reader(StringIO(csv_text, newline="")))
+    header_index = next(
+        (
+            index for index, row in enumerate(rows)
+            if any(norm(value) == "date" for value in row)
+        ),
+        None,
+    )
+    if header_index is None or header_index + 1 >= len(rows):
+        raise ValueError("Header tanggal pada sheet SO tidak ditemukan.")
+
+    headers = rows[header_index]
+    date_column = next(index for index, value in enumerate(headers) if norm(value) == "date")
+    value_headers = rows[header_index + 1]
+    customer_columns = [
+        (index, str(name).strip())
+        for index, name in enumerate(headers)
+        if name
+        and index != date_column
+        and norm(name) not in {"revisi", "day", "total"}
+        and index < len(value_headers)
+        and norm(value_headers[index]) == "so"
+    ]
+    if not customer_columns:
+        raise ValueError("Kolom customer dengan nilai SO tidak ditemukan.")
+
+    records = {}
+    for row_number, row in enumerate(rows[header_index + 2:], start=header_index + 3):
+        date_value = row[date_column] if date_column < len(row) else ""
+        populated_values = [
+            row[index].strip()
+            for index, _ in customer_columns
+            if index < len(row) and row[index].strip()
+        ]
+        if not str(date_value or "").strip():
+            if populated_values:
+                raise ValueError(f"Tanggal kosong pada baris {row_number} sheet SO.")
+            continue
+        report_date = parse_date(date_value)
+        if report_date is None:
+            if populated_values:
+                raise ValueError(f"Tanggal tidak valid pada baris {row_number} sheet SO.")
+            continue
+
+        day_records = []
+        for column, customer in customer_columns:
+            value = row[column] if column < len(row) else ""
+            if not str(value or "").strip():
+                continue
+            try:
+                so_value = parse_sales_order_number(value)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Nilai SO customer {customer} pada baris {row_number} tidak valid."
+                ) from exc
+            if so_value is not None:
+                day_records.append({"customer": customer, "so": so_value})
+        if day_records:
+            records[report_date] = day_records
+
+    if not records:
+        raise ValueError("Sheet SO tidak memiliki data SO bertanggal.")
+    return records
+
+
+def get_sales_order_data(refresh=False):
+    now = time.monotonic()
+    cached = _sales_order_cache["data"]
+    if not refresh and cached is not None and now < _sales_order_cache["expires_at"]:
+        return cached
+
+    with _sales_order_lock:
+        now = time.monotonic()
+        cached = _sales_order_cache["data"]
+        if not refresh and cached is not None and now < _sales_order_cache["expires_at"]:
+            return cached
+
+        url = (
+            f"https://docs.google.com/spreadsheets/d/{SALES_ORDER_SHEET_ID}"
+            f"/export?format=csv&gid={SALES_ORDER_SHEET_GID}"
+        )
+        request = URLRequest(url, headers={"User-Agent": "CommercialSalesDashboard/1.0"})
+        try:
+            with urlopen(request, timeout=20) as response:
+                content = response.read(5_000_001)
+        except (URLError, TimeoutError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Sheet SO Google Sheets tidak dapat diakses. Coba lagi beberapa saat.",
+            ) from exc
+        if len(content) > 5_000_000:
+            raise HTTPException(status_code=502, detail="Ukuran sheet SO melebihi batas 5 MB.")
+
+        try:
+            result = parse_sales_order_spreadsheet(content.decode("utf-8-sig"))
+        except (UnicodeDecodeError, csv.Error, ValueError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Format data sheet SO tidak valid: {exc}",
+            ) from exc
+
+        _sales_order_cache["data"] = result
+        _sales_order_cache["expires_at"] = time.monotonic() + SALES_ORDER_CACHE_SECONDS
+        return result
+
+
+def overlay_sales_order_forecast(
+    sales_rows,
+    customer_rows,
+    sales_orders_by_date,
+    start_date,
+    end_date,
+):
+    customers_by_key = {}
+    customer_lookup = {}
+    for customer in customer_rows:
+        key = str(customer["customer_key"])
+        customers_by_key[key] = customer
+        for candidate in (key, norm(customer["customer_name"])):
+            if candidate:
+                customer_lookup.setdefault(candidate, {})[key] = customer
+
+    def resolve_customer(name):
+        name_key = norm(name)
+        matches = customer_lookup.get(name_key, {})
+        if len(matches) == 1:
+            return next(iter(matches.values()))
+        if matches:
+            return None
+        base_name = re.sub(r"\s*\([^)]*\)\s*$", "", str(name)).strip()
+        base_matches = customer_lookup.get(norm(base_name), {})
+        return next(iter(base_matches.values())) if len(base_matches) == 1 else None
+
+    enriched_by_key = {}
+    for row in sales_rows:
+        enriched = dict(row)
+        report_date = enriched.get("report_date", start_date)
+        if isinstance(report_date, date):
+            report_date = report_date.isoformat()
+        enriched["report_date"] = str(report_date)
+        enriched.setdefault("actual_is_forecast", False)
+        enriched_by_key[(enriched["report_date"], str(enriched["customer_key"]))] = enriched
+
+    unmapped = set()
+    for report_date, orders in sales_orders_by_date.items():
+        day = date.fromisoformat(report_date)
+        if day < start_date or day > end_date:
+            continue
+        for order in orders:
+            customer = resolve_customer(order["customer"])
+            if customer is None:
+                if order["so"] != 0:
+                    unmapped.add(order["customer"])
+                continue
+
+            key = (report_date, str(customer["customer_key"]))
+            existing = enriched_by_key.get(key)
+            if existing is not None:
+                existing["so"] = order["so"]
+                continue
+
+            enriched_by_key[key] = {
+                "report_date": report_date,
+                "customer_key": customer["customer_key"],
+                "customer_name": customer["customer_name"],
+                "operator": customer["operator"],
+                "so": order["so"],
+                "actual": order["so"],
+                "id": None,
+                "manual_fob": False,
+                "actual_is_forecast": True,
+            }
+
+    rows = list(enriched_by_key.values())
+    for row in rows:
+        row["so"] = float(row.get("so") or 0)
+        row["actual"] = float(row.get("actual") or 0)
+        row["diff"] = row["actual"] - row["so"]
+    rows.sort(key=lambda row: (row["report_date"], row["operator"], row["customer_name"]))
+    return rows, sorted(unmapped)
 
 
 def detect_header(ws):
@@ -1256,6 +1486,19 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             "WHERE report_date >= %s AND report_date < %s",
             (first_month.isoformat(), after_last_month.isoformat()),
         ).fetchone()
+        regional_volume_rows = con.execute(
+            """
+            SELECT COALESCE(price_inputs.region,'') AS region,
+                   SUM(s.actual) AS actual_sm3
+            FROM sales s
+            JOIN monthly_average_price_inputs price_inputs
+              ON price_inputs.month_start=DATE_FORMAT(s.report_date, '%%Y-%%m-01')
+             AND price_inputs.customer_key=s.customer_key
+            WHERE s.report_date BETWEEN %s AND %s
+            GROUP BY price_inputs.region
+            """,
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
 
     monthly_targets = {
         str(row["month_start"])[:7]: float(row["so"] or 0)
@@ -1390,6 +1633,13 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             "so": float(report_totals["total_so"] or 0),
             "actual": float(report_totals["total_actual"] or 0),
         },
+        "regional_volumes": [
+            {
+                "region": row["region"] or "",
+                "actual_sm3": float(row["actual_sm3"] or 0),
+            }
+            for row in regional_volume_rows
+        ],
         "year_summary": summary_record(
             totals,
             operators=operators_totals,
@@ -2403,38 +2653,60 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
         raise HTTPException(status_code=400, detail="Tanggal awal tidak boleh melewati tanggal akhir.")
 
     with db() as con:
-        rows = con.execute(
+        sales_rows = con.execute(
             """
             SELECT
+                s.report_date,
                 c.customer_key,
                 c.customer_name,
                 c.operator,
-                DATE_FORMAT(s.report_date, '%%Y-%%m') AS period,
-                SUM(s.so) AS total_so,
-                SUM(s.actual) AS total_actual
+                s.so,
+                s.actual,
+                s.id,
+                c.customer_key LIKE 'manualfob-%%' AS manual_fob
             FROM sales s
             JOIN customers c ON c.customer_key = s.customer_key
             WHERE s.report_date BETWEEN %s AND %s
-            GROUP BY c.customer_key, c.customer_name, c.operator, period
-            ORDER BY period, c.operator, c.customer_name
             """,
             (start.isoformat(), end.isoformat()),
         ).fetchall()
+        customer_rows = con.execute(
+            "SELECT customer_key, customer_name, operator FROM customers"
+        ).fetchall()
 
+    rows, sales_order_unmapped = overlay_sales_order_forecast(
+        sales_rows,
+        customer_rows,
+        get_sales_order_data(),
+        start,
+        end,
+    )
+    grouped_rows = {}
+    for row in rows:
+        period = row["report_date"][:7]
+        key = (row["customer_key"], row["customer_name"], row["operator"], period)
+        grouped = grouped_rows.setdefault(key, {
+            "customer_key": row["customer_key"],
+            "customer": row["customer_name"],
+            "operator": row["operator"],
+            "period": period,
+            "so": 0.0,
+            "actual": 0.0,
+            "actual_is_forecast": False,
+        })
+        grouped["so"] += row["so"]
+        grouped["actual"] += row["actual"]
+        grouped["actual_is_forecast"] = (
+            grouped["actual_is_forecast"] or row["actual_is_forecast"]
+        )
     return {
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
-        "items": [
-            {
-                "customer_key": row["customer_key"],
-                "customer": row["customer_name"],
-                "operator": row["operator"],
-                "period": row["period"],
-                "so": float(row["total_so"] or 0),
-                "actual": float(row["total_actual"] or 0),
-            }
-            for row in rows
-        ],
+        "items": sorted(
+            grouped_rows.values(),
+            key=lambda row: (row["period"], row["operator"], row["customer"]),
+        ),
+        "sales_order_unmapped": sales_order_unmapped,
     }
 
 
@@ -2853,12 +3125,22 @@ def dashboard(
             raise HTTPException(status_code=400, detail="Periode tren tidak valid.")
 
         rows = con.execute("""
-            SELECT c.customer_name, c.operator, s.so, s.actual, s.id,
-                   s.id, c.customer_key,
+            SELECT c.customer_name, c.operator, c.customer_key,
+                   s.so, s.actual, s.id,
                    c.customer_key LIKE 'manualfob-%%' AS manual_fob
             FROM sales s JOIN customers c ON c.customer_key=s.customer_key
             WHERE s.report_date=%s ORDER BY c.operator, c.customer_name
         """, (report_date,)).fetchall()
+        customer_rows = con.execute(
+            "SELECT customer_key, customer_name, operator FROM customers"
+        ).fetchall()
+        rows, sales_order_unmapped = overlay_sales_order_forecast(
+            [dict(row, report_date=report_date) for row in rows],
+            customer_rows,
+            get_sales_order_data(),
+            selected_date,
+            selected_date,
+        )
         operator_data = {op: [] for op in (*OPERATORS, "OFF")}
         operator_totals = {
             op: {"so": 0.0, "actual": 0.0, "diff": 0.0, "customers": 0}
@@ -2866,11 +3148,15 @@ def dashboard(
         }
         for r in rows:
             customer_row = {
-                "customer": r["customer_name"], "so": r["so"], "actual": r["actual"],
+                "customer": r["customer_name"],
+                "customer_key": r["customer_key"],
+                "so": r["so"],
+                "actual": r["actual"],
+                "actual_is_forecast": r["actual_is_forecast"],
                 "manual_fob": bool(r.get("manual_fob", False)),
-                "diff": r["actual"] - r["so"]
+                "diff": r["diff"],
             }
-            if customer_row["manual_fob"]:
+            if customer_row["manual_fob"] and r.get("id") is not None:
                 customer_row["manual_fob_id"] = r["id"]
             operator_data[r["operator"]].append(customer_row)
 
@@ -2958,6 +3244,7 @@ def dashboard(
             ),
             "operators": operator_data,
             "operator_totals": operator_totals,
+            "sales_order_unmapped": sales_order_unmapped,
             "trend_period": trend_period,
             "trend": [
                 {
@@ -3124,7 +3411,7 @@ def weekly_average_price(
     region: Optional[str] = None,
     operator: Optional[str] = None,
 ):
-    require_login(request)
+    require_admin(request)
     with db() as con:
         if not start_date or not end_date:
             latest = con.execute("SELECT MAX(report_date) AS latest_date FROM sales").fetchone()["latest_date"]
@@ -3308,7 +3595,7 @@ def has_valid_average_price(
 
 @app.get("/api/monthly-average-price")
 def monthly_average_price(request: Request, month: str):
-    require_login(request)
+    require_admin(request)
     try:
         month_start = date.fromisoformat(f"{month}-01")
     except ValueError as exc:
@@ -3463,7 +3750,9 @@ def monthly_average_price(request: Request, month: str):
 
 @app.get("/api/monthly-average-price-range")
 def monthly_average_price_range(request: Request, start_date: str, end_date: str):
-    require_login(request)
+    require_home_access(request)
+    if logged_in(request) and not is_admin(request):
+        raise HTTPException(status_code=403, detail="Akses Average Price hanya tersedia di Beranda publik dan bagi Admin.")
     try:
         start = date.fromisoformat(start_date)
         end = date.fromisoformat(end_date)

@@ -408,6 +408,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const outletContext = {
         dashboard,
         canEdit: user?.role === 'admin',
+        canViewHomeAverage: user?.role === 'admin' || !canViewAllFeatures,
         selectedDate,
         rangeStartDate,
         rangeEndDate,
@@ -586,14 +587,16 @@ export default function DashboardLayout({ user, onLogout }) {
                                         Volume
                                     </NavLink>
 
-                                    <NavLink
-                                        className={({ isActive }) =>
-                                            `nav-sublink${isActive ? ' active' : ''}`
-                                        }
-                                        to="/mingguan/average-price"
-                                    >
-                                        Average Price
-                                    </NavLink>
+                                    {user.role === 'admin' && (
+                                        <NavLink
+                                            className={({ isActive }) =>
+                                                `nav-sublink${isActive ? ' active' : ''}`
+                                            }
+                                            to="/mingguan/average-price"
+                                        >
+                                            Average Price
+                                        </NavLink>
+                                    )}
 
                                     <NavLink
                                         className={({ isActive }) =>

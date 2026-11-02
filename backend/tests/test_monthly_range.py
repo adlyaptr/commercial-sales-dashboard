@@ -26,28 +26,38 @@ class MemoryMonthlyRange:
         return False
 
     def execute(self, statement, parameters=None):
-        if "DATE_FORMAT(s.report_date" not in statement:
-            raise AssertionError(f"Unexpected SQL in monthly range test: {statement}")
-        if parameters != ("2025-12-15", "2026-02-10"):
-            raise AssertionError(f"Unexpected date parameters: {parameters}")
-        return SimpleNamespace(fetchall=lambda: [
-            {
+        if "FROM sales" in statement and "WHERE s.report_date BETWEEN %s AND %s" in statement:
+            if parameters != ("2025-12-15", "2026-02-10"):
+                raise AssertionError(f"Unexpected date parameters: {parameters}")
+            return SimpleNamespace(fetchall=lambda: [
+                {
+                    "report_date": "2025-12-15",
+                    "customer_key": "customer-1",
+                    "customer_name": "Customer Contoh",
+                    "operator": "SETU",
+                    "so": 120,
+                    "actual": 100,
+                    "id": 1,
+                    "manual_fob": False,
+                },
+                {
+                    "report_date": "2026-01-03",
+                    "customer_key": "customer-1",
+                    "customer_name": "Customer Contoh",
+                    "operator": "SETU",
+                    "so": 80,
+                    "actual": 75,
+                    "id": 2,
+                    "manual_fob": False,
+                },
+            ])
+        if statement.startswith("SELECT customer_key, customer_name, operator FROM customers"):
+            return SimpleNamespace(fetchall=lambda: [{
                 "customer_key": "customer-1",
                 "customer_name": "Customer Contoh",
                 "operator": "SETU",
-                "period": "2025-12",
-                "total_so": 120,
-                "total_actual": 100,
-            },
-            {
-                "customer_key": "customer-1",
-                "customer_name": "Customer Contoh",
-                "operator": "SETU",
-                "period": "2026-01",
-                "total_so": 80,
-                "total_actual": 75,
-            },
-        ])
+            }])
+        raise AssertionError(f"Unexpected SQL in monthly range test: {statement}")
 
 
 class MemoryAveragePriceRange:
@@ -87,7 +97,10 @@ class MemoryAveragePriceRange:
 
 class MonthlyRangeTests(unittest.TestCase):
     def test_returns_monthly_customer_totals_for_exact_date_range(self):
-        with patch.object(main, "db", return_value=MemoryMonthlyRange()):
+        with (
+            patch.object(main, "db", return_value=MemoryMonthlyRange()),
+            patch.object(main, "get_sales_order_data", return_value={}),
+        ):
             result = main.monthly_range_summary(
                 FakeRequest(),
                 "2025-12-15",
@@ -133,31 +146,39 @@ class MonthlyRangeTests(unittest.TestCase):
             row["rupiah"] / expected_sm3,
         )
 
-    def test_public_and_division_roles_cannot_access_average_price_range(self):
-        for request in (AnonymousRequest(), DivisionRequest()):
-            with self.subTest(role=request.session.get("role")):
-                with self.assertRaises(main.HTTPException) as error:
-                    main.monthly_average_price_range(
-                        request,
-                        "2026-10-01",
-                        "2026-10-31",
-                    )
-                self.assertIn(error.exception.status_code, {401, 403})
-
-    def test_user_average_price_range_can_view_customer_details(self):
-        user_request = SimpleNamespace(session={"username": "reader", "role": "user"})
-        with (
-            patch.object(main, "require_login"),
-            patch.object(main, "db", return_value=MemoryAveragePriceRange()),
-        ):
+    def test_public_can_view_aggregate_average_price_without_customer_details(self):
+        with patch.object(main, "db", return_value=MemoryAveragePriceRange()):
             result = main.monthly_average_price_range(
-                user_request,
+                AnonymousRequest(),
                 "2026-10-01",
                 "2026-10-31",
             )
 
-        self.assertEqual(result["rows"][0]["customer"], "Customer Contoh")
-        self.assertEqual(result["rows"][0]["sm3"], 28095)
+        self.assertEqual(result["rows"], [])
+        self.assertEqual(result["valid_price_count"], 1)
+        self.assertAlmostEqual(
+            result["totals"]["average_price_rp_sm3"],
+            result["totals"]["rupiah"] / result["totals"]["sm3"],
+        )
+
+    def test_legacy_division_session_only_receives_public_aggregate(self):
+        with patch.object(main, "db", return_value=MemoryAveragePriceRange()):
+            result = main.monthly_average_price_range(
+                DivisionRequest(),
+                "2026-10-01",
+                "2026-10-31",
+            )
+        self.assertEqual(result["rows"], [])
+        self.assertEqual(result["valid_price_count"], 1)
+
+    def test_user_cannot_access_average_price_range(self):
+        user_request = SimpleNamespace(session={"username": "reader", "role": "user"})
+        with (
+            patch.object(main, "require_home_access"),
+            self.assertRaises(main.HTTPException) as error,
+        ):
+            main.monthly_average_price_range(user_request, "2026-10-01", "2026-10-31")
+        self.assertEqual(error.exception.status_code, 403)
 
     def test_excludes_customers_without_valid_price_from_average_totals(self):
         class IncludesUnpricedCustomer(MemoryAveragePriceRange):

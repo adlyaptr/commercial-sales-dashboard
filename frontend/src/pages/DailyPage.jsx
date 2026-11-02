@@ -35,6 +35,7 @@ export default function DailyPage() {
     const [summaryError, setSummaryError] = useState('');
     const [summaryLoading, setSummaryLoading] = useState(false);
     const [periodRows, setPeriodRows] = useState([]);
+    const [periodSalesOrderUnmapped, setPeriodSalesOrderUnmapped] = useState([]);
     const [periodError, setPeriodError] = useState('');
     const [periodLoading, setPeriodLoading] = useState(false);
     const isDateRange = Boolean(rangeStartDate && rangeEndDate && rangeStartDate !== rangeEndDate);
@@ -83,6 +84,7 @@ export default function DailyPage() {
     useEffect(() => {
         if (!isDateRange) {
             setPeriodRows([]);
+            setPeriodSalesOrderUnmapped([]);
             setPeriodError('');
             setPeriodLoading(false);
             return undefined;
@@ -98,10 +100,16 @@ export default function DailyPage() {
         });
         api(`/api/monthly-range?${query.toString()}`)
             .then((result) => {
-                if (active) setPeriodRows(result.items || []);
+                if (active) {
+                    setPeriodRows(result.items || []);
+                    setPeriodSalesOrderUnmapped(result.sales_order_unmapped || []);
+                }
             })
             .catch((error) => {
-                if (active) setPeriodError(error.message || 'Data periode gagal dimuat.');
+                if (active) {
+                    setPeriodError(error.message || 'Data periode gagal dimuat.');
+                    setPeriodSalesOrderUnmapped([]);
+                }
             })
             .finally(() => {
                 if (active) setPeriodLoading(false);
@@ -128,10 +136,12 @@ export default function DailyPage() {
                 operator: item.operator,
                 so: 0,
                 actual: 0,
+                actual_is_forecast: false,
                 manual_fob: String(item.customer_key).startsWith('manualfob-'),
             };
             customer.so += Number(item.so) || 0;
             customer.actual += Number(item.actual) || 0;
+            customer.actual_is_forecast ||= Boolean(item.actual_is_forecast);
             customers.set(key, customer);
         }
 
@@ -150,8 +160,9 @@ export default function DailyPage() {
             total_so: totalSo,
             total_actual: totalActual,
             diff: totalActual - totalSo,
+            sales_order_unmapped: periodSalesOrderUnmapped,
         };
-    }, [isDateRange, periodRows, periodLoading, periodError]);
+    }, [isDateRange, periodRows, periodLoading, periodError, periodSalesOrderUnmapped]);
 
     async function selectFile(selectedFile) {
         setFile(selectedFile);
@@ -305,6 +316,7 @@ export default function DailyPage() {
     const formatDateRange = (startDate, endDate) =>
         `${startDate?.split('-').reverse().join('/') ?? ''} - ${endDate?.split('-').reverse().join('/') ?? ''}`;
     const displayedDashboard = isDateRange ? periodDashboard : dashboard;
+    const unmappedSalesOrderCustomers = displayedDashboard?.sales_order_unmapped ?? [];
 
     return (
         <>
@@ -313,6 +325,12 @@ export default function DailyPage() {
             )}
             {isDateRange && periodError && (
                 <div className="notice bad" role="alert">{periodError}</div>
+            )}
+            {unmappedSalesOrderCustomers.length > 0 && (
+                <div className="notice bad" role="alert">
+                    Customer berikut dari sheet SO belum cocok dengan master customer:
+                    {' '}{unmappedSalesOrderCustomers.join(', ')}.
+                </div>
             )}
             <OperatorTables
                 data={displayedDashboard?.operators ?? {}}

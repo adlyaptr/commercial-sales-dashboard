@@ -135,11 +135,19 @@ class MemoryDashboard:
 
     def execute(self, statement, parameters=None):
         normalized_statement = statement.strip()
-        if normalized_statement.startswith("SELECT c.customer_name, c.operator, s.so, s.actual"):
+        if normalized_statement.startswith("SELECT c.customer_name, c.operator, c.customer_key"):
             return SimpleNamespace(fetchall=lambda: [
-                {"customer_name": "Pelanggan Setu", "operator": "SETU", "so": 100, "actual": 120},
-                {"customer_name": "Pelanggan KHT", "operator": "KHT", "so": 0, "actual": 10},
-                {"customer_name": "Pelanggan OFF", "operator": "OFF", "so": 50, "actual": 20},
+                {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU", "so": 100, "actual": 120, "id": 1, "manual_fob": False},
+                {"customer_key": "pelanggankht", "customer_name": "Pelanggan KHT", "operator": "KHT", "so": 0, "actual": 10, "id": 2, "manual_fob": False},
+                {"customer_key": "pelangganoff", "customer_name": "Pelanggan OFF", "operator": "OFF", "so": 50, "actual": 20, "id": 3, "manual_fob": False},
+            ])
+
+        if normalized_statement.startswith("SELECT customer_key, customer_name, operator FROM customers"):
+            return SimpleNamespace(fetchall=lambda: [
+                {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU"},
+                {"customer_key": "pelanggankht", "customer_name": "Pelanggan KHT", "operator": "KHT"},
+                {"customer_key": "pelangganoff", "customer_name": "Pelanggan OFF", "operator": "OFF"},
+                {"customer_key": "pelangganforecast", "customer_name": "Pelanggan Forecast", "operator": "WUNUT"},
             ])
 
         if "AS period_start" in normalized_statement:
@@ -221,6 +229,12 @@ class MemoryHomeSummaryRange:
             if parameters != ("2026-08-01", "2026-11-01"):
                 raise AssertionError(f"Unexpected summary-report date range: {parameters}")
             return SimpleNamespace(fetchone=lambda: {"total_so": 1800, "total_actual": 1650})
+        if "FROM sales s" in statement and "monthly_average_price_inputs price_inputs" in statement:
+            if parameters != ("2026-08-01", "2026-10-31"):
+                raise AssertionError(f"Unexpected regional-volume date range: {parameters}")
+            return SimpleNamespace(fetchall=lambda: [
+                {"region": "JAWA BARAT", "actual_sm3": 260},
+            ])
         raise AssertionError(f"Unexpected SQL in test: {statement}")
 
 
@@ -487,6 +501,9 @@ class DashboardApiTests(unittest.TestCase):
         self.db_patch = patch.object(main, "db", return_value=MemoryDashboard())
         self.db_patch.start()
         self.addCleanup(self.db_patch.stop)
+        self.sales_order_patch = patch.object(main, "get_sales_order_data", return_value={})
+        self.sales_order_patch.start()
+        self.addCleanup(self.sales_order_patch.stop)
 
     def test_dashboard_returns_sales_totals_and_fills_monthly_trend(self):
         result = main.dashboard(
@@ -507,6 +524,26 @@ class DashboardApiTests(unittest.TestCase):
         self.assertEqual(result["trend"][-1]["period_start"], "2026-10-01")
         self.assertTrue(result["trend"][-1]["has_data"])
         self.assertEqual(result["trend"][-1]["actual"], 150)
+
+    def test_dashboard_uses_sheet_so_and_preserves_imported_actual(self):
+        sales_orders = {
+            "2026-10-14": [
+                {"customer": "Pelanggan Setu", "so": 140},
+                {"customer": "Pelanggan KHT", "so": 60},
+            ],
+        }
+        with patch.object(main, "get_sales_order_data", return_value=sales_orders):
+            result = main.dashboard(
+                FakeRequest(),
+                report_date="2026-10-14",
+                trend_period="monthly",
+            )
+
+        self.assertEqual(result["total_so"], 250)
+        self.assertEqual(result["total_actual"], 150)
+        setu = result["operators"]["SETU"][0]
+        self.assertEqual(setu["so"], 140)
+        self.assertEqual(setu["actual"], 120)
 
     def test_dashboard_rejects_unknown_trend_period(self):
         with self.assertRaises(main.HTTPException) as invalid:
@@ -545,6 +582,9 @@ class HomeSummaryTests(unittest.TestCase):
         self.assertFalse(result["year_months"][1]["has_data"])
         self.assertEqual(result["month_summary"]["manual_so"], 1800)
         self.assertEqual(result["summary_report"], {"so": 1800, "actual": 1650})
+        self.assertEqual(result["regional_volumes"], [
+            {"region": "JAWA BARAT", "actual_sm3": 260.0},
+        ])
 
     def test_home_summary_builds_daily_weekly_monthly_and_yearly_totals(self):
         with patch.object(main, "db", return_value=MemoryHomeSummary()):

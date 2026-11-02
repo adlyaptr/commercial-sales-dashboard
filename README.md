@@ -3,9 +3,9 @@ Website Sistem Laporan Commercial
 
 ## Role pengguna
 
-- **Admin** login menggunakan akun yang ditentukan oleh `APP_USERNAME` dan `APP_PASSWORD`. Admin dapat melihat seluruh halaman, mengubah data, dan mengelola akun.
-- **User** login menggunakan akun yang dibuat Admin. User dapat melihat seluruh halaman dan data, tetapi tidak dapat mengubah atau menghapus data maupun mengelola akun.
-- **Divisi** membuka tautan dashboard tanpa login dan hanya dapat melihat Beranda dengan ringkasan agregat.
+- **Admin** login menggunakan akun yang ditentukan oleh `APP_USERNAME` dan `APP_PASSWORD`. Admin dapat melihat seluruh halaman, termasuk Average Price, mengubah data, dan mengelola akun.
+- **User** login menggunakan akun yang dibuat Admin. User dapat melihat seluruh halaman dan data kecuali Average Price, tetapi tidak dapat mengubah atau menghapus data maupun mengelola akun.
+- **Divisi** membuka tautan dashboard tanpa login dan dapat melihat seluruh ringkasan agregat di Beranda, termasuk Average Price, volume per wilayah, dan ringkasan complain. Detail customer dan isi keluhan tidak ditampilkan.
 
 Beranda (`/` atau `/beranda`) dapat dibuka tanpa login dan tidak menampilkan detail customer atau isi keluhan. Hanya Admin yang dapat membuat akun User, mengganti password, dan menghapus akun pada halaman Pengguna. Akun Divisi lama yang masih tersimpan tidak dapat login; Divisi menggunakan tautan dashboard publik. Kolom role ditambahkan otomatis pada tabel `app_users` saat backend dimulai.
 
@@ -15,6 +15,12 @@ Halaman Issue (`/issue`) hanya menampilkan data dari Google Sheets yang dikonfig
 
 Halaman ini tidak mengubah spreadsheet. Perubahan data dilakukan langsung di Google Sheets. Kolom yang digunakan meliputi Customer (PT), Customer PIC, Terjadinya keluhan, Jenis Keluhan, Root cause, Dampak keluhan, File Pendukung, Tindakan Segera, Update terakhir, Tindakan Corrective, Target Date, dan Status.
 
+## Prognosa Sales Order Harian
+
+Tabel Harian membaca rencana per customer dari tab `SO` pada spreadsheet Volume CNG 2026 (`SALES_ORDER_SHEET_ID` dan `SALES_ORDER_SHEET_GID`, default GID `694583576`). Sheet dibaca dari ekspor CSV publik dan disegarkan setiap lima menit. Nama customer dicocokkan dengan master customer; nama dengan nilai SO yang belum cocok ditampilkan sebagai peringatan.
+
+Nilai SO dari sheet menjadi SO di tabel Harian. Actual yang sudah diimpor tetap digunakan. Jika belum ada data actual pada tanggal mana pun, termasuk hari ini, kolom Actual mengikuti SO sebagai prognosa dan diberi penanda `P`. Pastikan sheet dapat dibaca secara publik agar backend dapat mengakses ekspor CSV.
+
 ## Budget Monitoring
 
 Halaman Budget (`/budget`) membaca target bulanan dari sheet dengan GID `737662524` dan realisasi kategori dari tab `Summary Finance` pada spreadsheet yang sama dengan halaman Issue. Service account read-only yang digunakan untuk Issue harus memiliki izin Viewer pada spreadsheet. Jika service account belum dikonfigurasi, halaman mencoba membaca sheet yang dipublikasikan melalui Google Sheets. Data disinkronkan saat halaman dibuka, dapat diperbarui dengan tombol Sinkronkan Google Sheets, dan disegarkan otomatis setiap lima menit.
@@ -23,7 +29,7 @@ Dashboard menampilkan lima kategori operasional pada contoh: Kunjungan Rutin Exi
 
 ## Average Price
 
-Perhitungan bulanan menggunakan nilai volume dan hasil dari sheet `AVG` workbook 2026 untuk Januari–November; daftar customer diurutkan mengikuti sheet masing-masing bulan. Nilai impor disimpan sebagai override per customer dan faktor konversi mengikuti nilai presisi pada workbook. Nilai hasil workbook tetap digunakan saat faktor atau kurs diubah selama harga customer tidak berubah. Jika harga customer diubah, total dihitung ulang menggunakan volume dan MMBTU workbook. Total konsolidasi mengikuti sheet `Summary`: KSN Ranca pada Juni dan customer Jawa Timur pada September–November tetap ditampilkan sebagai detail, tetapi tidak masuk total. Untuk rentang tanggal parsial, sistem memakai volume sales aktual agar tidak memakai total satu bulan penuh. Data November 2026 pada workbook berstatus prognosa; detail Desember belum tersedia.
+Average Price tersedia di Beranda publik hanya dalam bentuk agregat tanpa detail customer; User tidak dapat melihat Average Price. Halaman Average Price dan data detail hanya tersedia untuk Admin. Perhitungan bulanan menggunakan nilai volume dan hasil dari sheet `AVG` workbook 2026 untuk Januari–November; daftar customer diurutkan mengikuti sheet masing-masing bulan. Nilai impor disimpan sebagai override per customer dan faktor konversi mengikuti nilai presisi pada workbook. Nilai hasil workbook tetap digunakan saat faktor atau kurs diubah selama harga customer tidak berubah. Jika harga customer diubah, total dihitung ulang menggunakan volume dan MMBTU workbook. Total konsolidasi mengikuti sheet `Summary`: KSN Ranca pada Juni dan customer Jawa Timur pada September–November tetap ditampilkan sebagai detail, tetapi tidak masuk total. Untuk rentang tanggal parsial, sistem memakai volume sales aktual agar tidak memakai total satu bulan penuh. Data November 2026 pada workbook berstatus prognosa; detail Desember belum tersedia.
 
 Wilayah customer pada input Average Price dapat dipilih atau diubah oleh pengguna untuk setiap bulan. Wilayah tersebut digunakan untuk pengelompokan subtotal dan perbandingan wilayah.
 

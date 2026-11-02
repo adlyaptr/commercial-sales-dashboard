@@ -105,7 +105,14 @@ function PeriodMetrics({ summary, reportSummary }) {
 }
 
 export default function HomePage() {
-    const { rangeStartDate, rangeEndDate, dataError, loadingDates } = useOutletContext();
+    const {
+        rangeStartDate,
+        rangeEndDate,
+        dataError,
+        loadingDates,
+        canEdit,
+        canViewHomeAverage,
+    } = useOutletContext();
     const [summary, setSummary] = useState(null);
     const [priceReport, setPriceReport] = useState(null);
     const [complaints, setComplaints] = useState([]);
@@ -129,28 +136,30 @@ export default function HomePage() {
             start_date: rangeStartDate,
             end_date: rangeEndDate,
         });
-        Promise.allSettled([
-            api(`/api/home-summary-range?${query.toString()}`),
-            api(`/api/monthly-average-price-range?${query.toString()}`),
-            api('/api/complaints'),
-        ]).then((results) => {
+        const requests = [
+            ['summary', api(`/api/home-summary-range?${query.toString()}`)],
+            ...(canViewHomeAverage ? [['price', api(`/api/monthly-average-price-range?${query.toString()}`)]] : []),
+            ['complaints', api('/api/complaints')],
+        ];
+        if (!canEdit) setPriceReport(null);
+        Promise.allSettled(requests.map(([, request]) => request)).then((results) => {
             if (!active) return;
-            const keys = ['summary', 'price', 'complaints'];
             const nextErrors = {};
             results.forEach((result, index) => {
+                const key = requests[index][0];
                 if (result.status === 'fulfilled') {
-                    if (index === 0) {
+                    if (key === 'summary') {
                         setSummary(result.value);
-                    } else if (index === 1) {
+                    } else if (key === 'price') {
                         setPriceReport(result.value);
-                    } else if (index === 2) {
+                    } else if (key === 'complaints') {
                         setComplaints(result.value);
                     }
                 } else {
-                    if (index === 0) setSummary(null);
-                    if (index === 1) setPriceReport(null);
-                    if (index === 2) setComplaints([]);
-                    nextErrors[keys[index]] = result.reason?.message || 'Data gagal dimuat.';
+                    if (key === 'summary') setSummary(null);
+                    if (key === 'price') setPriceReport(null);
+                    if (key === 'complaints') setComplaints([]);
+                    nextErrors[key] = result.reason?.message || 'Data gagal dimuat.';
                 }
             });
             setErrors(nextErrors);
@@ -159,7 +168,7 @@ export default function HomePage() {
         });
 
         return () => { active = false; };
-    }, [rangeStartDate, rangeEndDate]);
+    }, [rangeStartDate, rangeEndDate, canEdit, canViewHomeAverage]);
 
     const monthlyComplaints = complaints.filter((item) =>
         item.date >= rangeStartDate && item.date <= rangeEndDate);
@@ -204,7 +213,7 @@ export default function HomePage() {
             'JAWA TENGAH': 0,
             'JAWA TIMUR': 0,
         };
-        (priceReport?.rows ?? []).forEach((row) => {
+        (summary?.regional_volumes ?? []).forEach((row) => {
             const normalizedRegion = String(row.region || '').trim().toUpperCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
             const regionKey = normalizedRegion.includes('JAWA BARAT') || normalizedRegion === 'JABAR'
                 ? 'JAWA BARAT'
@@ -214,11 +223,11 @@ export default function HomePage() {
                         ? 'JAWA TIMUR'
                         : null;
             if (!regionKey) return;
-            totals[regionKey] = (totals[regionKey] ?? 0) + Number(row.actual_sm3 ?? 0);
+            totals[regionKey] += Number(row.actual_sm3 ?? 0);
         });
         const labels = { 'JAWA BARAT': 'JABAR', 'JAWA TENGAH': 'JATENG', 'JAWA TIMUR': 'JATIM' };
         return Object.entries(totals).map(([region, volume]) => ({ region: labels[region], volume }));
-    }, [priceReport]);
+    }, [summary]);
     const totalRegionalVolume = regionalVolumes.reduce((total, item) => total + item.volume, 0);
 
     return (
@@ -255,15 +264,17 @@ export default function HomePage() {
                     </Message>
                 </article>
                     <div className="home-insights-stack">
-                        <article className="home-subpanel home-average-panel">
-                            <h3><SectionIcon name="price" />Average Price periode terpilih</h3>
-                            <Message loading={loading} error={errors.price} empty={validPriceCount === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
-                                <div className="home-year-summary home-price-summary">
-                                    <div><small>Average Rp/Sm³</small><strong>{formatAveragePrice(priceReport?.totals?.average_price_rp_sm3)}</strong></div>
-                                    <div><small>Total MMBTU</small><strong>{formatNumber(priceReport?.totals?.mmbtu, 3)}</strong></div>
-                                </div>
-                            </Message>
-                        </article>
+                        {canViewHomeAverage && (
+                            <article className="home-subpanel home-average-panel">
+                                <h3><SectionIcon name="price" />Average Price periode terpilih</h3>
+                                <Message loading={loading} error={errors.price} empty={validPriceCount === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
+                                    <div className="home-year-summary home-price-summary">
+                                        <div><small>Average Rp/Sm³</small><strong>{formatAveragePrice(priceReport?.totals?.average_price_rp_sm3)}</strong></div>
+                                        <div><small>Total MMBTU</small><strong>{formatNumber(priceReport?.totals?.mmbtu, 3)}</strong></div>
+                                    </div>
+                                </Message>
+                            </article>
+                        )}
                         <article className="home-subpanel home-complaint-panel">
                             <h3><SectionIcon name="complaint" />Complain periode terpilih</h3>
                             <Message loading={loading} error={errors.complaints} empty={monthlyComplaints.length === 0 ? 'Tidak ada complain pada periode terpilih.' : ''}>

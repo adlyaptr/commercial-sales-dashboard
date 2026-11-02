@@ -120,7 +120,12 @@ function OperatorCard({
                                                 {onEditManualFob && <button type="button" onClick={() => onEditManualFob(row, operator)}>Edit</button>}
                                                 {onDeleteManualFob && <button type="button" onClick={() => onDeleteManualFob(row)}>Hapus</button>}
                                             </span>}
-                                        </td><td>{formatNumber(row.so)}</td><td>{formatNumber(row.actual)}</td>
+                                        </td><td>{formatNumber(row.so)}</td><td
+                                            title={row.actual_is_forecast ? 'Prognosa mengikuti SO karena belum ada data actual.' : undefined}
+                                        >
+                                            {formatNumber(row.actual)}
+                                            {row.actual_is_forecast && <small className="daily-forecast-mark" aria-label="Prognosa"> P</small>}
+                                        </td>
                                         <td className={row.diff >= 0 ? 'diff-pos' : 'diff-neg'}>{row.diff > 0 ? '+' : ''}{formatNumber(row.diff)}</td>
                                     </tr>
                                 ))}
