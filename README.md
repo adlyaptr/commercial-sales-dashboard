@@ -21,6 +21,8 @@ Tabel Harian membaca rencana per customer dari tab `SO` pada spreadsheet Volume 
 
 Nilai SO dari sheet menjadi SO di tabel Harian. Actual yang sudah diimpor tetap digunakan. Jika belum ada data actual pada tanggal mana pun, termasuk hari ini, kolom Actual mengikuti SO sebagai prognosa dan diberi penanda `P`. Pastikan sheet dapat dibaca secara publik agar backend dapat mengakses ekspor CSV.
 
+Volume per wilayah di Beranda memakai nilai Actual setelah aturan prognosa harian diterapkan: Actual impor tetap dipakai, sedangkan tanggal tanpa actual impor mengikuti SO dari sheet. Nilai tersebut dikelompokkan memakai wilayah customer yang tersimpan untuk masing-masing bulan pada input Average Price.
+
 ## Budget Monitoring
 
 Halaman Budget (`/budget`) membaca target bulanan dari sheet dengan GID `737662524` dan realisasi kategori dari tab `Summary Finance` pada spreadsheet yang sama dengan halaman Issue. Service account read-only yang digunakan untuk Issue harus memiliki izin Viewer pada spreadsheet. Jika service account belum dikonfigurasi, halaman mencoba membaca sheet yang dipublikasikan melalui Google Sheets. Data disinkronkan saat halaman dibuka, dapat diperbarui dengan tombol Sinkronkan Google Sheets, dan disegarkan otomatis setiap lima menit.

@@ -1469,13 +1469,16 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
     with db() as con:
         rows = con.execute(
             """
-            SELECT s.report_date,c.operator,s.customer_key,s.so,s.actual
+            SELECT s.report_date,c.customer_name,c.operator,s.customer_key,s.so,s.actual
             FROM sales s
             JOIN customers c ON c.customer_key=s.customer_key
             WHERE s.report_date BETWEEN %s AND %s
             ORDER BY s.report_date,c.operator,c.customer_key
             """,
             (start.isoformat(), end.isoformat()),
+        ).fetchall()
+        customer_rows = con.execute(
+            "SELECT customer_key,customer_name,operator FROM customers"
         ).fetchall()
         target_rows = con.execute(
             "SELECT month_start,so FROM monthly_so_targets WHERE month_start BETWEEN %s AND %s",
@@ -1488,17 +1491,44 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
         ).fetchone()
         regional_volume_rows = con.execute(
             """
-            SELECT COALESCE(price_inputs.region,'') AS region,
-                   SUM(s.actual) AS actual_sm3
-            FROM sales s
-            JOIN monthly_average_price_inputs price_inputs
-              ON price_inputs.month_start=DATE_FORMAT(s.report_date, '%%Y-%%m-01')
-             AND price_inputs.customer_key=s.customer_key
-            WHERE s.report_date BETWEEN %s AND %s
-            GROUP BY price_inputs.region
+            SELECT DATE_FORMAT(month_start, '%%Y-%%m') AS period,
+                   customer_key,COALESCE(region,'') AS region
+            FROM monthly_average_price_inputs
+            WHERE month_start BETWEEN %s AND %s
             """,
-            (start.isoformat(), end.isoformat()),
+            (first_month.isoformat(), last_month.isoformat()),
         ).fetchall()
+
+    regional_forecast_error = None
+    try:
+        sales_orders_by_date = get_sales_order_data()
+    except HTTPException as exc:
+        sales_orders_by_date = {}
+        regional_forecast_error = str(exc.detail)
+
+    forecast_rows, _ = overlay_sales_order_forecast(
+        rows,
+        customer_rows,
+        sales_orders_by_date,
+        start,
+        end,
+    )
+    regions_by_period_customer = {
+        (str(row["period"]), str(row["customer_key"])): str(row["region"] or "")
+        for row in regional_volume_rows
+    }
+    regional_volume_totals = {}
+    for row in forecast_rows:
+        report_date = row["report_date"]
+        period = report_date[:7] if isinstance(report_date, str) else report_date.strftime("%Y-%m")
+        region = regions_by_period_customer.get(
+            (period, str(row["customer_key"])),
+            "",
+        )
+        if region:
+            regional_volume_totals[region] = (
+                regional_volume_totals.get(region, 0.0) + row["actual"]
+            )
 
     monthly_targets = {
         str(row["month_start"])[:7]: float(row["so"] or 0)
@@ -1635,11 +1665,12 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
         },
         "regional_volumes": [
             {
-                "region": row["region"] or "",
-                "actual_sm3": float(row["actual_sm3"] or 0),
+                "region": region,
+                "actual_sm3": actual_sm3,
             }
-            for row in regional_volume_rows
+            for region, actual_sm3 in sorted(regional_volume_totals.items())
         ],
+        "regional_volume_forecast_error": regional_forecast_error,
         "year_summary": summary_record(
             totals,
             operators=operators_totals,

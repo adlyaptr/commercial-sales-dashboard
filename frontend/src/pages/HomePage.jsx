@@ -257,6 +257,11 @@ export default function HomePage() {
                                     ))}
                                 </div>
                             </div>
+                            {summary?.regional_volume_forecast_error && (
+                                <div className="home-message home-message-error" role="status">
+                                    Prognosa SO tidak dapat dimuat; volume ini hanya mencakup Actual yang sudah diimpor. {summary.regional_volume_forecast_error}
+                                </div>
+                            )}
                             <div className="home-volume-chart">
                                 <Bar data={volumeComparison} options={volumeChartOptions} plugins={[volumeValueLabels]} />
                             </div>
