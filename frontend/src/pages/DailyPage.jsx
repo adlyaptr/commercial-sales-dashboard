@@ -21,7 +21,15 @@ function parseIndonesianNumber(value) {
 }
 
 export default function DailyPage() {
-    const { dashboard, selectedDate, rangeStartDate, rangeEndDate, refreshDashboard, canEdit } = useOutletContext();
+    const {
+        dashboard,
+        selectedDate,
+        rangeStartDate,
+        rangeEndDate,
+        refreshDashboard,
+        forecastRefreshKey,
+        canEdit,
+    } = useOutletContext();
     const [file, setFile] = useState(null);
     const [fileInputKey, setFileInputKey] = useState(0);
     const [notice, setNotice] = useState(null);
@@ -116,7 +124,7 @@ export default function DailyPage() {
             });
 
         return () => { active = false; };
-    }, [isDateRange, rangeStartDate, rangeEndDate]);
+    }, [isDateRange, rangeStartDate, rangeEndDate, forecastRefreshKey]);
 
     const periodDashboard = useMemo(() => {
         if (!isDateRange || periodLoading || periodError) return null;

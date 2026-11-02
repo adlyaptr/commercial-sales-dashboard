@@ -21,6 +21,8 @@ Tabel Harian membaca rencana per customer dari tab `SO` pada spreadsheet Volume 
 
 Nilai SO dari sheet menjadi SO di tabel Harian. Actual yang sudah diimpor tetap digunakan. Jika belum ada data actual pada tanggal mana pun, termasuk hari ini, kolom Actual mengikuti SO sebagai prognosa dan diberi penanda `P`. Pastikan sheet dapat dibaca secara publik agar backend dapat mengakses ekspor CSV.
 
+Saat halaman Harian terbuka, data dashboard dan rentang tanggal diperbarui otomatis setiap sekitar lima menit (selama tab browser aktif), mengikuti cache sheet SO lima menit. Perubahan spreadsheet mungkin memerlukan waktu hingga satu siklus refresh untuk tampil.
+
 Volume per wilayah di Beranda memakai nilai Actual setelah aturan prognosa harian diterapkan: Actual impor tetap dipakai, sedangkan tanggal tanpa actual impor mengikuti SO dari sheet. Nilai tersebut dikelompokkan memakai wilayah customer yang tersimpan untuk masing-masing bulan pada input Average Price.
 
 ## Budget Monitoring

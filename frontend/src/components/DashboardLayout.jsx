@@ -12,6 +12,8 @@ import logoImage from '../assets/reethau.png';
 const classForNav = ({ isActive }) =>
     `nav-link${isActive ? ' active' : ''}`;
 
+const SALES_ORDER_REFRESH_INTERVAL_MS = 310_000;
+
 function NavigationIcon({ name }) {
     const commonProps = {
         'aria-hidden': true,
@@ -136,6 +138,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const [averagePriceMonth, setAveragePriceMonth] = useState('');
     const [rangePickerOpen, setRangePickerOpen] = useState(false);
     const [dashboard, setDashboard] = useState(null);
+    const [forecastRefreshKey, setForecastRefreshKey] = useState(0);
     const [dataError, setDataError] = useState('');
     const [loadingDates, setLoadingDates] = useState(true);
     const [loggingOut, setLoggingOut] = useState(false);
@@ -335,6 +338,35 @@ export default function DashboardLayout({ user, onLogout }) {
         };
     }, [selectedDate, canViewAllFeatures]);
 
+    useEffect(() => {
+        if (!isDaily || !canViewAllFeatures || !selectedDate) return undefined;
+
+        let active = true;
+        const timer = window.setInterval(async () => {
+            if (document.visibilityState === 'hidden') return;
+            try {
+                const refreshed = await api(
+                    `/api/dashboard?report_date=${encodeURIComponent(selectedDate)}`
+                );
+                if (!active) return;
+                setDashboard(refreshed);
+                setForecastRefreshKey((key) => key + 1);
+                setDataError('');
+            } catch (error) {
+                if (active) {
+                    setDataError(
+                        error?.message || 'Gagal memperbarui prognosa dari Google Sheets.'
+                    );
+                }
+            }
+        }, SALES_ORDER_REFRESH_INTERVAL_MS);
+
+        return () => {
+            active = false;
+            window.clearInterval(timer);
+        };
+    }, [isDaily, selectedDate, canViewAllFeatures]);
+
     // Dipanggil oleh halaman import setelah proses import berhasil.
     // Memuat ulang daftar tanggal dan mempertahankan tanggal lama
     // jika tanggal tersebut masih ada.
@@ -409,6 +441,7 @@ export default function DashboardLayout({ user, onLogout }) {
         dashboard,
         canEdit: user?.role === 'admin',
         canViewHomeAverage: canViewAllFeatures,
+        forecastRefreshKey,
         selectedDate,
         rangeStartDate,
         rangeEndDate,
