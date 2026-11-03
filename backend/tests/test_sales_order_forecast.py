@@ -41,7 +41,7 @@ class SalesOrderForecastTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Nilai SO customer"):
             main.parse_sales_order_spreadsheet(csv_text)
 
-    def test_overlay_uses_so_as_forecast_when_actual_is_not_imported(self):
+    def test_overlay_forecasts_only_when_no_imported_row_exists(self):
         sales_rows = [{
             "report_date": "2026-11-03",
             "customer_key": "kf",
@@ -100,8 +100,8 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertTrue(by_customer_date[("clin", "2026-11-02")]["actual_is_forecast"])
         self.assertEqual(by_customer_date[("clin", "2026-11-03")]["actual"], 1300)
         self.assertTrue(by_customer_date[("clin", "2026-11-03")]["actual_is_forecast"])
-        self.assertEqual(by_customer_date[("pentawira", "2026-11-03")]["actual"], 9000)
-        self.assertTrue(by_customer_date[("pentawira", "2026-11-03")]["actual_is_forecast"])
+        self.assertEqual(by_customer_date[("pentawira", "2026-11-03")]["actual"], 0)
+        self.assertFalse(by_customer_date[("pentawira", "2026-11-03")]["actual_is_forecast"])
         self.assertEqual(by_customer_date[("kf", "2026-11-03")]["actual"], 12)
         self.assertFalse(by_customer_date[("kf", "2026-11-03")]["actual_is_forecast"])
         self.assertEqual(unmapped, ["Missing Customer"])
