@@ -504,6 +504,9 @@ def overlay_sales_order_forecast(
             existing = enriched_by_key.get(key)
             if existing is not None:
                 existing["so"] = order["so"]
+                if float(existing.get("actual") or 0) <= 0 and order["so"] > 0:
+                    existing["actual"] = order["so"]
+                    existing["actual_is_forecast"] = True
                 continue
 
             enriched_by_key[key] = {

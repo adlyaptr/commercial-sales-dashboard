@@ -51,6 +51,15 @@ class SalesOrderForecastTests(unittest.TestCase):
             "actual": 12,
             "id": 7,
             "manual_fob": False,
+        }, {
+            "report_date": "2026-11-03",
+            "customer_key": "pentawira",
+            "customer_name": "PENTAWIRA",
+            "operator": "KHT",
+            "so": 0,
+            "actual": 0,
+            "id": 8,
+            "manual_fob": False,
         }]
         customers = [
             {"customer_key": "clin", "customer_name": "CLIN", "operator": "SETU"},
@@ -92,6 +101,7 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertEqual(by_customer_date[("clin", "2026-11-03")]["actual"], 1300)
         self.assertTrue(by_customer_date[("clin", "2026-11-03")]["actual_is_forecast"])
         self.assertEqual(by_customer_date[("pentawira", "2026-11-03")]["actual"], 9000)
+        self.assertTrue(by_customer_date[("pentawira", "2026-11-03")]["actual_is_forecast"])
         self.assertEqual(by_customer_date[("kf", "2026-11-03")]["actual"], 12)
         self.assertFalse(by_customer_date[("kf", "2026-11-03")]["actual_is_forecast"])
         self.assertEqual(unmapped, ["Missing Customer"])
