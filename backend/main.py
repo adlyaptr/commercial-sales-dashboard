@@ -1512,7 +1512,9 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
         region = regions_by_period_customer.get(
             (period, str(row["customer_key"] or "")),
             "",
-        ) or "Belum ditentukan"
+        ).strip()
+        if not region or region.upper() == "BELUM DITENTUKAN":
+            continue
         regional_volume_totals[region] = (
             regional_volume_totals.get(region, 0.0) + float(row["actual"] or 0)
         )

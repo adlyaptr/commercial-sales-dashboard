@@ -215,20 +215,20 @@ export default function HomePage() {
         };
         (summary?.regional_volumes ?? []).forEach((row) => {
             const normalizedRegion = String(row.region || '').trim().toUpperCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
+            if (!normalizedRegion || normalizedRegion === 'BELUM DITENTUKAN') return;
             const regionKey = normalizedRegion.includes('JAWA BARAT') || normalizedRegion === 'JABAR'
                 ? 'JAWA BARAT'
                 : normalizedRegion.includes('JAWA TENGAH') || normalizedRegion === 'JATENG'
                     ? 'JAWA TENGAH'
                     : normalizedRegion.includes('JAWA TIMUR') || normalizedRegion === 'JATIM'
                         ? 'JAWA TIMUR'
-                        : normalizedRegion || 'BELUM DITENTUKAN';
+                        : normalizedRegion;
             totals[regionKey] = (totals[regionKey] ?? 0) + Number(row.actual_sm3 ?? 0);
         });
         const labels = {
             'JAWA BARAT': 'JABAR',
             'JAWA TENGAH': 'JATENG',
             'JAWA TIMUR': 'JATIM',
-            'BELUM DITENTUKAN': 'Belum ditentukan',
         };
         return Object.entries(totals).map(([region, volume]) => ({
             region: labels[region] ?? region,

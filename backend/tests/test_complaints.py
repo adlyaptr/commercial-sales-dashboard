@@ -596,13 +596,13 @@ class HomeSummaryTests(unittest.TestCase):
         self.assertEqual(result["month_summary"]["manual_so"], 1800)
         self.assertEqual(result["summary_report"], {"so": 350, "actual": 300})
         self.assertEqual(result["regional_volumes"], [
-            {"region": "Belum ditentukan", "actual_sm3": 40.0},
             {"region": "JAWA BARAT", "actual_sm3": 80.0},
             {"region": "JAWA TENGAH", "actual_sm3": 180.0},
         ])
-        self.assertAlmostEqual(
-            sum(row["actual_sm3"] for row in result["regional_volumes"]),
-            result["summary_report"]["actual"],
+        self.assertEqual(
+            result["summary_report"]["actual"]
+            - sum(row["actual_sm3"] for row in result["regional_volumes"]),
+            40,
         )
         get_sales_order_data.assert_not_called()
 
