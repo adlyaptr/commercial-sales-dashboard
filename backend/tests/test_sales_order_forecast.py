@@ -41,7 +41,7 @@ class SalesOrderForecastTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Nilai SO customer"):
             main.parse_sales_order_spreadsheet(csv_text)
 
-    def test_overlay_forecasts_only_when_no_imported_row_exists(self):
+    def test_overlay_forecasts_zero_actuals_only_when_day_has_no_nonzero_actual(self):
         sales_rows = [{
             "report_date": "2026-11-03",
             "customer_key": "kf",
@@ -59,6 +59,15 @@ class SalesOrderForecastTests(unittest.TestCase):
             "so": 0,
             "actual": 0,
             "id": 8,
+            "manual_fob": False,
+        }, {
+            "report_date": "2026-11-04",
+            "customer_key": "pentawira",
+            "customer_name": "PENTAWIRA",
+            "operator": "KHT",
+            "so": 0,
+            "actual": 0,
+            "id": 9,
             "manual_fob": False,
         }]
         customers = [
@@ -79,6 +88,9 @@ class SalesOrderForecastTests(unittest.TestCase):
                 {"customer": "PENTAWIRA (KSO REN)", "so": 9000},
                 {"customer": "KF", "so": 800},
             ],
+            "2026-11-04": [
+                {"customer": "PENTAWIRA", "so": 7000},
+            ],
         }
 
         rows, unmapped = main.overlay_sales_order_forecast(
@@ -86,7 +98,7 @@ class SalesOrderForecastTests(unittest.TestCase):
             customers,
             sales_orders,
             date(2026, 11, 1),
-            date(2026, 11, 3),
+            date(2026, 11, 4),
         )
         by_customer_date = {
             (row["customer_key"], row["report_date"]): row
@@ -102,6 +114,8 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertTrue(by_customer_date[("clin", "2026-11-03")]["actual_is_forecast"])
         self.assertEqual(by_customer_date[("pentawira", "2026-11-03")]["actual"], 0)
         self.assertFalse(by_customer_date[("pentawira", "2026-11-03")]["actual_is_forecast"])
+        self.assertEqual(by_customer_date[("pentawira", "2026-11-04")]["actual"], 7000)
+        self.assertTrue(by_customer_date[("pentawira", "2026-11-04")]["actual_is_forecast"])
         self.assertEqual(by_customer_date[("kf", "2026-11-03")]["actual"], 12)
         self.assertFalse(by_customer_date[("kf", "2026-11-03")]["actual_is_forecast"])
         self.assertEqual(unmapped, ["Missing Customer"])

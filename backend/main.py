@@ -479,6 +479,7 @@ def overlay_sales_order_forecast(
         return next(iter(base_matches.values())) if len(base_matches) == 1 else None
 
     enriched_by_key = {}
+    dates_with_nonzero_actual = set()
     for row in sales_rows:
         enriched = dict(row)
         report_date = enriched.get("report_date", start_date)
@@ -486,6 +487,8 @@ def overlay_sales_order_forecast(
             report_date = report_date.isoformat()
         enriched["report_date"] = str(report_date)
         enriched.setdefault("actual_is_forecast", False)
+        if float(enriched.get("actual") or 0) != 0:
+            dates_with_nonzero_actual.add(enriched["report_date"])
         enriched_by_key[(enriched["report_date"], str(enriched["customer_key"]))] = enriched
 
     unmapped = set()
@@ -504,6 +507,13 @@ def overlay_sales_order_forecast(
             existing = enriched_by_key.get(key)
             if existing is not None:
                 existing["so"] = order["so"]
+                if (
+                    float(existing.get("actual") or 0) == 0
+                    and report_date not in dates_with_nonzero_actual
+                    and order["so"] > 0
+                ):
+                    existing["actual"] = order["so"]
+                    existing["actual_is_forecast"] = True
                 continue
 
             enriched_by_key[key] = {
