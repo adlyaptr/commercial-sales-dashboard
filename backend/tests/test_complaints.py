@@ -218,10 +218,7 @@ class MemoryHomeSummaryRange:
             return SimpleNamespace(fetchall=lambda: [
                 {"report_date": date(2026, 8, 5), "customer_name": "Customer Contoh", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 80},
                 {"report_date": date(2026, 10, 5), "customer_name": "Customer Contoh", "operator": "SETU", "customer_key": "setu-a", "so": 200, "actual": 180},
-            ])
-        if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
-            return SimpleNamespace(fetchall=lambda: [
-                {"customer_key": "setu-a", "customer_name": "Customer Contoh", "operator": "SETU"},
+                {"report_date": date(2026, 10, 6), "customer_name": "Customer Belum Dipetakan", "operator": "KHT", "customer_key": "kht-a", "so": 50, "actual": 40},
             ])
         if statement.startswith("SELECT month_start,so FROM monthly_so_targets"):
             return SimpleNamespace(fetchall=lambda: [
@@ -230,9 +227,17 @@ class MemoryHomeSummaryRange:
                 {"month_start": date(2026, 10, 1), "so": 700},
             ])
         if statement.startswith("SELECT SUM(so) AS total_so,SUM(actual) AS total_actual FROM sales"):
-            if parameters != ("2026-08-01", "2026-11-01"):
+            if parameters != ("2026-08-01", "2026-10-31"):
                 raise AssertionError(f"Unexpected summary-report date range: {parameters}")
-            return SimpleNamespace(fetchone=lambda: {"total_so": 1800, "total_actual": 1650})
+            return SimpleNamespace(fetchone=lambda: {"total_so": 350, "total_actual": 300})
+        if "SELECT report_date,customer_key,SUM(actual) AS actual" in statement:
+            if parameters != ("2026-08-01", "2026-10-31"):
+                raise AssertionError(f"Unexpected regional actual date range: {parameters}")
+            return SimpleNamespace(fetchall=lambda: [
+                {"report_date": date(2026, 8, 5), "customer_key": "setu-a", "actual": 80},
+                {"report_date": date(2026, 10, 5), "customer_key": "setu-a", "actual": 180},
+                {"report_date": date(2026, 10, 6), "customer_key": "unmapped-a", "actual": 40},
+            ])
         if "FROM monthly_average_price_inputs" in statement:
             if parameters != ("2026-08-01", "2026-10-01"):
                 raise AssertionError(f"Unexpected regional mapping range: {parameters}")
@@ -572,12 +577,10 @@ class DashboardApiTests(unittest.TestCase):
 
 
 class HomeSummaryTests(unittest.TestCase):
-    def test_home_summary_range_includes_forecasts_in_monthly_regional_volumes(self):
+    def test_home_summary_range_uses_imported_actuals_for_regional_volumes(self):
         with (
             patch.object(main, "db", return_value=MemoryHomeSummaryRange()),
-            patch.object(main, "get_sales_order_data", return_value={
-                "2026-10-06": [{"customer": "Customer Contoh", "so": 75}],
-            }),
+            patch.object(main, "get_sales_order_data") as get_sales_order_data,
         ):
             result = main.home_summary_range(
                 FakeRequest(),
@@ -591,39 +594,17 @@ class HomeSummaryTests(unittest.TestCase):
         )
         self.assertFalse(result["year_months"][1]["has_data"])
         self.assertEqual(result["month_summary"]["manual_so"], 1800)
-        self.assertEqual(result["summary_report"], {"so": 1800, "actual": 1650})
+        self.assertEqual(result["summary_report"], {"so": 350, "actual": 300})
         self.assertEqual(result["regional_volumes"], [
-            {"region": "JAWA BARAT", "actual_sm3": 80.0},
-            {"region": "JAWA TENGAH", "actual_sm3": 255.0},
-        ])
-        self.assertIsNone(result["regional_volume_forecast_error"])
-
-    def test_home_summary_range_reports_when_sheet_forecast_is_unavailable(self):
-        with (
-            patch.object(main, "db", return_value=MemoryHomeSummaryRange()),
-            patch.object(
-                main,
-                "get_sales_order_data",
-                side_effect=main.HTTPException(
-                    status_code=502,
-                    detail="Sheet SO tidak dapat diakses.",
-                ),
-            ),
-        ):
-            result = main.home_summary_range(
-                FakeRequest(),
-                start_date="2026-08-01",
-                end_date="2026-10-31",
-            )
-
-        self.assertEqual(result["regional_volumes"], [
+            {"region": "Belum ditentukan", "actual_sm3": 40.0},
             {"region": "JAWA BARAT", "actual_sm3": 80.0},
             {"region": "JAWA TENGAH", "actual_sm3": 180.0},
         ])
-        self.assertEqual(
-            result["regional_volume_forecast_error"],
-            "Sheet SO tidak dapat diakses.",
+        self.assertAlmostEqual(
+            sum(row["actual_sm3"] for row in result["regional_volumes"]),
+            result["summary_report"]["actual"],
         )
+        get_sales_order_data.assert_not_called()
 
     def test_home_summary_builds_daily_weekly_monthly_and_yearly_totals(self):
         with patch.object(main, "db", return_value=MemoryHomeSummary()):

@@ -13,7 +13,7 @@ const complaintColors = ['#16845b', '#e5a12c', '#3885b8', '#8a6bb8', '#d45f62', 
 const formatNumber = (value, maximumFractionDigits = 2) =>
     new Intl.NumberFormat('id-ID', { maximumFractionDigits }).format(Number(value ?? 0));
 const formatVolume = (value) =>
-    new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value ?? 0));
+    new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(Number(value ?? 0));
 const formatAveragePrice = (value) =>
     `Rp ${new Intl.NumberFormat('id-ID', {
         minimumFractionDigits: 2,
@@ -221,15 +221,20 @@ export default function HomePage() {
                     ? 'JAWA TENGAH'
                     : normalizedRegion.includes('JAWA TIMUR') || normalizedRegion === 'JATIM'
                         ? 'JAWA TIMUR'
-                        : null;
-            if (!regionKey) return;
-            totals[regionKey] += Number(row.actual_sm3 ?? 0);
+                        : normalizedRegion || 'BELUM DITENTUKAN';
+            totals[regionKey] = (totals[regionKey] ?? 0) + Number(row.actual_sm3 ?? 0);
         });
-        const labels = { 'JAWA BARAT': 'JABAR', 'JAWA TENGAH': 'JATENG', 'JAWA TIMUR': 'JATIM' };
-        return Object.entries(totals).map(([region, volume]) => ({ region: labels[region], volume }));
+        const labels = {
+            'JAWA BARAT': 'JABAR',
+            'JAWA TENGAH': 'JATENG',
+            'JAWA TIMUR': 'JATIM',
+            'BELUM DITENTUKAN': 'Belum ditentukan',
+        };
+        return Object.entries(totals).map(([region, volume]) => ({
+            region: labels[region] ?? region,
+            volume,
+        }));
     }, [summary]);
-    const totalRegionalVolume = regionalVolumes.reduce((total, item) => total + item.volume, 0);
-
     return (
         <div className="home-page">
             <section className="home-section home-kpi-section" aria-label="Ringkasan">
@@ -248,7 +253,7 @@ export default function HomePage() {
                             <div className="home-volume-summary">
                                 <div className="home-total-volume">
                                     <small>Total volume keseluruhan</small>
-                                    <strong>{formatVolume(totalRegionalVolume)} <span>Sm3</span></strong>
+                                    <strong>{formatVolume(summary?.summary_report?.actual)} <span>Sm3</span></strong>
                                 </div>
                                 <div className="home-regional-volume">
                                     <small>Volume per daerah</small>
@@ -257,11 +262,6 @@ export default function HomePage() {
                                     ))}
                                 </div>
                             </div>
-                            {summary?.regional_volume_forecast_error && (
-                                <div className="home-message home-message-error" role="status">
-                                    Prognosa SO tidak dapat dimuat; volume ini hanya mencakup Actual yang sudah diimpor. {summary.regional_volume_forecast_error}
-                                </div>
-                            )}
                             <div className="home-volume-chart">
                                 <Bar data={volumeComparison} options={volumeChartOptions} plugins={[volumeValueLabels]} />
                             </div>

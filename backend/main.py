@@ -1462,10 +1462,6 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
     operators = (*OPERATORS, "OFF")
     first_month = start.replace(day=1)
     last_month = end.replace(day=1)
-    if last_month.month == 12:
-        after_last_month = date(last_month.year + 1, 1, 1)
-    else:
-        after_last_month = date(last_month.year, last_month.month + 1, 1)
     with db() as con:
         rows = con.execute(
             """
@@ -1477,18 +1473,24 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             """,
             (start.isoformat(), end.isoformat()),
         ).fetchall()
-        customer_rows = con.execute(
-            "SELECT customer_key,customer_name,operator FROM customers"
-        ).fetchall()
         target_rows = con.execute(
             "SELECT month_start,so FROM monthly_so_targets WHERE month_start BETWEEN %s AND %s",
             (first_month.isoformat(), last_month.isoformat()),
         ).fetchall()
         report_totals = con.execute(
             "SELECT SUM(so) AS total_so,SUM(actual) AS total_actual FROM sales "
-            "WHERE report_date >= %s AND report_date < %s",
-            (first_month.isoformat(), after_last_month.isoformat()),
+            "WHERE report_date BETWEEN %s AND %s",
+            (start.isoformat(), end.isoformat()),
         ).fetchone()
+        regional_actual_rows = con.execute(
+            """
+            SELECT report_date,customer_key,SUM(actual) AS actual
+            FROM sales
+            WHERE report_date BETWEEN %s AND %s
+            GROUP BY report_date,customer_key
+            """,
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
         regional_volume_rows = con.execute(
             """
             SELECT DATE_FORMAT(month_start, '%%Y-%%m') AS period,
@@ -1499,36 +1501,21 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             (first_month.isoformat(), last_month.isoformat()),
         ).fetchall()
 
-    regional_forecast_error = None
-    try:
-        sales_orders_by_date = get_sales_order_data()
-    except HTTPException as exc:
-        sales_orders_by_date = {}
-        regional_forecast_error = str(exc.detail)
-
-    forecast_rows, _ = overlay_sales_order_forecast(
-        rows,
-        customer_rows,
-        sales_orders_by_date,
-        start,
-        end,
-    )
     regions_by_period_customer = {
         (str(row["period"]), str(row["customer_key"])): str(row["region"] or "")
         for row in regional_volume_rows
     }
     regional_volume_totals = {}
-    for row in forecast_rows:
+    for row in regional_actual_rows:
         report_date = row["report_date"]
         period = report_date[:7] if isinstance(report_date, str) else report_date.strftime("%Y-%m")
         region = regions_by_period_customer.get(
-            (period, str(row["customer_key"])),
+            (period, str(row["customer_key"] or "")),
             "",
+        ) or "Belum ditentukan"
+        regional_volume_totals[region] = (
+            regional_volume_totals.get(region, 0.0) + float(row["actual"] or 0)
         )
-        if region:
-            regional_volume_totals[region] = (
-                regional_volume_totals.get(region, 0.0) + row["actual"]
-            )
 
     monthly_targets = {
         str(row["month_start"])[:7]: float(row["so"] or 0)
@@ -1670,7 +1657,6 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             }
             for region, actual_sm3 in sorted(regional_volume_totals.items())
         ],
-        "regional_volume_forecast_error": regional_forecast_error,
         "year_summary": summary_record(
             totals,
             operators=operators_totals,
