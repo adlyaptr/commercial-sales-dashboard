@@ -23,7 +23,7 @@ Nilai SO dari sheet menjadi SO di tabel Harian. Actual yang sudah diimpor tetap 
 
 Saat halaman Harian terbuka, data dashboard dan rentang tanggal diperbarui otomatis setiap sekitar lima menit (selama tab browser aktif), mengikuti cache sheet SO lima menit. Perubahan spreadsheet mungkin memerlukan waktu hingga satu siklus refresh untuk tampil.
 
-Total Actual dan volume per wilayah di Beranda memakai nilai Actual yang sudah diimpor pada rentang tanggal terpilih; SO/prognosa dari sheet tidak dihitung sebagai Actual. Volume per wilayah dikelompokkan memakai wilayah customer yang tersimpan untuk masing-masing bulan pada input Average Price. Actual customer yang wilayahnya belum diatur tetap tercakup dalam Total Actual, tetapi tidak ditampilkan dalam rincian per wilayah.
+Actual pada ringkasan Beranda dan Harian memakai Actual impor; untuk tanggal/customer tanpa Actual impor, Actual mengikuti SO dari sheet sebagai prognosa. Prognosa hanya mengisi Actual yang kosong dan tidak menimpa Actual impor. Volume per wilayah dikelompokkan memakai wilayah customer yang tersimpan untuk masing-masing bulan pada input Average Price. Total Actual tetap mencakup customer tanpa wilayah, tetapi customer tersebut tidak ditampilkan pada rincian per wilayah.
 
 ## Budget Monitoring
 

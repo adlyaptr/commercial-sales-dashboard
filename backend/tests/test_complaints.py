@@ -194,15 +194,21 @@ class MemoryHomeSummary:
     def execute(self, statement, parameters=None):
         if statement.startswith("SELECT so FROM monthly_so_targets"):
             return SimpleNamespace(fetchone=lambda: {"so": 1250})
-        if "SELECT s.report_date, c.operator, s.customer_key, s.so, s.actual" not in statement:
+        if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
+            return SimpleNamespace(fetchall=lambda: [
+                {"customer_key": "setu-a", "customer_name": "SETU Customer", "operator": "SETU"},
+                {"customer_key": "kht-a", "customer_name": "KHT Customer", "operator": "KHT"},
+                {"customer_key": "off-a", "customer_name": "OFF Customer", "operator": "OFF"},
+            ])
+        if "SELECT s.report_date, c.customer_name, c.operator" not in statement:
             raise AssertionError(f"Unexpected SQL in test: {statement}")
         if parameters != ("2026-01-01", "2026-10-31"):
             raise AssertionError(f"Unexpected home-summary date range: {parameters}")
         return SimpleNamespace(fetchall=lambda: [
-            {"report_date": date(2026, 10, 5), "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 80},
-            {"report_date": date(2026, 10, 6), "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 90},
-            {"report_date": date(2026, 10, 6), "operator": "KHT", "customer_key": "kht-a", "so": 0, "actual": 20},
-            {"report_date": date(2026, 10, 7), "operator": "OFF", "customer_key": "off-a", "so": 50, "actual": 40},
+            {"report_date": date(2026, 10, 5), "customer_name": "SETU Customer", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 80},
+            {"report_date": date(2026, 10, 6), "customer_name": "SETU Customer", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 90},
+            {"report_date": date(2026, 10, 6), "customer_name": "KHT Customer", "operator": "KHT", "customer_key": "kht-a", "so": 0, "actual": 20},
+            {"report_date": date(2026, 10, 7), "customer_name": "OFF Customer", "operator": "OFF", "customer_key": "off-a", "so": 50, "actual": 40},
         ])
 
 
@@ -225,6 +231,11 @@ class MemoryHomeSummaryRange:
                 {"month_start": date(2026, 8, 1), "so": 500},
                 {"month_start": date(2026, 9, 1), "so": 600},
                 {"month_start": date(2026, 10, 1), "so": 700},
+            ])
+        if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
+            return SimpleNamespace(fetchall=lambda: [
+                {"customer_key": "setu-a", "customer_name": "Customer Contoh", "operator": "SETU"},
+                {"customer_key": "kht-a", "customer_name": "Customer Belum Dipetakan", "operator": "KHT"},
             ])
         if statement.startswith("SELECT SUM(so) AS total_so,SUM(actual) AS total_actual FROM sales"):
             if parameters != ("2026-08-01", "2026-10-31"):
@@ -580,7 +591,9 @@ class HomeSummaryTests(unittest.TestCase):
     def test_home_summary_range_uses_imported_actuals_for_regional_volumes(self):
         with (
             patch.object(main, "db", return_value=MemoryHomeSummaryRange()),
-            patch.object(main, "get_sales_order_data") as get_sales_order_data,
+            patch.object(main, "get_sales_order_data", return_value={
+                "2026-10-07": [{"customer": "Customer Contoh", "so": 75}],
+            }) as get_sales_order_data,
         ):
             result = main.home_summary_range(
                 FakeRequest(),
@@ -594,20 +607,23 @@ class HomeSummaryTests(unittest.TestCase):
         )
         self.assertFalse(result["year_months"][1]["has_data"])
         self.assertEqual(result["month_summary"]["manual_so"], 1800)
-        self.assertEqual(result["summary_report"], {"so": 350, "actual": 300})
+        self.assertEqual(result["summary_report"], {"so": 350, "actual": 375})
         self.assertEqual(result["regional_volumes"], [
             {"region": "JAWA BARAT", "actual_sm3": 80.0},
-            {"region": "JAWA TENGAH", "actual_sm3": 180.0},
+            {"region": "JAWA TENGAH", "actual_sm3": 255.0},
         ])
         self.assertEqual(
             result["summary_report"]["actual"]
             - sum(row["actual_sm3"] for row in result["regional_volumes"]),
             40,
         )
-        get_sales_order_data.assert_not_called()
+        get_sales_order_data.assert_called_once()
 
     def test_home_summary_builds_daily_weekly_monthly_and_yearly_totals(self):
-        with patch.object(main, "db", return_value=MemoryHomeSummary()):
+        with (
+            patch.object(main, "db", return_value=MemoryHomeSummary()),
+            patch.object(main, "get_sales_order_data", return_value={}),
+        ):
             result = main.home_summary(FakeRequest(), month="2026-10")
 
         self.assertEqual(len(result["days"]), 31)
@@ -625,6 +641,22 @@ class HomeSummaryTests(unittest.TestCase):
         self.assertEqual(len(result["year_months"]), 10)
         self.assertEqual(result["year_months"][-1]["month"], "2026-10")
         self.assertEqual(result["month_summary"]["manual_so"], 1250)
+
+    def test_home_summary_includes_forecasts_without_overwriting_imported_actual(self):
+        sales_orders = {
+            "2026-10-06": [{"customer": "SETU Customer", "so": 500}],
+            "2026-10-08": [{"customer": "KHT Customer", "so": 40}],
+        }
+        with (
+            patch.object(main, "db", return_value=MemoryHomeSummary()),
+            patch.object(main, "get_sales_order_data", return_value=sales_orders),
+        ):
+            result = main.home_summary(FakeRequest(), month="2026-10")
+
+        self.assertEqual(result["month_summary"]["so"], 690)
+        self.assertEqual(result["month_summary"]["actual"], 270)
+        self.assertEqual(result["days"][5]["actual"], 110)
+        self.assertEqual(result["days"][7]["actual"], 40)
 
     def test_home_summary_rejects_invalid_month(self):
         with self.assertRaises(main.HTTPException) as invalid:
