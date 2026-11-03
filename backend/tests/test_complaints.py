@@ -232,11 +232,6 @@ class MemoryHomeSummaryRange:
                 {"month_start": date(2026, 9, 1), "so": 600},
                 {"month_start": date(2026, 10, 1), "so": 700},
             ])
-        if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
-            return SimpleNamespace(fetchall=lambda: [
-                {"customer_key": "setu-a", "customer_name": "Customer Contoh", "operator": "SETU"},
-                {"customer_key": "kht-a", "customer_name": "Customer Belum Dipetakan", "operator": "KHT"},
-            ])
         if statement.startswith("SELECT SUM(so) AS total_so,SUM(actual) AS total_actual FROM sales"):
             if parameters != ("2026-08-01", "2026-10-31"):
                 raise AssertionError(f"Unexpected summary-report date range: {parameters}")
@@ -591,9 +586,7 @@ class HomeSummaryTests(unittest.TestCase):
     def test_home_summary_range_uses_imported_actuals_for_regional_volumes(self):
         with (
             patch.object(main, "db", return_value=MemoryHomeSummaryRange()),
-            patch.object(main, "get_sales_order_data", return_value={
-                "2026-10-07": [{"customer": "Customer Contoh", "so": 75}],
-            }) as get_sales_order_data,
+            patch.object(main, "get_sales_order_data") as get_sales_order_data,
         ):
             result = main.home_summary_range(
                 FakeRequest(),
@@ -607,17 +600,17 @@ class HomeSummaryTests(unittest.TestCase):
         )
         self.assertFalse(result["year_months"][1]["has_data"])
         self.assertEqual(result["month_summary"]["manual_so"], 1800)
-        self.assertEqual(result["summary_report"], {"so": 350, "actual": 375})
+        self.assertEqual(result["summary_report"], {"so": 350, "actual": 300})
         self.assertEqual(result["regional_volumes"], [
             {"region": "JAWA BARAT", "actual_sm3": 80.0},
-            {"region": "JAWA TENGAH", "actual_sm3": 255.0},
+            {"region": "JAWA TENGAH", "actual_sm3": 180.0},
         ])
         self.assertEqual(
             result["summary_report"]["actual"]
             - sum(row["actual_sm3"] for row in result["regional_volumes"]),
             40,
         )
-        get_sales_order_data.assert_called_once()
+        get_sales_order_data.assert_not_called()
 
     def test_home_summary_builds_daily_weekly_monthly_and_yearly_totals(self):
         with (

@@ -1488,9 +1488,6 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             """,
             (start.isoformat(), end.isoformat()),
         ).fetchall()
-        customer_rows = con.execute(
-            "SELECT customer_key,customer_name,operator FROM customers"
-        ).fetchall()
         target_rows = con.execute(
             "SELECT month_start,so FROM monthly_so_targets WHERE month_start BETWEEN %s AND %s",
             (first_month.isoformat(), last_month.isoformat()),
@@ -1500,6 +1497,15 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             "WHERE report_date BETWEEN %s AND %s",
             (start.isoformat(), end.isoformat()),
         ).fetchone()
+        regional_actual_rows = con.execute(
+            """
+            SELECT report_date,customer_key,SUM(actual) AS actual
+            FROM sales
+            WHERE report_date BETWEEN %s AND %s
+            GROUP BY report_date,customer_key
+            """,
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
         regional_volume_rows = con.execute(
             """
             SELECT DATE_FORMAT(month_start, '%%Y-%%m') AS period,
@@ -1510,22 +1516,12 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             (first_month.isoformat(), last_month.isoformat()),
         ).fetchall()
 
-    forecast_rows, _ = overlay_sales_order_forecast(
-        rows,
-        customer_rows,
-        get_sales_order_data(),
-        start,
-        end,
-    )
-    report_totals["total_actual"] = sum(
-        float(row["actual"] or 0) for row in forecast_rows
-    )
     regions_by_period_customer = {
         (str(row["period"]), str(row["customer_key"])): str(row["region"] or "")
         for row in regional_volume_rows
     }
     regional_volume_totals = {}
-    for row in forecast_rows:
+    for row in regional_actual_rows:
         report_date = row["report_date"]
         period = report_date[:7] if isinstance(report_date, str) else report_date.strftime("%Y-%m")
         region = regions_by_period_customer.get(
