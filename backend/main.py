@@ -1614,46 +1614,17 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             "SELECT month_start,so FROM monthly_so_targets WHERE month_start BETWEEN %s AND %s",
             (first_month.isoformat(), last_month.isoformat()),
         ).fetchall()
-        report_totals = con.execute(
-            "SELECT SUM(so) AS total_so,SUM(actual) AS total_actual FROM sales "
-            "WHERE report_date BETWEEN %s AND %s",
-            (start.isoformat(), end.isoformat()),
-        ).fetchone()
-        regional_actual_rows = con.execute(
-            """
-            SELECT s.report_date,s.customer_key,c.operator,SUM(s.actual) AS actual
-            FROM sales s
-            JOIN customers c ON c.customer_key=s.customer_key
-            WHERE report_date BETWEEN %s AND %s
-            GROUP BY s.report_date,s.customer_key,c.operator
-            """,
-            (start.isoformat(), end.isoformat()),
-        ).fetchall()
-
-    regional_volume_totals = {
-        "JAWA BARAT": 0.0,
-        "JAWA TENGAH": 0.0,
-        "JAWA TIMUR": 0.0,
-    }
-    for row in regional_actual_rows:
-        customer_key = str(row["customer_key"] or "")
-        operator = str(row["operator"] or "").upper()
-        region = REGION_BY_CUSTOMER.get(
-            customer_key,
-            REGION_BY_OPERATOR.get(operator),
-        )
-        if region is None:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Wilayah Actual belum dipetakan untuk operator {operator}.",
-            )
-        regional_volume_totals[region] = (
-            regional_volume_totals.get(region, 0.0) + float(row["actual"] or 0)
-        )
 
     monthly_targets = {
         str(row["month_start"])[:7]: float(row["so"] or 0)
         for row in target_rows
+    }
+    report_total_so = 0.0
+    report_total_actual = 0.0
+    regional_volume_totals = {
+        "JAWA BARAT": 0.0,
+        "JAWA TENGAH": 0.0,
+        "JAWA TIMUR": 0.0,
     }
 
     def empty_totals():
@@ -1684,6 +1655,19 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
         operator = row["operator"]
         so = float(row["so"] or 0)
         actual = float(row["actual"] or 0)
+        report_total_so += so
+        report_total_actual += actual
+        customer_key = str(row["customer_key"] or "")
+        region = REGION_BY_CUSTOMER.get(
+            customer_key,
+            REGION_BY_OPERATOR.get(str(operator or "").upper()),
+        )
+        if region is None:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Wilayah Actual belum dipetakan untuk operator {operator}.",
+            )
+        regional_volume_totals[region] += actual
         day_data = daily.setdefault(
             day_key,
             {"totals": empty_totals(), "operators": empty_operators()},
@@ -1781,8 +1765,8 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             manual_so=sum(float(row["so"] or 0) for row in target_rows) if target_rows else None,
         ),
         "summary_report": {
-            "so": float(report_totals["total_so"] or 0),
-            "actual": float(report_totals["total_actual"] or 0),
+            "so": report_total_so,
+            "actual": report_total_actual,
         },
         "regional_volumes": [
             {

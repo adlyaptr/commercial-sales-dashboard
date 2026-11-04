@@ -235,21 +235,6 @@ class MemoryHomeSummaryRange:
                 {"month_start": date(2026, 9, 1), "so": 600},
                 {"month_start": date(2026, 10, 1), "so": 700},
             ])
-        if statement.startswith("SELECT SUM(so) AS total_so,SUM(actual) AS total_actual FROM sales"):
-            if parameters != ("2026-08-01", "2026-10-31"):
-                raise AssertionError(f"Unexpected summary-report date range: {parameters}")
-            return SimpleNamespace(fetchone=lambda: {"total_so": 350, "total_actual": 360})
-        if "SELECT s.report_date,s.customer_key,c.operator,SUM(s.actual) AS actual" in statement:
-            if parameters != ("2026-08-01", "2026-10-31"):
-                raise AssertionError(f"Unexpected regional actual date range: {parameters}")
-            return SimpleNamespace(fetchall=lambda: [
-                {"report_date": date(2026, 8, 5), "customer_key": "setu-a", "operator": "SETU", "actual": 80},
-                {"report_date": date(2026, 10, 5), "customer_key": "setu-a", "operator": "SETU", "actual": 180},
-                {"report_date": date(2026, 10, 6), "customer_key": "unmapped-a", "operator": "KHT", "actual": 40},
-                {"report_date": date(2026, 10, 7), "customer_key": "ktn", "operator": "KHT", "actual": 10},
-                {"report_date": date(2026, 10, 8), "customer_key": "blora-a", "operator": "BLORA", "actual": 20},
-                {"report_date": date(2026, 10, 9), "customer_key": "wunut-a", "operator": "WUNUT", "actual": 30},
-            ])
         raise AssertionError(f"Unexpected SQL in test: {statement}")
 
 

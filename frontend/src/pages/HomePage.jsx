@@ -88,6 +88,10 @@ function PeriodMetrics({ summary, reportSummary }) {
                 <div className="kpi-icon">◎</div>
                 <div><span>TOTAL TARGET</span><strong>{formatNumber(displayedSO)}</strong><small>{summary?.manual_so == null ? 'Data pada periode terpilih' : 'Target bulanan dari halaman Bulanan'}</small></div>
             </article>
+            <article className="kpi kpi-teal">
+                <div className="kpi-icon">↗</div>
+                <div><span>TOTAL SO</span><strong>{formatNumber(reportSummary?.so)}</strong><small>Total SO Summary Report</small></div>
+            </article>
             <article className="kpi kpi-green">
                 <div className="kpi-icon">↗</div>
                 <div><span>TOTAL ACTUAL</span><strong>{formatNumber(displayedActual)}</strong><small>Total Actual Summary Report</small></div>
