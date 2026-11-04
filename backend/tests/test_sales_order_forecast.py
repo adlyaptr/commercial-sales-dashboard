@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 from datetime import date
@@ -40,6 +41,61 @@ class SalesOrderForecastTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "Nilai SO customer"):
             main.parse_sales_order_spreadsheet(csv_text)
+
+    def test_parse_sales_order_gviz_response_preserves_spreadsheet_precision(self):
+        response = {
+            "status": "ok",
+            "table": {
+                "cols": [
+                    {"label": "DATE", "type": "date"},
+                    {"label": "Total SO", "type": "number"},
+                    {"label": "CLIN SO", "type": "number"},
+                    {"label": "HCI SO", "type": "number"},
+                ],
+                "rows": [{
+                    "c": [
+                        {"v": "Date(2026,10,2)"},
+                        {"v": 233007.36780645157, "f": "233.007"},
+                        {"v": 1199.5729032258068, "f": "1.200"},
+                        {"v": 15600, "f": "15.600"},
+                    ],
+                }],
+            },
+        }
+        response_text = (
+            "/*O_o*/\ngoogle.visualization.Query.setResponse("
+            f"{json.dumps(response)});"
+        )
+
+        result = main.parse_sales_order_gviz_response(response_text)
+
+        self.assertEqual(
+            result["2026-11-02"],
+            [
+                {"customer": "CLIN", "so": 1199.5729032258068},
+                {"customer": "HCI", "so": 15600.0},
+            ],
+        )
+
+    def test_parse_sales_order_gviz_response_rejects_invalid_customer_values(self):
+        response = {
+            "status": "ok",
+            "table": {
+                "cols": [
+                    {"label": "DATE", "type": "date"},
+                    {"label": "Customer A SO", "type": "number"},
+                ],
+                "rows": [{
+                    "c": [{"v": "Date(2026,10,2)"}, {"v": "invalid"}],
+                }],
+            },
+        }
+        response_text = (
+            "google.visualization.Query.setResponse("
+            f"{json.dumps(response)});"
+        )
+        with self.assertRaisesRegex(ValueError, "Nilai SO customer"):
+            main.parse_sales_order_gviz_response(response_text)
 
     def test_overlay_forecasts_zero_actuals_only_when_day_has_no_nonzero_actual(self):
         sales_rows = [{

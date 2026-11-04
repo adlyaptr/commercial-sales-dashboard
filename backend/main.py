@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import hmac
+import json
 import math
 import os
 import re
@@ -120,6 +121,16 @@ if (FRONTEND_DIST / "assets").is_dir():
 
 OPERATORS = ["SETU", "KHT", "BLORA", "WUNUT"]
 CUSTOMER_ASSIGNMENTS = {*OPERATORS, "OFF"}
+REGION_BY_OPERATOR = {
+    "SETU": "JAWA BARAT",
+    "KHT": "JAWA BARAT",
+    "BLORA": "JAWA TENGAH",
+    "WUNUT": "JAWA TIMUR",
+    "OFF": "JAWA BARAT",
+}
+REGION_BY_CUSTOMER = {
+    "ktn": "JAWA TENGAH",
+}
 COMPLAINT_TYPES = {
     "Keterlambatan Pekerjaan",
     "Keterlambatan Pengiriman",
@@ -410,6 +421,110 @@ def parse_sales_order_spreadsheet(csv_text):
     return records
 
 
+def parse_sales_order_gviz_response(response_text):
+    match = re.search(
+        r"google\.visualization\.Query\.setResponse\((.*)\);?\s*$",
+        response_text,
+        re.DOTALL,
+    )
+    if match is None:
+        raise ValueError("Respons Google Sheets tidak valid.")
+
+    try:
+        response = json.loads(match.group(1))
+    except json.JSONDecodeError as exc:
+        raise ValueError("Respons Google Sheets tidak valid.") from exc
+
+    if not isinstance(response, dict):
+        raise ValueError("Respons Google Sheets tidak valid.")
+    table = response.get("table")
+    if response.get("status") != "ok" or not isinstance(table, dict):
+        raise ValueError("Data SO Google Sheets tidak tersedia.")
+    columns = table.get("cols")
+    rows = table.get("rows")
+    if (
+        not isinstance(columns, list)
+        or not columns
+        or not all(isinstance(column, dict) for column in columns)
+        or not isinstance(rows, list)
+        or not all(isinstance(row, dict) for row in rows)
+    ):
+        raise ValueError("Struktur data SO Google Sheets tidak valid.")
+
+    date_column = next(
+        (
+            index for index, column in enumerate(columns)
+            if norm(column.get("label")) == "date"
+        ),
+        None,
+    )
+    customer_columns = []
+    for index, column in enumerate(columns):
+        label = str(column.get("label") or "").strip()
+        customer_match = re.fullmatch(r"(.+?)\s+SO", label, re.IGNORECASE)
+        if (
+            customer_match
+            and norm(label) != "totalso"
+            and index != date_column
+        ):
+            customer_columns.append((index, customer_match.group(1).strip()))
+    if date_column is None or not customer_columns:
+        raise ValueError("Kolom tanggal atau customer pada sheet SO tidak ditemukan.")
+
+    records = {}
+    date_pattern = re.compile(r"Date\((\d{4}),(\d{1,2}),(\d{1,2})\)")
+    for row_number, row in enumerate(rows, start=1):
+        cells = row.get("c") or []
+        date_cell = cells[date_column] if date_column < len(cells) else None
+        date_value = date_cell.get("v") if isinstance(date_cell, dict) else None
+        if isinstance(date_value, str):
+            date_match = date_pattern.fullmatch(date_value)
+            if date_match:
+                try:
+                    report_date = date(
+                        int(date_match.group(1)),
+                        int(date_match.group(2)) + 1,
+                        int(date_match.group(3)),
+                    ).isoformat()
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Tanggal tidak valid pada baris {row_number} sheet SO."
+                    ) from exc
+            else:
+                report_date = parse_date(date_value)
+        else:
+            report_date = None
+
+        day_records = []
+        has_values = False
+        for column, customer in customer_columns:
+            cell = cells[column] if column < len(cells) else None
+            value = cell.get("v") if isinstance(cell, dict) else None
+            if value is None or value == "":
+                continue
+            has_values = True
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(
+                    f"Nilai SO customer {customer} pada baris {row_number} tidak valid."
+                )
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(
+                    f"Nilai SO customer {customer} pada baris {row_number} tidak valid."
+                )
+            day_records.append({"customer": customer, "so": float(value)})
+
+        if report_date is None:
+            if has_values:
+                raise ValueError(f"Tanggal tidak valid pada baris {row_number} sheet SO.")
+            continue
+        if day_records:
+            records[report_date] = day_records
+
+    if not records:
+        raise ValueError("Sheet SO tidak memiliki data SO bertanggal.")
+    return records
+
+
 def get_sales_order_data(refresh=False):
     now = time.monotonic()
     cached = _sales_order_cache["data"]
@@ -424,7 +539,7 @@ def get_sales_order_data(refresh=False):
 
         url = (
             f"https://docs.google.com/spreadsheets/d/{SALES_ORDER_SHEET_ID}"
-            f"/export?format=csv&gid={SALES_ORDER_SHEET_GID}"
+            f"/gviz/tq?tqx=out:json&gid={SALES_ORDER_SHEET_GID}"
         )
         request = URLRequest(url, headers={"User-Agent": "CommercialSalesDashboard/1.0"})
         try:
@@ -439,8 +554,8 @@ def get_sales_order_data(refresh=False):
             raise HTTPException(status_code=502, detail="Ukuran sheet SO melebihi batas 5 MB.")
 
         try:
-            result = parse_sales_order_spreadsheet(content.decode("utf-8-sig"))
-        except (UnicodeDecodeError, csv.Error, ValueError) as exc:
+            result = parse_sales_order_gviz_response(content.decode("utf-8-sig"))
+        except (UnicodeDecodeError, ValueError) as exc:
             raise HTTPException(
                 status_code=502,
                 detail=f"Format data sheet SO tidak valid: {exc}",
@@ -1506,37 +1621,32 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
         ).fetchone()
         regional_actual_rows = con.execute(
             """
-            SELECT report_date,customer_key,SUM(actual) AS actual
-            FROM sales
+            SELECT s.report_date,s.customer_key,c.operator,SUM(s.actual) AS actual
+            FROM sales s
+            JOIN customers c ON c.customer_key=s.customer_key
             WHERE report_date BETWEEN %s AND %s
-            GROUP BY report_date,customer_key
+            GROUP BY s.report_date,s.customer_key,c.operator
             """,
             (start.isoformat(), end.isoformat()),
         ).fetchall()
-        regional_volume_rows = con.execute(
-            """
-            SELECT DATE_FORMAT(month_start, '%%Y-%%m') AS period,
-                   customer_key,COALESCE(region,'') AS region
-            FROM monthly_average_price_inputs
-            WHERE month_start BETWEEN %s AND %s
-            """,
-            (first_month.isoformat(), last_month.isoformat()),
-        ).fetchall()
 
-    regions_by_period_customer = {
-        (str(row["period"]), str(row["customer_key"])): str(row["region"] or "")
-        for row in regional_volume_rows
+    regional_volume_totals = {
+        "JAWA BARAT": 0.0,
+        "JAWA TENGAH": 0.0,
+        "JAWA TIMUR": 0.0,
     }
-    regional_volume_totals = {}
     for row in regional_actual_rows:
-        report_date = row["report_date"]
-        period = report_date[:7] if isinstance(report_date, str) else report_date.strftime("%Y-%m")
-        region = regions_by_period_customer.get(
-            (period, str(row["customer_key"] or "")),
-            "",
-        ).strip()
-        if not region or region.upper() == "BELUM DITENTUKAN":
-            continue
+        customer_key = str(row["customer_key"] or "")
+        operator = str(row["operator"] or "").upper()
+        region = REGION_BY_CUSTOMER.get(
+            customer_key,
+            REGION_BY_OPERATOR.get(operator),
+        )
+        if region is None:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Wilayah Actual belum dipetakan untuk operator {operator}.",
+            )
         regional_volume_totals[region] = (
             regional_volume_totals.get(region, 0.0) + float(row["actual"] or 0)
         )

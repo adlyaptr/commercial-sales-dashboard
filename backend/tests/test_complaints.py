@@ -225,6 +225,9 @@ class MemoryHomeSummaryRange:
                 {"report_date": date(2026, 8, 5), "customer_name": "Customer Contoh", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 80},
                 {"report_date": date(2026, 10, 5), "customer_name": "Customer Contoh", "operator": "SETU", "customer_key": "setu-a", "so": 200, "actual": 180},
                 {"report_date": date(2026, 10, 6), "customer_name": "Customer Belum Dipetakan", "operator": "KHT", "customer_key": "kht-a", "so": 50, "actual": 40},
+                {"report_date": date(2026, 10, 7), "customer_name": "KTN", "operator": "KHT", "customer_key": "ktn", "so": 0, "actual": 10},
+                {"report_date": date(2026, 10, 8), "customer_name": "Blora Customer", "operator": "BLORA", "customer_key": "blora-a", "so": 0, "actual": 20},
+                {"report_date": date(2026, 10, 9), "customer_name": "Wunut Customer", "operator": "WUNUT", "customer_key": "wunut-a", "so": 0, "actual": 30},
             ])
         if statement.startswith("SELECT month_start,so FROM monthly_so_targets"):
             return SimpleNamespace(fetchall=lambda: [
@@ -235,21 +238,17 @@ class MemoryHomeSummaryRange:
         if statement.startswith("SELECT SUM(so) AS total_so,SUM(actual) AS total_actual FROM sales"):
             if parameters != ("2026-08-01", "2026-10-31"):
                 raise AssertionError(f"Unexpected summary-report date range: {parameters}")
-            return SimpleNamespace(fetchone=lambda: {"total_so": 350, "total_actual": 300})
-        if "SELECT report_date,customer_key,SUM(actual) AS actual" in statement:
+            return SimpleNamespace(fetchone=lambda: {"total_so": 350, "total_actual": 360})
+        if "SELECT s.report_date,s.customer_key,c.operator,SUM(s.actual) AS actual" in statement:
             if parameters != ("2026-08-01", "2026-10-31"):
                 raise AssertionError(f"Unexpected regional actual date range: {parameters}")
             return SimpleNamespace(fetchall=lambda: [
-                {"report_date": date(2026, 8, 5), "customer_key": "setu-a", "actual": 80},
-                {"report_date": date(2026, 10, 5), "customer_key": "setu-a", "actual": 180},
-                {"report_date": date(2026, 10, 6), "customer_key": "unmapped-a", "actual": 40},
-            ])
-        if "FROM monthly_average_price_inputs" in statement:
-            if parameters != ("2026-08-01", "2026-10-01"):
-                raise AssertionError(f"Unexpected regional mapping range: {parameters}")
-            return SimpleNamespace(fetchall=lambda: [
-                {"period": "2026-08", "customer_key": "setu-a", "region": "JAWA BARAT"},
-                {"period": "2026-10", "customer_key": "setu-a", "region": "JAWA TENGAH"},
+                {"report_date": date(2026, 8, 5), "customer_key": "setu-a", "operator": "SETU", "actual": 80},
+                {"report_date": date(2026, 10, 5), "customer_key": "setu-a", "operator": "SETU", "actual": 180},
+                {"report_date": date(2026, 10, 6), "customer_key": "unmapped-a", "operator": "KHT", "actual": 40},
+                {"report_date": date(2026, 10, 7), "customer_key": "ktn", "operator": "KHT", "actual": 10},
+                {"report_date": date(2026, 10, 8), "customer_key": "blora-a", "operator": "BLORA", "actual": 20},
+                {"report_date": date(2026, 10, 9), "customer_key": "wunut-a", "operator": "WUNUT", "actual": 30},
             ])
         raise AssertionError(f"Unexpected SQL in test: {statement}")
 
@@ -600,15 +599,16 @@ class HomeSummaryTests(unittest.TestCase):
         )
         self.assertFalse(result["year_months"][1]["has_data"])
         self.assertEqual(result["month_summary"]["manual_so"], 1800)
-        self.assertEqual(result["summary_report"], {"so": 350, "actual": 300})
+        self.assertEqual(result["summary_report"], {"so": 350, "actual": 360})
         self.assertEqual(result["regional_volumes"], [
-            {"region": "JAWA BARAT", "actual_sm3": 80.0},
-            {"region": "JAWA TENGAH", "actual_sm3": 180.0},
+            {"region": "JAWA BARAT", "actual_sm3": 300.0},
+            {"region": "JAWA TENGAH", "actual_sm3": 30.0},
+            {"region": "JAWA TIMUR", "actual_sm3": 30.0},
         ])
         self.assertEqual(
             result["summary_report"]["actual"]
             - sum(row["actual_sm3"] for row in result["regional_volumes"]),
-            40,
+            0,
         )
         get_sales_order_data.assert_not_called()
 
