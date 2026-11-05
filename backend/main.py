@@ -1,4 +1,5 @@
 import csv
+import calendar
 import hashlib
 import hmac
 import json
@@ -35,8 +36,10 @@ from openpyxl.utils import get_column_letter
 
 try:
     from .db import initialize_database
+    from .monthly_template_export import build_monthly_template_export
 except ImportError:
     from db import initialize_database
+    from monthly_template_export import build_monthly_template_export
     
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIST = BASE_DIR / "static" / "react"
@@ -2847,10 +2850,7 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
 
 def build_monthly_export(year, month, sales_rows, monthly_target):
     month_start = date(year, month, 1)
-    if month == 12:
-        month_end = date(year + 1, 1, 1) - timedelta(days=1)
-    else:
-        month_end = date(year, month + 1, 1) - timedelta(days=1)
+    month_end = date(year, month, calendar.monthrange(year, month)[1])
     day_count = (month_end - month_start).days + 1
 
     month_names = (
@@ -3207,7 +3207,7 @@ def export_monthly_report(request: Request, year: int, month: int):
             (month_start.isoformat(),),
         ).fetchone()
 
-    workbook = build_monthly_export(
+    workbook = build_monthly_template_export(
         year,
         month,
         sales_rows,

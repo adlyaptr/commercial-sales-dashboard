@@ -71,9 +71,9 @@ class MonthlyExportTests(unittest.TestCase):
         self.assertEqual(
             workbook.sheetnames,
             [
+                "Target 2026",
                 "SUMMARY REPORT",
                 "Weekly Summary",
-                "Daily Summary",
                 "SETU",
                 "KHT",
                 "BLORA",
@@ -82,33 +82,93 @@ class MonthlyExportTests(unittest.TestCase):
         )
 
         summary = workbook["SUMMARY REPORT"]
-        self.assertEqual(summary["B5"].value, 1000)
-        self.assertEqual(summary["B6"].value, 350)
-        self.assertEqual(summary["B7"].value, 340)
-        self.assertEqual(summary["B8"].value, -660)
+        self.assertEqual(summary["L6"].value, 1000)
+        self.assertEqual(summary["L12"].value, 340)
+        self.assertEqual(summary["L13"].value, 220)
+        self.assertEqual(summary["L14"].value, 120)
+        self.assertEqual(summary["L17"].value, -660)
+        self.assertIsNone(summary["Q12"].value)
 
         weekly = workbook["Weekly Summary"]
-        self.assertIn("target harian", weekly["A2"].value)
-        self.assertEqual(weekly["C9"].value, 1000)
-        self.assertEqual(weekly["D9"].value, 350)
-        self.assertEqual(weekly["E9"].value, 340)
-
-        daily = workbook["Daily Summary"]
-        self.assertEqual(daily["D8"].value, 100)
-        self.assertEqual(daily["E8"].value, 120)
-        self.assertEqual(daily["D35"].value, 350)
-        self.assertEqual(daily["E35"].value, 340)
+        self.assertEqual(weekly["C1"].value, "RKAP Oktober 2026")
+        self.assertEqual(weekly["D3"].value, 0)
+        self.assertEqual(weekly["E3"].value, 0)
+        self.assertEqual(weekly["D4"].value, 350)
+        self.assertEqual(weekly["E4"].value, 340)
+        self.assertEqual(weekly["C8"].value, 1000)
+        self.assertEqual(weekly["D8"].value, 350)
+        self.assertEqual(weekly["E8"].value, 340)
 
         setu = workbook["SETU"]
-        self.assertEqual(setu["D8"].value, "Customer FOB")
-        self.assertEqual(setu["D9"].value, "TOTAL HARIAN")
-        self.assertEqual(setu["E9"].value, 100)
-        self.assertEqual(setu["F9"].value, 120)
-        self.assertEqual(setu["D36"].value, "TOTAL BULAN")
-        self.assertEqual(setu["E36"].value, 100)
-        self.assertEqual(setu["F36"].value, 120)
+        customer_column = next(
+            column
+            for column in range(1, setu.max_column + 1)
+            if setu.cell(12, column).value == "Customer FOB"
+        )
+        self.assertEqual(setu["A10"].value.date(), date(2026, 10, 1))
+        self.assertEqual(setu.cell(20, 2).value.date(), date(2026, 10, 5))
+        self.assertEqual(setu.cell(20, customer_column).value, 100)
+        self.assertEqual(setu.cell(20, customer_column + 1).value, 120)
+        self.assertEqual(setu["D56"].value, 100)
+        self.assertEqual(setu["E56"].value, 120)
+        self.assertEqual(setu["G12"].value, "CLIN")
+        self.assertEqual(workbook["KHT"]["G12"].value, "IP")
+        self.assertEqual(workbook["BLORA"]["G12"].value, "PA")
+        self.assertEqual(workbook["WUNUT"]["G7"].value, "DJARUM")
         self.assertIn("attachment;", response.headers["content-disposition"])
         self.assertIn(".xlsx", response.headers["content-disposition"])
+
+    def test_template_export_handles_leap_february(self):
+        response = main.build_monthly_template_export(
+            2024,
+            2,
+            [
+                {
+                    "report_date": date(2024, 2, 29),
+                    "customer_name": "DJARUM",
+                    "operator": "WUNUT",
+                    "so": 50,
+                    "actual": 70,
+                },
+            ],
+            150,
+        )
+        workbook = load_workbook(response, data_only=True)
+        wunut = workbook["WUNUT"]
+        self.assertEqual(wunut["A5"].value.date(), date(2024, 2, 1))
+        self.assertEqual(wunut["B45"].value.date(), date(2024, 2, 29))
+        self.assertEqual(wunut["G45"].value, 50)
+        self.assertEqual(wunut["H45"].value, 70)
+        self.assertEqual(wunut["D51"].value, 50)
+        self.assertEqual(wunut["E51"].value, 70)
+        self.assertEqual(workbook["Weekly Summary"]["D7"].value, 50)
+
+    def test_template_export_combines_sixth_calendar_week(self):
+        response = main.build_monthly_template_export(
+            2026,
+            8,
+            [
+                {
+                    "report_date": date(2026, 8, 31),
+                    "customer_name": "Customer FOB",
+                    "operator": "SETU",
+                    "so": 50,
+                    "actual": 70,
+                },
+            ],
+            1000,
+        )
+        workbook = load_workbook(response, data_only=False)
+        setu = workbook["SETU"]
+        self.assertEqual(setu["B54"].value.date(), date(2026, 8, 31))
+        self.assertEqual(setu["D55"].value, 50)
+        self.assertEqual(setu["E55"].value, 70)
+        self.assertIn("SETU!$AQ$14:$AQ$55", workbook["Weekly Summary"]["B14"].value)
+
+        weekly = workbook["Weekly Summary"]
+        self.assertEqual(weekly["A7"].value, "Sub Total Week 5-6")
+        self.assertEqual(weekly["D7"].value, 50)
+        self.assertEqual(weekly["E7"].value, 70)
 
     def test_export_rejects_invalid_month(self):
         with self.assertRaises(main.HTTPException) as invalid:

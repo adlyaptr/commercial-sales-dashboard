@@ -1529,6 +1529,19 @@ body {
   border-color: #d5eade;
   box-shadow: 0 3px 12px rgb(4 42 34 / 3%);
 }
+.monthly-export-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid #d5eade;
+  border-radius: 8px;
+  background: #fff;
+  color: #42665a;
+}
+.monthly-export-panel button { flex: 0 0 auto; }
 .dropzone { border-color: #83c9a6; background: linear-gradient(135deg, #f5fcf7, #eaf8ef); }
 .dropzone:hover { border-color: #0f9a6b; background: linear-gradient(135deg, #e1f7e9, #d1f2df); }
 .primary {
@@ -1631,6 +1644,8 @@ textarea:focus-visible, a:focus-visible {
   .topbar { align-items: flex-start; flex-wrap: wrap; padding: 12px; }
   .top-controls { width: 100%; margin-left: 0; flex-wrap: wrap; gap: 10px; }
   .import-panel { align-items: stretch; flex-wrap: wrap; }
+  .monthly-export-panel { align-items: stretch; flex-wrap: wrap; }
+  .monthly-export-panel button { width: 100%; }
   .dropzone { min-width: 100%; max-width: none; }
   .kpi-grid, .operator-grid, .average-kpi-grid { grid-template-columns: minmax(0, 1fr); }
   .average-filter-panel, .average-analysis-grid, .average-entry-form { grid-template-columns: minmax(0, 1fr); }

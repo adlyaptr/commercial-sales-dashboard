@@ -25,6 +25,8 @@ Saat halaman Harian terbuka, data dashboard dan rentang tanggal diperbarui otoma
 
 Total Actual pada Beranda hanya memakai Actual dari data harian yang sudah diimpor; prognosa SO tidak ditambahkan. Ringkasan Harian tetap memakai Actual impor dan mengisi SO sebagai prognosa untuk tanggal/customer yang belum memiliki Actual impor, tanpa menimpa Actual impor. Volume per wilayah di Beranda mengelompokkan seluruh Actual impor berdasarkan MS: SETU/KHT ke JABAR, BLORA ke JATENG, dan WUNUT ke JATIM. Customer KTN mengikuti wilayah JATENG pada Target 2026. Karena semua baris Actual teralokasi ke salah satu MS, jumlah ketiga wilayah sama dengan Total Actual pada rentang yang sama.
 
+Pada halaman Harian tersedia tombol **Export Excel Bulanan**. File mengikuti workbook template di `backend/templates/monthly_sales_template.xlsx`, termasuk seluruh sheet dan header; data penjualan diisi untuk bulan pada tanggal laporan yang dipilih.
+
 ## Budget Monitoring
 
 Halaman Budget (`/budget`) membaca target bulanan dari sheet dengan GID `737662524` dan realisasi kategori dari tab `Summary Finance` pada spreadsheet yang sama dengan halaman Issue. Service account read-only yang digunakan untuk Issue harus memiliki izin Viewer pada spreadsheet. Jika service account belum dikonfigurasi, halaman mencoba membaca sheet yang dipublikasikan melalui Google Sheets. Data disinkronkan saat halaman dibuka, dapat diperbarui dengan tombol Sinkronkan Google Sheets, dan disegarkan otomatis setiap lima menit.

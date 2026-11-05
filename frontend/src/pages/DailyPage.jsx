@@ -42,6 +42,7 @@ export default function DailyPage() {
     const [monthlySummary, setMonthlySummary] = useState(null);
     const [summaryError, setSummaryError] = useState('');
     const [summaryLoading, setSummaryLoading] = useState(false);
+    const [exportLoading, setExportLoading] = useState(false);
     const [periodRows, setPeriodRows] = useState([]);
     const [periodSalesOrderUnmapped, setPeriodSalesOrderUnmapped] = useState([]);
     const [periodError, setPeriodError] = useState('');
@@ -325,6 +326,42 @@ export default function DailyPage() {
         `${startDate?.split('-').reverse().join('/') ?? ''} - ${endDate?.split('-').reverse().join('/') ?? ''}`;
     const displayedDashboard = isDateRange ? periodDashboard : dashboard;
     const unmappedSalesOrderCustomers = displayedDashboard?.sales_order_unmapped ?? [];
+    const exportMonth = (selectedDate || dashboard?.report_date || '').slice(0, 7);
+
+    async function exportMonthlyReport() {
+        const reportMonth = exportMonth;
+        if (!reportMonth) {
+            setNotice({ bad: true, text: 'Tanggal laporan belum tersedia untuk membuat export.' });
+            return;
+        }
+
+        const [year, month] = reportMonth.split('-');
+        setExportLoading(true);
+        setNotice(null);
+        try {
+            const response = await fetch(`/api/monthly/export?year=${year}&month=${month}`, {
+                credentials: 'same-origin',
+            });
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload.detail || 'Export Excel bulanan gagal dibuat.');
+            }
+
+            const workbook = await response.blob();
+            const url = URL.createObjectURL(workbook);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `Rekap_Bulanan_${reportMonth}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (error) {
+            setNotice({ bad: true, text: error.message || 'Export Excel bulanan gagal dibuat.' });
+        } finally {
+            setExportLoading(false);
+        }
+    }
 
     return (
         <>
@@ -340,6 +377,17 @@ export default function DailyPage() {
                     {' '}{unmappedSalesOrderCustomers.join(', ')}.
                 </div>
             )}
+            <section className="monthly-export-panel">
+                <span>Export seluruh data bulan {exportMonth || '—'} sesuai template Excel.</span>
+                <button
+                    className="primary"
+                    type="button"
+                    onClick={exportMonthlyReport}
+                    disabled={exportLoading || !exportMonth}
+                >
+                    {exportLoading ? 'Menyiapkan Excel...' : 'Export Excel Bulanan'}
+                </button>
+            </section>
             <OperatorTables
                 data={displayedDashboard?.operators ?? {}}
                 dailySummary={displayedDashboard}
