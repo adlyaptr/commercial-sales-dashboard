@@ -670,7 +670,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
             </aside>
 
-            <main className={`app-shell${isWeeklyVolume ? ' weekly-volume-shell' : ''}${isYearly ? ' yearly-shell' : ''}${isMonthly ? ' monthly-shell' : ''}${isHome ? ' home-shell' : ''}${isBudget ? ' budget-shell' : ''}`}>
+            <main className={`app-shell${isWeeklyVolume ? ' weekly-volume-shell' : ''}${isYearly ? ' yearly-shell' : ''}${isMonthly ? ' monthly-shell' : ''}${isHome ? ' home-shell' : ''}${isBudget ? ' budget-shell' : ''}${isAveragePrice && user?.role === 'user' ? ' average-price-user-shell' : ''}`}>
                 <header className="topbar">
                     <div className="topbar-brand">
                         <button

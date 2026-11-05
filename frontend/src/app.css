@@ -1099,6 +1099,20 @@ footer span { float: right; }
 .average-analysis-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(310px, 1fr); gap: 9px; }
 .average-chart-panel, .average-regions-panel, .average-data-panel { padding: 11px; }
 .average-workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: stretch; gap: 12px; }
+.average-workspace-grid.average-workspace-grid-user { align-content: start; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); grid-template-rows: auto auto auto; }
+.average-workspace-grid-user .average-workspace-left,
+.average-workspace-grid-user .average-workspace-right,
+.average-workspace-grid-user .average-comparison-content { display: contents; }
+.average-workspace-grid-user .average-comparison-heading { grid-column: 1 / -1; grid-row: 1; }
+.average-workspace-grid-user .average-comparison-chart { grid-column: 1; grid-row: 2 / 4; align-self: center; width: 100%; }
+.average-workspace-grid-user .average-comparison-content > .average-table-wrap { grid-column: 2; grid-row: 2; align-self: start; }
+.average-workspace-grid-user .average-conversion-panel { grid-column: 2; grid-row: 3; align-self: start; }
+.average-price-user-page > .average-data-panel { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; overflow: hidden; }
+.average-price-user-page .average-workspace-grid-user { min-height: 0; flex: 1 1 auto; }
+.average-price-user-page .average-workspace-right { min-height: 0; overflow: hidden; }
+.average-price-user-page .average-workspace-right .average-comparison-chart { flex: 0 1 clamp(160px, 38vh, 300px); min-height: 160px; height: clamp(160px, 38vh, 300px); }
+.average-price-user-page .average-workspace-left { min-height: 0; }
+.average-price-user-page .average-conversion-wrap { overflow: visible; }
 .average-workspace-column { min-width: 0; }
 .average-workspace-right { order: -1; display: flex; min-height: 0; }
 .average-workspace-right > div { display: flex; flex: 1; flex-direction: column; min-width: 0; }
@@ -1634,8 +1648,29 @@ textarea:focus-visible, a:focus-visible {
 }
 @media (max-width: 900px) {
   .average-workspace-grid { grid-template-columns: minmax(0, 1fr); }
+  .average-workspace-grid.average-workspace-grid-user { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto; }
+  .average-workspace-grid-user .average-comparison-heading { grid-column: 1; grid-row: 1; }
+  .average-workspace-grid-user .average-comparison-chart { grid-column: 1; grid-row: 2; }
+  .average-workspace-grid-user .average-comparison-content > .average-table-wrap { grid-column: 1; grid-row: 3; }
+  .average-workspace-grid-user .average-conversion-panel { grid-column: 1; grid-row: 4; }
   .average-workspace-right { order: 0; }
   .average-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 901px) and (min-height: 640px) {
+  .app-shell.average-price-user-shell {
+    display: flex;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 8px;
+  }
+  .app-shell.average-price-user-shell > .average-price-user-page {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
 }
 @media (max-width: 720px) {
   .layout-shell { grid-template-columns: minmax(0, 1fr); }

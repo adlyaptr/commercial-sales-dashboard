@@ -297,6 +297,7 @@ function monthLabel(value) {
 
 export default function WeeklyAveragePricePage() {
     const { averagePriceMonth, rangeStartDate, canEdit } = useOutletContext();
+    const canViewCustomerResults = canEdit;
     const selectedMonth = averagePriceMonth || rangeStartDate?.slice(0, 7) || '';
     const activeComparisonAreas = comparisonAreas
         .filter((area) => area.key !== 'JAWA_TENGAH_DAN_TIMUR'
@@ -836,7 +837,7 @@ export default function WeeklyAveragePricePage() {
     };
 
     return (
-        <div className="weekly-average-page">
+        <div className={`weekly-average-page${canViewCustomerResults ? '' : ' average-price-user-page'}`}>
             {error && <div className="notice bad" role="alert">{error}</div>}
             {notice && <div className="notice good" role="status">{notice}</div>}
             {hasUncalculatedPriceRows && (
@@ -852,8 +853,9 @@ export default function WeeklyAveragePricePage() {
             </section>
 
             <section className="average-data-panel">
-                <div className="average-workspace-grid">
+                <div className={`average-workspace-grid${canViewCustomerResults ? '' : ' average-workspace-grid-user'}`}>
                     <div className="average-workspace-column average-workspace-left">
+                {canViewCustomerResults && <>
                 <div className="average-data-heading">
                     <div className="average-panel-heading">
                         <b>Hasil Perhitungan Average Price</b>
@@ -987,6 +989,7 @@ export default function WeeklyAveragePricePage() {
                         </table>
                     </div>
                 </div>
+                </>}
                 {canEdit && <>
                 <div className="average-data-heading average-customer-entry-heading">
                     <div className="average-panel-heading">
@@ -1082,7 +1085,7 @@ export default function WeeklyAveragePricePage() {
                     </div>
                 </form>
                 </>}
-                <div>
+                <div className="average-conversion-panel">
                     <div className="average-data-heading average-conversion-heading">
                         <div className="average-panel-heading">
                             <b>Faktor Konversi Operator dan Kurs</b>
@@ -1124,8 +1127,8 @@ export default function WeeklyAveragePricePage() {
                 </div>
                     </div>
 
-                        <div className="average-workspace-column average-workspace-right">
-                        <div>
+                    <div className="average-workspace-column average-workspace-right">
+                    <div className="average-comparison-content">
                     <div className="average-data-heading average-comparison-heading">
                         <div className="average-panel-heading">
                             <b>Target Harga dan Prognosa (Rp/Sm³)</b>
