@@ -206,7 +206,11 @@ export default function YearlyPage() {
                     <div><small>TOTAL TARGET</small><strong>{formatNumber(totalTarget)} Sm³</strong><span>{periodSummary?.month_summary?.manual_so == null ? 'Data pada periode terpilih' : 'Target bulanan dari halaman Bulanan'}</span></div>
                 </article>
                 <article className={`yearly-kpi ${variance < 0 ? 'is-negative' : ''}`}>
-                    <span className="yearly-kpi-icon orange" aria-hidden="true">↗</span>
+                    <span className="yearly-kpi-icon orange" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M5 8h13m0 0-3-3m3 3-3 3M19 16H6m0 0 3-3m-3 3 3 3" />
+                        </svg>
+                    </span>
                     <div><small>VARIANCE / SELISIH</small><strong>{variance < 0 ? '−' : '+'}{formatNumber(Math.abs(variance))} Sm³</strong><span>Actual dikurangi target</span></div>
                 </article>
                 <article className="yearly-kpi">
@@ -286,18 +290,18 @@ export default function YearlyPage() {
                 </div>
 
                 <div className="monthly-table-scroll">
-                    <table className="monthly-table">
+                    <table className={`monthly-table${periodKeys.length === 1 ? ' yearly-single-month' : ''}`}>
                         <colgroup>
-                            <col style={{ width: 110 }} />
-                            <col style={{ width: 90 }} />
+                            <col style={{ width: periodKeys.length === 1 ? 100 : 110 }} />
+                            <col style={{ width: periodKeys.length === 1 ? 110 : 90 }} />
                             {periodKeys.map((key) => (
                                 <React.Fragment key={key}>
-                                    <col style={{ width: 80 }} />
-                                    <col style={{ width: 80 }} />
+                                    <col style={{ width: periodKeys.length === 1 ? 100 : 80 }} />
+                                    <col style={{ width: periodKeys.length === 1 ? 100 : 80 }} />
                                 </React.Fragment>
                             ))}
-                            <col style={{ width: 110 }} />
-                            <col style={{ width: 110 }} />
+                            <col style={{ width: periodKeys.length === 1 ? 90 : 110 }} />
+                            <col style={{ width: periodKeys.length === 1 ? 90 : 110 }} />
                         </colgroup>
                         <thead>
                             <tr>

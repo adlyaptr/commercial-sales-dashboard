@@ -22,6 +22,24 @@ const formatAveragePrice = (value) =>
 const formatPercent = (value) =>
     `${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(Number(value ?? 0))}%`;
 
+const kpiIcons = {
+    target: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" /></>,
+    order: <><path d="M7 4h8l4 4v12H7z" /><path d="M15 4v5h4M10 13h6m-6 3h6" /></>,
+    actual: <><path d="M4 19V5m0 14h16" /><path d="m7 15 4-4 3 2 5-6" /><path d="M15 7h4v4" /></>,
+    variance: <><path d="M5 8h13m0 0-3-3m3 3-3 3M19 16H6m0 0 3-3m-3 3 3 3" /></>,
+    achievement: <><path d="M4 17a8 8 0 1 1 16 0" /><path d="m12 13 4-4m-9 8h10" /><circle cx="12" cy="13" r="1" /></>,
+};
+
+function KpiIcon({ name }) {
+    return (
+        <div className="kpi-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                {kpiIcons[name]}
+            </svg>
+        </div>
+    );
+}
+
 const volumeValueLabels = {
     id: 'homeVolumeValueLabels',
     afterDatasetsDraw(chart) {
@@ -82,27 +100,32 @@ function PeriodMetrics({ summary, reportSummary }) {
     const achievement = target != null && Number(target) > 0
         ? displayedActual / Number(target) * 100
         : null;
+    const achievementProgress = achievement == null
+        ? 0
+        : Math.min(Math.max(achievement, 0), 100);
     return (
-        <div className="home-period-metrics">
+        <div className="home-period-metrics" role="group" aria-label="Indikator kinerja penjualan">
             <article className="kpi kpi-blue">
-                <div className="kpi-icon">◎</div>
-                <div><span>TOTAL TARGET</span><strong>{formatNumber(displayedSO)}</strong><small>{summary?.manual_so == null ? 'Data pada periode terpilih' : 'Target bulanan dari halaman Bulanan'}</small></div>
+                <KpiIcon name="target" />
+                <div className="home-kpi-content"><span>Target Penjualan</span><strong>{formatNumber(displayedSO)}</strong><small>{summary?.manual_so == null ? 'Data pada periode terpilih' : 'Target bulanan dari halaman Bulanan'}</small></div>
             </article>
             <article className="kpi kpi-teal">
-                <div className="kpi-icon">↗</div>
-                <div><span>TOTAL SO</span><strong>{formatNumber(reportSummary?.so)}</strong><small>Total SO Summary Report</small></div>
+                <KpiIcon name="order" />
+                <div className="home-kpi-content"><span>Total Sales Order</span><strong>{formatNumber(reportSummary?.so)}</strong><small>Total dari Summary Report</small></div>
             </article>
             <article className="kpi kpi-green">
-                <div className="kpi-icon">↗</div>
-                <div><span>TOTAL ACTUAL</span><strong>{formatNumber(displayedActual)}</strong><small>Total Actual Summary Report</small></div>
+                <KpiIcon name="actual" />
+                <div className="home-kpi-content"><span>Realisasi Penjualan</span><strong>{formatNumber(displayedActual)}</strong><small>Realisasi dari Summary Report</small></div>
             </article>
             <article className={`kpi ${Number(displayedDiff ?? 0) >= 0 ? 'kpi-purple' : 'kpi-negative'}`}>
-                <div className="kpi-icon">±</div>
-                <div><span>DIFF (ACTUAL − TARGET)</span><strong>{Number(displayedDiff ?? 0) > 0 ? '+' : ''}{formatNumber(displayedDiff)}</strong><small>{Number(displayedDiff ?? 0) >= 0 ? 'Di atas target' : 'Di bawah target'}</small></div>
+                <KpiIcon name="variance" />
+                <div className="home-kpi-content"><span>Varians terhadap Target</span><strong>{Number(displayedDiff ?? 0) > 0 ? '+' : ''}{formatNumber(displayedDiff)}</strong><small>{Number(displayedDiff ?? 0) >= 0 ? 'Di atas target' : 'Di bawah target'}</small></div>
             </article>
             <article className="kpi kpi-purple">
-                <div className="kpi-icon">%</div>
-                <div><span>PENCAPAIAN TARGET</span><strong>{achievement == null ? '—' : formatPercent(achievement)}</strong><small>{target != null && Number(target) > 0 ? 'Actual dibanding Target' : 'Target belum tersedia'}</small></div>
+                <KpiIcon name="achievement" />
+                <div className="home-kpi-content"><span>Pencapaian Target</span><strong>{achievement == null ? '—' : formatPercent(achievement)}</strong><small>{target != null && Number(target) > 0 ? 'Realisasi dibanding target' : 'Target belum tersedia'}</small>
+                    {achievement != null && <div className="home-kpi-progress" role="progressbar" aria-label="Pencapaian target" aria-valuemin={0} aria-valuemax={100} aria-valuenow={achievementProgress}><span style={{ width: `${achievementProgress}%` }} /></div>}
+                </div>
             </article>
         </div>
     );

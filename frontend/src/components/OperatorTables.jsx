@@ -2,7 +2,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 
 const operators = ['SETU', 'KHT', 'BLORA', 'WUNUT', 'OFF'];
 const maxTableHeight = 480;
-const formatNumber = (value) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(Number(value ?? 0));
+const formatNumber = (value) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value ?? 0));
 const formatPercent = (value) => `${Number(value ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 0 })}%`;
 const formatDate = (value) => value
     ? new Date(`${value}T00:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })

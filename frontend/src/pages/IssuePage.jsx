@@ -85,7 +85,6 @@ export default function IssuePage() {
     const [issues, setIssues] = useState([]);
     const [syncedAt, setSyncedAt] = useState('');
     const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState('');
     const [search, setSearch] = useState('');
     const [customerFilter, setCustomerFilter] = useState('');
@@ -97,7 +96,6 @@ export default function IssuePage() {
     const [page, setPage] = useState(1);
 
     const loadIssues = useCallback(async (forceRefresh = false) => {
-        setRefreshing(true);
         try {
             const result = await api(
                 `/api/issues${forceRefresh ? '?refresh=true' : ''}`,
@@ -113,7 +111,6 @@ export default function IssuePage() {
             setError(loadError.message || 'Data Issue gagal dimuat dari Google Sheets.');
         } finally {
             setLoading(false);
-            setRefreshing(false);
         }
     }, []);
 
@@ -218,13 +215,6 @@ export default function IssuePage() {
                         <MetricCard tone="progress" icon="◷" label="In Progress" value={loading ? '…' : progressCount} note="Sedang ditangani" />
                         <MetricCard tone="closed" icon="✓" label="Closed" value={loading ? '…' : closedCount} note="Sesuai status spreadsheet" />
                     </section>
-                    <div className="issue-sync">
-                        <button type="button" onClick={() => loadIssues(true)} disabled={refreshing}>
-                            <span aria-hidden="true">{refreshing ? '◌' : '⟳'}</span>
-                            {refreshing ? 'Menyinkronkan...' : 'Sinkronkan Google Sheets'}
-                        </button>
-                        <small>Terakhir sinkron: {formatDateTime(syncedAt)}</small>
-                    </div>
                 </header>
 
                 {error && (
@@ -287,7 +277,7 @@ export default function IssuePage() {
 
                 <section className="issue-panel issue-list-panel">
                     <div className="issue-list-heading">
-                        <div><h2>Daftar Issue</h2><p>Data hanya-baca dari Google Sheets</p></div>
+                        <div><h2>Daftar Issue</h2><p>Terakhir sinkron: {formatDateTime(syncedAt)}</p></div>
                     </div>
                     <div className="issue-filters">
                         <label className="issue-date-range">
@@ -369,34 +359,36 @@ export default function IssuePage() {
                 </section>
             </div>
 
-            <aside className="issue-detail-panel" aria-label="Detail issue">
-                {selectedIssue ? (
-                    <>
-                        <div className="issue-detail-heading">
+            <div className="issue-detail-column">
+                <aside className="issue-detail-panel" aria-label="Detail issue">
+                    {selectedIssue ? (
+                        <>
+                            <div className="issue-detail-heading">
+                                <h2>Detail Issue</h2>
+                                <span className={`issue-status-badge ${statusClass(selectedIssue.status)}`}>{selectedIssue.status}</span>
+                            </div>
+                            <h3>{selectedIssue.type || 'Issue Customer'}</h3>
+                            <div className="issue-detail-fields">
+                                <DetailField label="Customer">{selectedIssue.customer}</DetailField>
+                                <DetailField label="Customer PIC">{selectedIssue.customerPic}</DetailField>
+                                <DetailField label="Tanggal Issue">{formatDate(selectedIssue.date)}</DetailField>
+                                <DetailField label="Target Date">{selectedIssue.targetDate}</DetailField>
+                                <DetailField label="Root Cause">{selectedIssue.rootCause}</DetailField>
+                                <DetailField label="Dampak Issue">{selectedIssue.impact}</DetailField>
+                                <DetailField label="Tindakan Segera">{selectedIssue.immediateAction}</DetailField>
+                                <DetailField label="Update Terakhir">{selectedIssue.latestUpdate}</DetailField>
+                                <DetailField label="Tindakan Corrective">{selectedIssue.correctiveAction}</DetailField>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="issue-detail-empty">
+                            <SectionIcon name="customer" />
                             <h2>Detail Issue</h2>
-                            <span className={`issue-status-badge ${statusClass(selectedIssue.status)}`}>{selectedIssue.status}</span>
+                            <p>Pilih issue pada tabel untuk melihat detailnya.</p>
                         </div>
-                        <h3>{selectedIssue.type || 'Issue Customer'}</h3>
-                        <div className="issue-detail-fields">
-                            <DetailField label="Customer">{selectedIssue.customer}</DetailField>
-                            <DetailField label="Customer PIC">{selectedIssue.customerPic}</DetailField>
-                            <DetailField label="Tanggal Issue">{formatDate(selectedIssue.date)}</DetailField>
-                            <DetailField label="Target Date">{selectedIssue.targetDate}</DetailField>
-                            <DetailField label="Root Cause">{selectedIssue.rootCause}</DetailField>
-                            <DetailField label="Dampak Issue">{selectedIssue.impact}</DetailField>
-                            <DetailField label="Tindakan Segera">{selectedIssue.immediateAction}</DetailField>
-                            <DetailField label="Update Terakhir">{selectedIssue.latestUpdate}</DetailField>
-                            <DetailField label="Tindakan Corrective">{selectedIssue.correctiveAction}</DetailField>
-                        </div>
-                    </>
-                ) : (
-                    <div className="issue-detail-empty">
-                        <SectionIcon name="customer" />
-                        <h2>Detail Issue</h2>
-                        <p>Pilih issue pada tabel untuk melihat detailnya.</p>
-                    </div>
-                )}
-            </aside>
+                    )}
+                </aside>
+            </div>
         </div>
     );
 }

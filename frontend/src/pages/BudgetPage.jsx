@@ -84,13 +84,11 @@ export default function BudgetPage() {
     const { selectedDate } = useOutletContext();
     const [budget, setBudget] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState('');
     const [search, setSearch] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
 
     const loadBudget = useCallback(async (forceRefresh = false) => {
-        setRefreshing(true);
         try {
             const result = await api(
                 `/api/budget${forceRefresh ? '?refresh=true' : ''}`,
@@ -105,7 +103,6 @@ export default function BudgetPage() {
             setError(loadError.message || 'Data Budget gagal dimuat dari Google Sheets.');
         } finally {
             setLoading(false);
-            setRefreshing(false);
         }
     }, []);
 
@@ -226,14 +223,6 @@ export default function BudgetPage() {
                     <MetricCard icon="▣" label="Sisa Budget" value={formatCurrency(remaining)} note={remaining < 0 ? 'Melebihi anggaran' : 'Sisa anggaran periode ini'} tone="remaining" />
                     <MetricCard icon="%" label="Persentase Realisasi" value={formatPercent(realizationPercent)} note="dari total budget" tone="percentage" />
                 </section>
-                <div className="budget-toolbar">
-                    <button className="budget-sync-button" type="button" onClick={() => loadBudget(true)} disabled={refreshing}>
-                        <span aria-hidden="true">⟳</span>{refreshing ? 'Menyinkronkan...' : 'Sinkronkan Google Sheets'}
-                    </button>
-                    <small className="budget-sync-time">
-                        {budget?.syncedAt ? `Terakhir sinkron: ${new Date(budget.syncedAt).toLocaleString('id-ID')}` : 'Belum tersinkron'}
-                    </small>
-                </div>
             </header>
 
             {error && <div className="budget-alert" role="alert">{error}<button type="button" onClick={() => loadBudget(true)}>Coba lagi</button></div>}
@@ -256,7 +245,12 @@ export default function BudgetPage() {
 
                     <section className="budget-panel budget-detail-panel">
                         <div className="budget-detail-heading">
-                            <h2>Rincian Budget - {selectedMonthLabel}</h2>
+                            <div className="budget-detail-title">
+                                <h2>Rincian Budget - {selectedMonthLabel}</h2>
+                                <small className="budget-sync-time">
+                                    {budget?.syncedAt ? `Terakhir sinkron: ${new Date(budget.syncedAt).toLocaleString('id-ID')}` : 'Belum tersinkron'}
+                                </small>
+                            </div>
                             <div className="budget-filters">
                                 <input type="search" aria-label="Cari kategori budget" placeholder="Cari kategori..." value={search} onChange={(event) => setSearch(event.target.value)} />
                                 <select aria-label="Filter kategori budget" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>

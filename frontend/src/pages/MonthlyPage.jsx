@@ -346,6 +346,52 @@ export default function MonthlyPage() {
   return (
     <div className="monthly-app">
       <main className="monthly-main">
+        <section className="monthly-kpis">
+          <article className="monthly-kpi">
+            <div className="monthly-kpi-icon blue">▤</div>
+            <div>
+              <span>Total Target Periode</span>
+              <strong>{fmtSO(totalPeriodTarget)}</strong>
+              {periodKeys.length > 1 && (
+                <small>Total target periode adalah penjumlahan target SO setiap bulan.</small>
+              )}
+            </div>
+          </article>
+
+          <article className="monthly-kpi">
+            <div className="monthly-kpi-icon purple">♟</div>
+            <div>
+              <span>Total SO</span>
+              <strong>{fmt(totalSO)}</strong>
+              <small>Total SO pada periode terpilih</small>
+            </div>
+          </article>
+
+          <article className="monthly-kpi">
+            <div className="monthly-kpi-icon green">◎</div>
+            <div>
+              <span>Total Actual (Rp)</span>
+              <strong>{fmt(totalActual)}</strong>
+              <small>
+                {actualGrowth === null
+                  ? "Tidak ada pembanding bulan sebelumnya"
+                  : `${actualGrowth >= 0 ? "▲" : "▼"} ${
+                      fmtPercent(Math.abs(actualGrowth))
+                    } vs bulan lalu`}
+              </small>
+            </div>
+          </article>
+
+          <article className="monthly-kpi">
+            <div className="monthly-kpi-icon gold">%</div>
+            <div>
+              <span>Pencapaian</span>
+              <strong>{fmtPercent(achievement)}</strong>
+              <small>Actual dibandingkan target periode</small>
+            </div>
+          </article>
+        </section>
+
         <section className="monthly-filters">
           <label>
             Wilayah
@@ -400,82 +446,41 @@ export default function MonthlyPage() {
           </div>
         )}
 
-        <section className="monthly-kpis">
-          <article className="monthly-kpi">
-            <div className="monthly-kpi-icon blue">▤</div>
+        {canEdit && selectedMonthKey && (
+          <section className="monthly-target-editor" aria-label="Pengaturan target SO">
             <div>
-              <span>Total Target Periode</span>
-              <strong>{fmtSO(totalPeriodTarget)}</strong>
-              {canEdit && selectedMonthKey && <form className="monthly-so-form" onSubmit={saveManualSO}>
-                <div>
-                  <input
-                    id="monthly-so-target"
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="8.027.252"
-                    aria-label="Input Total Target Bulanan"
-                    value={manualSOInput}
-                    onChange={(event) => setManualSOInput(event.target.value)}
-                    required
-                  />
-                  <button
-                    type="submit"
-                    disabled={manualSOSaving}
-                  >
-                    {manualSOSaving ? "Menyimpan..." : "Simpan"}
-                  </button>
-                </div>
-                <small>Masukkan target SO untuk bulan terpilih.</small>
-                {manualSOSaved && (
-                  <small className="monthly-so-success" role="status">
-                    Target bulanan tersimpan.
-                  </small>
-                )}
-              </form>}
-              {periodKeys.length > 1 && (
-                <small>Total target periode adalah penjumlahan target SO setiap bulan.</small>
+              <strong>Target SO Bulanan</strong>
+              <span>Masukkan target untuk bulan terpilih.</span>
+            </div>
+            <form className="monthly-so-form" onSubmit={saveManualSO}>
+              <div>
+                <input
+                  id="monthly-so-target"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="8.027.252"
+                  aria-label="Input Total Target Bulanan"
+                  value={manualSOInput}
+                  onChange={(event) => setManualSOInput(event.target.value)}
+                  required
+                />
+                <button type="submit" disabled={manualSOSaving}>
+                  {manualSOSaving ? "Menyimpan..." : "Simpan"}
+                </button>
+              </div>
+              {manualSOSaved && (
+                <small className="monthly-so-success" role="status">
+                  Target bulanan tersimpan.
+                </small>
               )}
-              {canEdit && manualSOError && (
+              {manualSOError && (
                 <small className="monthly-so-error" role="alert">
                   {manualSOError}
                 </small>
               )}
-            </div>
-          </article>
-
-          <article className="monthly-kpi">
-            <div className="monthly-kpi-icon purple">♟</div>
-            <div>
-              <span>Total SO</span>
-              <strong>{fmt(totalSO)}</strong>
-              <small>Total SO pada periode terpilih</small>
-            </div>
-          </article>
-
-          <article className="monthly-kpi">
-            <div className="monthly-kpi-icon green">◎</div>
-            <div>
-              <span>Total Actual (Rp)</span>
-              <strong>{fmt(totalActual)}</strong>
-              <small>
-                {actualGrowth === null
-                  ? "Tidak ada pembanding bulan sebelumnya"
-                  : `${actualGrowth >= 0 ? "▲" : "▼"} ${
-                      fmtPercent(Math.abs(actualGrowth))
-                    } vs bulan lalu`}
-              </small>
-            </div>
-          </article>
-
-          <article className="monthly-kpi">
-            <div className="monthly-kpi-icon gold">%</div>
-            <div>
-              <span>Pencapaian</span>
-              <strong>{fmtPercent(achievement)}</strong>
-              <small>Actual dibandingkan target periode</small>
-            </div>
-          </article>
-        </section>
+            </form>
+          </section>
+        )}
 
         <section className="monthly-charts">
           <article className="monthly-card">
