@@ -9,6 +9,8 @@ services:
       MYSQL_USER: ${MYSQL_USER:-commercial}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?isi MYSQL_PASSWORD di .env}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?isi MYSQL_ROOT_PASSWORD di .env}
+    ports:
+      - "10.128.0.4:3307:3306"
     volumes:
       - db-data:/var/lib/mysql
     healthcheck:
