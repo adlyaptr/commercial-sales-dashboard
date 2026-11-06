@@ -290,7 +290,10 @@ export default function YearlyPage() {
                 </div>
 
                 <div className="monthly-table-scroll">
-                    <table className={`monthly-table${periodKeys.length === 1 ? ' yearly-single-month' : ''}`}>
+                    <table
+                        className={`monthly-table${periodKeys.length === 1 ? ' yearly-single-month' : ''}`}
+                        style={{ '--yearly-label-left': `${periodKeys.length === 1 ? 100 : 110}px` }}
+                    >
                         <colgroup>
                             <col style={{ width: periodKeys.length === 1 ? 100 : 110 }} />
                             <col style={{ width: periodKeys.length === 1 ? 110 : 90 }} />
@@ -346,7 +349,7 @@ export default function YearlyPage() {
                                             {operatorGroup.hasOtherRows && (
                                                 <tr>
                                                     <td className="yearly-fixed-left" />
-                                                    <td className="yearly-fixed-left yearly-fixed-label yearly-other-label">Pelanggan lainnya (non-FOB)</td>
+                                                    <td className="yearly-fixed-left yearly-fixed-label yearly-child-label">Pelanggan lainnya (non-FOB)</td>
                                                     {periodKeys.map((_, index) => (
                                                         <React.Fragment key={index}>
                                                             <td className="monthly-month-start">{formatNumber(operatorGroup.otherSoValues[index])}</td>
@@ -360,7 +363,7 @@ export default function YearlyPage() {
                                             {operatorGroup.hasFobRows && (
                                                 <tr className="monthly-fob-row">
                                                     <td className="yearly-fixed-left" />
-                                                    <td className="yearly-fixed-left yearly-fixed-label">Total FOB</td>
+                                                    <td className="yearly-fixed-left yearly-fixed-label yearly-child-label">Total FOB</td>
                                                     {periodKeys.map((_, index) => (
                                                         <React.Fragment key={index}>
                                                             <td className="monthly-month-start">{formatNumber(operatorGroup.fobSoValues[index])}</td>

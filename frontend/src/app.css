@@ -2902,12 +2902,12 @@ textarea:focus-visible, a:focus-visible {
 }
 
 .yearly-recap .monthly-table .yearly-fixed-label {
-  left: 110px;
+  left: var(--yearly-label-left, 110px);
   white-space: normal;
 }
 
-.yearly-recap .monthly-table .yearly-other-label {
-  padding-left: 0;
+.yearly-recap .monthly-table td.yearly-child-label {
+  padding-left: 18px;
 }
 
 .yearly-recap .monthly-table .yearly-fixed-right {
