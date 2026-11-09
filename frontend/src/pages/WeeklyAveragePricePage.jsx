@@ -163,6 +163,9 @@ const januaryCustomerAliases = {
     tongjiksogas: 'Tong Tji / GAS',
 };
 const normalizeCustomerOrder = (value) => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const usesAveragePriceRupiahMultiplier = (value) => (
+    ['winglokebm', 'winglokksoebm'].includes(normalizeCustomerOrder(value))
+);
 const averagePriceCustomerIdentity = (value, month) => {
     const key = normalizeCustomerOrder(value);
     const alias = (month === '2026-01' && januaryCustomerAliases[key])
@@ -748,7 +751,7 @@ export default function WeeklyAveragePricePage() {
                 price_usd_per_mmbtu: customerEntry.price_unit === 'USD_MMBTU' ? price : 0,
                 price_rp_per_sm3: customerEntry.price_unit === 'IDR_SM3' ? price : 0,
                 rupiah_multiplier: customerEntry.price_unit === 'IDR_SM3'
-                    ? price
+                    ? usesAveragePriceRupiahMultiplier(customerKey) ? price : null
                     : priceChanged ? null : existingRow.rupiah_multiplier,
                 total_usd_override: priceChanged ? null : existingRow.total_usd_override,
                 rupiah_override: priceChanged ? null : existingRow.rupiah_override,

@@ -343,7 +343,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertAlmostEqual(row["rupiah"], expected_rupiah)
         self.assertAlmostEqual(row["total_usd"], expected_rupiah / 17895)
 
-    def test_applies_pulled_rupiah_multiplier_to_kgm_rrs_only(self):
+    def test_kgm_rrs_uses_normal_rupiah_per_sm3_calculation_even_with_old_multiplier(self):
         with patch.object(
             main,
             "db",
@@ -359,9 +359,10 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             report = main.monthly_average_price(FakeRequest(), "2026-10")
 
         row = report["rows"][0]
-        base_usd = row["sm3"] * 9450 / 17895
+        expected_rupiah = row["sm3"] * 9450
+        base_usd = expected_rupiah / 17895
         self.assertAlmostEqual(row["total_usd"], base_usd)
-        self.assertAlmostEqual(row["rupiah"], base_usd * 9450)
+        self.assertAlmostEqual(row["rupiah"], expected_rupiah)
 
         with patch.object(
             main,
@@ -727,7 +728,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             ("2026-10-01", "customer-1", "JAWA BARAT", "IDR_SM3", 0.0, 8725.0),
         )
 
-    def test_saves_rupiah_multiplier_only_for_supported_customers(self):
+    def test_saves_rupiah_multiplier_only_for_winglok_ebm(self):
         database = MemoryMonthlyAveragePriceWrites()
         payload = {
             "month": "2026-10",
@@ -739,6 +740,12 @@ class MonthlyAveragePriceTests(unittest.TestCase):
                     "price_unit": "IDR_SM3",
                     "price_rp_per_sm3": 9450,
                     "rupiah_multiplier": 9450,
+                },
+                {
+                    "customer_key": "winglokksoebm",
+                    "price_unit": "IDR_SM3",
+                    "price_rp_per_sm3": 8225,
+                    "rupiah_multiplier": 8225,
                 },
                 {
                     "customer_key": "clin",
@@ -758,7 +765,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         ]
         self.assertEqual(
             {parameters[1]: parameters[6] for parameters in inserts},
-            {"kgmksorrs": 9450, "clin": None},
+            {"kgmksorrs": None, "winglokksoebm": 8225, "clin": None},
         )
 
     def test_saves_each_customer_once_per_month(self):
@@ -983,7 +990,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertEqual(len(database.price_inputs), 1)
         self.assertEqual(database.price_inputs[0][1][1], "clin")
 
-    def test_sheet_sync_uses_kgm_sales_alias_for_rupiah_multiplier(self):
+    def test_sheet_sync_uses_kgm_sales_alias_with_normal_rupiah_price(self):
         database = MemoryAveragePriceSheetSync()
         database.customers.extend([
             {"customer_key": "kgm", "customer_name": "KGM", "operator": "SETU"},
@@ -1019,9 +1026,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertEqual(result["imported"], 1)
         parameters = database.price_inputs[0][1]
         self.assertEqual(parameters[1], "kgmksorrs")
-        self.assertEqual(parameters[3:7], (
-            "IDR_SM3", 0, 9450, 9450,
-        ))
+        self.assertEqual(parameters[3:7], ("IDR_SM3", 0, 9450, None))
 
     def test_sheet_sync_uses_winglok_usd_price_alias_for_rupiah_multiplier(self):
         database = MemoryAveragePriceSheetSync()

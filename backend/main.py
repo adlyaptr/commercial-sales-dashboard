@@ -440,7 +440,6 @@ AVERAGE_PRICE_CUSTOMER_ALIASES = {
     "winglokksoebm": "winglokebm",
 }
 AVERAGE_PRICE_RUPIAH_MULTIPLIER_CUSTOMERS = {
-    "kgmrrs",
     "winglokebm",
 }
 
@@ -5431,6 +5430,11 @@ async def sync_monthly_average_price_sheet(request: Request):
                 and entry["price_unit"] == "IDR_SM3"
                 and uses_average_price_rupiah_multiplier(source_key)
             )
+            is_kgm_rupiah_entry = (
+                entry["active"]
+                and entry["price_unit"] == "IDR_SM3"
+                and source_key == "kgmrrs"
+            )
             if is_rupiah_multiplier_entry:
                 usd_priced_customers = []
                 for candidate in matching_customers:
@@ -5467,6 +5471,30 @@ async def sync_monthly_average_price_sheet(request: Request):
                         ]
                         if exact_customers:
                             matching_customers = exact_customers
+            elif is_kgm_rupiah_entry:
+                active_customers = []
+                for candidate in matching_customers:
+                    volume_row = con.execute(
+                        "SELECT COALESCE(SUM(actual),0) AS actual_sm3 FROM sales "
+                        "WHERE customer_key=%s AND report_date >= %s AND report_date < %s",
+                        (
+                            candidate["customer_key"],
+                            month_start.isoformat(),
+                            next_month_start.isoformat(),
+                        ),
+                    ).fetchone()
+                    if volume_row and float(volume_row["actual_sm3"] or 0) > 0:
+                        active_customers.append(candidate)
+                if active_customers:
+                    matching_customers = active_customers
+                else:
+                    exact_customers = [
+                        customer
+                        for customer in matching_customers
+                        if norm(customer["customer_key"]) == source_key
+                    ]
+                    if exact_customers:
+                        matching_customers = exact_customers
             else:
                 exact_customers = [
                     customer

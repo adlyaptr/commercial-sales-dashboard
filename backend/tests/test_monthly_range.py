@@ -176,6 +176,25 @@ class MonthlyRangeTests(unittest.TestCase):
         self.assertAlmostEqual(row["rupiah"], row["total_usd"] * 8225)
         self.assertAlmostEqual(result["totals"]["rupiah"], row["rupiah"])
 
+    def test_ignores_old_rupiah_multiplier_for_kgm_in_date_range(self):
+        with patch.object(
+            main,
+            "db",
+            return_value=MemoryAveragePriceRange(
+                customer_key="kgmksorrs",
+                rupiah_multiplier=9450,
+            ),
+        ):
+            result = main.monthly_average_price_range(
+                FakeRequest(),
+                "2026-10-01",
+                "2026-10-31",
+            )
+
+        row = result["rows"][0]
+        self.assertIsNone(row["rupiah_multiplier"])
+        self.assertAlmostEqual(row["rupiah"], row["total_usd"] * 17895)
+
     def test_excludes_pentawira_from_average_price_date_range(self):
         with patch.object(
             main,
