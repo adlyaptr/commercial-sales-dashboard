@@ -26,6 +26,7 @@ class MemoryMonthlyAveragePrice:
         price_unit="USD_MMBTU",
         price_usd=1,
         price_rp=0,
+        rupiah_multiplier=None,
         include_in_summary=True,
         region="JAWA BARAT",
         customer_name="Customer Contoh",
@@ -35,6 +36,7 @@ class MemoryMonthlyAveragePrice:
         self.price_unit = price_unit
         self.price_usd = price_usd
         self.price_rp = price_rp
+        self.rupiah_multiplier = rupiah_multiplier
         self.include_in_summary = include_in_summary
         self.region = region
         self.customer_name = customer_name
@@ -60,6 +62,7 @@ class MemoryMonthlyAveragePrice:
                 "price_unit": self.price_unit,
                 "price_usd_per_mmbtu": self.price_usd,
                 "price_rp_per_sm3": self.price_rp,
+                "rupiah_multiplier": self.rupiah_multiplier,
                 "sm3_override": None,
                 "mmbtu_override": None,
                 "total_usd_override": None,
@@ -149,6 +152,8 @@ class MemoryAveragePriceSheetSync:
             {"customer_key": "clin", "customer_name": "CLIN", "operator": "SETU"},
         ]
         self.price_inputs = []
+        self.existing_price_inputs = {}
+        self.sales_actual = {}
         self.legacy_workbook = False
         self.legacy_cleanup = []
 
@@ -167,6 +172,14 @@ class MemoryAveragePriceSheetSync:
                 None,
             )
             return SimpleNamespace(fetchone=lambda: customer)
+        if statement.startswith("SELECT price_usd_per_mmbtu FROM monthly_average_price_inputs"):
+            return SimpleNamespace(
+                fetchone=lambda: self.existing_price_inputs.get(parameters[1])
+            )
+        if statement.startswith("SELECT COALESCE(SUM(actual),0) AS actual_sm3 FROM sales"):
+            return SimpleNamespace(
+                fetchone=lambda: {"actual_sm3": self.sales_actual.get(parameters[0], 0)}
+            )
         if statement.startswith("SELECT month_start FROM monthly_average_price_workbook_imports"):
             return SimpleNamespace(
                 fetchone=lambda: {"month_start": parameters[0]} if self.legacy_workbook else None
@@ -329,6 +342,76 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertEqual(row["price_rp_per_sm3"], 8725)
         self.assertAlmostEqual(row["rupiah"], expected_rupiah)
         self.assertAlmostEqual(row["total_usd"], expected_rupiah / 17895)
+
+    def test_applies_pulled_rupiah_multiplier_to_kgm_rrs_only(self):
+        with patch.object(
+            main,
+            "db",
+            return_value=MemoryMonthlyAveragePrice(
+                price_unit="IDR_SM3",
+                price_usd=0,
+                price_rp=9450,
+                rupiah_multiplier=9450,
+                customer_key="kgmksorrs",
+                customer_name="KGM (KSO RRS)",
+            ),
+        ):
+            report = main.monthly_average_price(FakeRequest(), "2026-10")
+
+        row = report["rows"][0]
+        base_usd = row["sm3"] * 9450 / 17895
+        self.assertAlmostEqual(row["total_usd"], base_usd)
+        self.assertAlmostEqual(row["rupiah"], base_usd * 9450)
+
+        with patch.object(
+            main,
+            "db",
+            return_value=MemoryMonthlyAveragePrice(
+                price_unit="IDR_SM3",
+                price_usd=0,
+                price_rp=9450,
+                rupiah_multiplier=9450,
+                customer_key="clin",
+                customer_name="CLIN",
+            ),
+        ):
+            other_report = main.monthly_average_price(FakeRequest(), "2026-10")
+
+        self.assertAlmostEqual(
+            other_report["rows"][0]["rupiah"],
+            other_report["rows"][0]["sm3"] * 9450,
+        )
+
+    def test_applies_pulled_rupiah_multiplier_to_winglok_ebm(self):
+        class WinglokAveragePrice(MemoryMonthlyAveragePrice):
+            def execute(self, statement, parameters=None):
+                result = super().execute(statement, parameters)
+                if "LEFT JOIN sales s" not in statement:
+                    return result
+                row = result.fetchall()[0]
+                row.update({
+                    "actual_sm3": 2264.213,
+                    "sm3_per_mmbtu": 30.296696310164023,
+                    "price_usd_per_mmbtu": 13.68,
+                })
+                return SimpleNamespace(fetchall=lambda: [row])
+
+        with patch.object(
+            main,
+            "db",
+            return_value=WinglokAveragePrice(
+                price_usd=13.68,
+                rupiah_multiplier=8225,
+                customer_key="winglokksoebm",
+                customer_name="WINGLOK (KSO EBM)",
+            ),
+        ):
+            report = main.monthly_average_price(FakeRequest(), "2026-10")
+
+        row = report["rows"][0]
+        expected_usd = (2264.213 / 30.296696310164023) * 13.68
+        self.assertAlmostEqual(row["total_usd"], expected_usd)
+        self.assertAlmostEqual(row["rupiah"], expected_usd * 8225)
 
     def test_keeps_summary_excluded_customer_visible_but_out_of_totals(self):
         with patch.object(
@@ -608,9 +691,10 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             price_insert[:6],
             ("2026-10-01", "customer-1", "JAWA BARAT", "USD_MMBTU", 1.0, 0.0),
         )
-        self.assertEqual(price_insert[6:10], (None, None, None, None))
-        self.assertFalse(price_insert[10])
-        self.assertIsInstance(price_insert[11], str)
+        self.assertIsNone(price_insert[6])
+        self.assertEqual(price_insert[7:11], (None, None, None, None))
+        self.assertFalse(price_insert[11])
+        self.assertIsInstance(price_insert[12], str)
         target_insert = next(
             parameters for statement, parameters in database.statements
             if statement.startswith("INSERT INTO monthly_average_price_targets")
@@ -641,6 +725,40 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertEqual(
             price_insert[:6],
             ("2026-10-01", "customer-1", "JAWA BARAT", "IDR_SM3", 0.0, 8725.0),
+        )
+
+    def test_saves_rupiah_multiplier_only_for_supported_customers(self):
+        database = MemoryMonthlyAveragePriceWrites()
+        payload = {
+            "month": "2026-10",
+            "operator_factors": {},
+            "exchange_rate": 17917,
+            "entries": [
+                {
+                    "customer_key": "kgmksorrs",
+                    "price_unit": "IDR_SM3",
+                    "price_rp_per_sm3": 9450,
+                    "rupiah_multiplier": 9450,
+                },
+                {
+                    "customer_key": "clin",
+                    "price_unit": "IDR_SM3",
+                    "price_rp_per_sm3": 8725,
+                    "rupiah_multiplier": 8725,
+                },
+            ],
+            "targets": {},
+        }
+        with patch.object(main, "db", return_value=database):
+            asyncio.run(main.save_monthly_average_price(FakeRequest(payload)))
+
+        inserts = [
+            parameters for statement, parameters in database.statements
+            if statement.startswith("INSERT INTO monthly_average_price_inputs")
+        ]
+        self.assertEqual(
+            {parameters[1]: parameters[6] for parameters in inserts},
+            {"kgmksorrs": 9450, "clin": None},
         )
 
     def test_saves_each_customer_once_per_month(self):
@@ -864,6 +982,87 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         )
         self.assertEqual(len(database.price_inputs), 1)
         self.assertEqual(database.price_inputs[0][1][1], "clin")
+
+    def test_sheet_sync_uses_kgm_sales_alias_for_rupiah_multiplier(self):
+        database = MemoryAveragePriceSheetSync()
+        database.customers.extend([
+            {"customer_key": "kgm", "customer_name": "KGM", "operator": "SETU"},
+            {
+                "customer_key": "kgmksorrs",
+                "customer_name": "KGM (KSO RRS)",
+                "operator": "SETU",
+            },
+            {
+                "customer_key": "kgmrrs",
+                "customer_name": "KGM / RRS",
+                "operator": "SETU",
+            },
+        ])
+        database.sales_actual["kgmksorrs"] = 34235.89
+        imported = {
+            "source": "Harga Customer 2026",
+            "entries": [{
+                "customer": "KGM / RRS",
+                "price_unit": "IDR_SM3",
+                "price": 9450,
+                "active": True,
+            }],
+        }
+        with (
+            patch.object(main, "import_monthly_average_price_sheet", return_value=imported),
+            patch.object(main, "db", return_value=database),
+        ):
+            result = asyncio.run(main.sync_monthly_average_price_sheet(
+                FakeRequest({"month": "2026-10", "customer_mappings": []})
+            ))
+
+        self.assertEqual(result["imported"], 1)
+        parameters = database.price_inputs[0][1]
+        self.assertEqual(parameters[1], "kgmksorrs")
+        self.assertEqual(parameters[3:7], (
+            "IDR_SM3", 0, 9450, 9450,
+        ))
+
+    def test_sheet_sync_uses_winglok_usd_price_alias_for_rupiah_multiplier(self):
+        database = MemoryAveragePriceSheetSync()
+        database.customers.extend([
+            {
+                "customer_key": "winglokebm",
+                "customer_name": "Winglok / EBM",
+                "operator": "SETU",
+            },
+            {
+                "customer_key": "winglokksoebm",
+                "customer_name": "WINGLOK (KSO EBM)",
+                "operator": "SETU",
+            },
+        ])
+        database.existing_price_inputs["winglokksoebm"] = {
+            "price_usd_per_mmbtu": 13.68,
+        }
+        imported = {
+            "source": "Harga Customer 2026",
+            "entries": [{
+                "customer": "Winglok / EBM",
+                "price_unit": "IDR_SM3",
+                "price": 8225,
+                "active": True,
+            }],
+        }
+        with (
+            patch.object(main, "import_monthly_average_price_sheet", return_value=imported),
+            patch.object(main, "db", return_value=database),
+        ):
+            result = asyncio.run(main.sync_monthly_average_price_sheet(
+                FakeRequest({"month": "2026-10", "customer_mappings": []})
+            ))
+
+        self.assertEqual(result["imported"], 1)
+        parameters = database.price_inputs[0][1]
+        self.assertEqual(parameters[1], "winglokksoebm")
+        self.assertEqual(parameters[3:7], (
+            "USD_MMBTU", 13.68, 0, 8225,
+        ))
 
     def test_sheet_sync_returns_unmapped_customer_for_admin_prompt(self):
         database = MemoryAveragePriceSheetSync()

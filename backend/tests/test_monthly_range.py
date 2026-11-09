@@ -61,9 +61,15 @@ class MemoryMonthlyRange:
 
 
 class MemoryAveragePriceRange:
-    def __init__(self, region="JAWA BARAT", customer_key="customer-1"):
+    def __init__(
+        self,
+        region="JAWA BARAT",
+        customer_key="customer-1",
+        rupiah_multiplier=None,
+    ):
         self.region = region
         self.customer_key = customer_key
+        self.rupiah_multiplier = rupiah_multiplier
 
     def __enter__(self):
         return self
@@ -89,6 +95,7 @@ class MemoryAveragePriceRange:
             "price_unit": "USD_MMBTU",
             "price_usd_per_mmbtu": 1,
             "price_rp_per_sm3": 0,
+            "rupiah_multiplier": self.rupiah_multiplier,
             "sm3_override": None,
             "mmbtu_override": None,
             "total_usd_override": None,
@@ -149,6 +156,25 @@ class MonthlyRangeTests(unittest.TestCase):
             result["totals"]["average_price_rp_sm3"],
             row["rupiah"] / expected_sm3,
         )
+
+    def test_applies_rupiah_multiplier_to_winglok_in_date_range(self):
+        with patch.object(
+            main,
+            "db",
+            return_value=MemoryAveragePriceRange(
+                customer_key="winglokksoebm",
+                rupiah_multiplier=8225,
+            ),
+        ):
+            result = main.monthly_average_price_range(
+                FakeRequest(),
+                "2026-10-01",
+                "2026-10-31",
+            )
+
+        row = result["rows"][0]
+        self.assertAlmostEqual(row["rupiah"], row["total_usd"] * 8225)
+        self.assertAlmostEqual(result["totals"]["rupiah"], row["rupiah"])
 
     def test_excludes_pentawira_from_average_price_date_range(self):
         with patch.object(

@@ -622,6 +622,7 @@ export default function WeeklyAveragePricePage() {
                         price_rp_per_sm3: row.price_unit === 'IDR_SM3'
                             ? Number(row.price_rp_per_sm3 || 0)
                             : 0,
+                        rupiah_multiplier: row.rupiah_multiplier ?? null,
                         sm3_override: row.sm3_override ?? null,
                         mmbtu_override: row.mmbtu_override ?? null,
                         total_usd_override: row.total_usd_override ?? null,
@@ -727,6 +728,7 @@ export default function WeeklyAveragePricePage() {
                 price_unit: customerEntry.price_unit,
                 price_usd_per_mmbtu: 0,
                 price_rp_per_sm3: 0,
+                rupiah_multiplier: null,
                 sm3_override: null,
                 mmbtu_override: null,
                 total_usd_override: null,
@@ -745,6 +747,9 @@ export default function WeeklyAveragePricePage() {
                 price_unit: customerEntry.price_unit,
                 price_usd_per_mmbtu: customerEntry.price_unit === 'USD_MMBTU' ? price : 0,
                 price_rp_per_sm3: customerEntry.price_unit === 'IDR_SM3' ? price : 0,
+                rupiah_multiplier: customerEntry.price_unit === 'IDR_SM3'
+                    ? price
+                    : priceChanged ? null : existingRow.rupiah_multiplier,
                 total_usd_override: priceChanged ? null : existingRow.total_usd_override,
                 rupiah_override: priceChanged ? null : existingRow.rupiah_override,
             };
@@ -876,19 +881,20 @@ export default function WeeklyAveragePricePage() {
         const priceUnit = row.price_unit || 'USD_MMBTU';
         const priceUsd = Number(row.price_usd_per_mmbtu || 0);
         const priceRp = Number(row.price_rp_per_sm3 || 0);
+        const rupiahMultiplier = Number(row.rupiah_multiplier || 0);
         const exchangeRate = Number(report.exchange_rate || 0);
-        const calculatedRp = priceUnit === 'IDR_SM3'
-            ? sm3 * priceRp
-            : volumeMmbtu * priceUsd * exchangeRate;
-        const totalRp = row.rupiah_override != null
-            ? Number(row.rupiah_override)
-            : calculatedRp;
         const calculatedUsd = priceUnit === 'IDR_SM3'
-            ? (exchangeRate > 0 ? totalRp / exchangeRate : 0)
+            ? (exchangeRate > 0 ? sm3 * priceRp / exchangeRate : 0)
             : volumeMmbtu * priceUsd;
         const totalUsd = row.total_usd_override != null
             ? Number(row.total_usd_override)
             : calculatedUsd;
+        const calculatedRp = priceUnit === 'IDR_SM3'
+            ? (rupiahMultiplier > 0 ? totalUsd * rupiahMultiplier : sm3 * priceRp)
+            : totalUsd * (rupiahMultiplier > 0 ? rupiahMultiplier : exchangeRate);
+        const totalRp = row.rupiah_override != null
+            ? Number(row.rupiah_override)
+            : calculatedRp;
         const customerKey = normalizeCustomerOrder(row.customer_key);
         const customer = selectedMonth === '2026-01'
             ? januaryCustomerAliases[customerKey] || customerOrderAliases[customerKey] || row.customer
@@ -1166,6 +1172,9 @@ export default function WeeklyAveragePricePage() {
                                                                     {row.price_unit === 'IDR_SM3'
                                                                         ? formatDecimal(row.price_rp_per_sm3, 2)
                                                                         : formatDecimal(row.price_usd_per_mmbtu, 2)}
+                                                                    {Number(row.rupiah_multiplier) > 0
+                                                                        ? <small> · × Rp {formatInteger(row.rupiah_multiplier)}</small>
+                                                                        : null}
                                                                 </>
                                                                 : '—'}
                                                             </td>
