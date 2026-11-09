@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS monthly_average_price_inputs (
     price_usd_per_mmbtu DOUBLE NOT NULL DEFAULT 0,
     price_rp_per_sm3 DOUBLE NOT NULL DEFAULT 0,
     rupiah_multiplier DOUBLE NULL,
+    price_active BOOLEAN NOT NULL DEFAULT TRUE,
     sm3_override DOUBLE NULL,
     mmbtu_override DOUBLE NULL,
     total_usd_override DOUBLE NULL,

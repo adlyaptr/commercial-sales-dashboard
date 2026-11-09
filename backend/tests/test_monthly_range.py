@@ -66,10 +66,14 @@ class MemoryAveragePriceRange:
         region="JAWA BARAT",
         customer_key="customer-1",
         rupiah_multiplier=None,
+        price_active=True,
+        month="2026-10",
     ):
         self.region = region
         self.customer_key = customer_key
         self.rupiah_multiplier = rupiah_multiplier
+        self.price_active = price_active
+        self.month = month
 
     def __enter__(self):
         return self
@@ -82,13 +86,17 @@ class MemoryAveragePriceRange:
             return SimpleNamespace(fetchall=lambda: [])
         if "monthly_average_price_exchange_rates" not in statement:
             raise AssertionError(f"Unexpected SQL in Average Price range test: {statement}")
-        if parameters != ("2026-10-01", "2026-10-31"):
+        expected_dates = {
+            "2026-07": ("2026-07-01", "2026-07-31"),
+            "2026-10": ("2026-10-01", "2026-10-31"),
+        }[self.month]
+        if parameters != expected_dates:
             raise AssertionError(f"Unexpected date parameters: {parameters}")
         return SimpleNamespace(fetchall=lambda: [{
             "customer_key": self.customer_key,
             "customer_name": "Customer Contoh",
             "operator": "SETU",
-            "period": "2026-10",
+            "period": self.month,
             "so_sm3": 50000,
             "actual_sm3": 28095,
             "region": self.region,
@@ -96,6 +104,7 @@ class MemoryAveragePriceRange:
             "price_usd_per_mmbtu": 1,
             "price_rp_per_sm3": 0,
             "rupiah_multiplier": self.rupiah_multiplier,
+            "price_active": self.price_active,
             "sm3_override": None,
             "mmbtu_override": None,
             "total_usd_override": None,
@@ -175,6 +184,30 @@ class MonthlyRangeTests(unittest.TestCase):
         row = result["rows"][0]
         self.assertAlmostEqual(row["rupiah"], row["total_usd"] * 8225)
         self.assertAlmostEqual(result["totals"]["rupiah"], row["rupiah"])
+
+    def test_inactive_sheet_price_suppresses_date_range_calculated_values(self):
+        with patch.object(
+            main,
+            "db",
+            return_value=MemoryAveragePriceRange(
+                customer_key="bisurcharge",
+                month="2026-07",
+            ),
+        ):
+            result = main.monthly_average_price_range(
+                FakeRequest(),
+                "2026-07-01",
+                "2026-07-31",
+            )
+
+        row = result["rows"][0]
+        self.assertEqual(row["actual_sm3"], 28095)
+        self.assertEqual(row["sm3"], 0)
+        self.assertEqual(row["volume_mmbtu"], 0)
+        self.assertEqual(row["total_usd"], 0)
+        self.assertEqual(row["rupiah"], 0)
+        self.assertFalse(row["price_active"])
+        self.assertFalse(row["has_valid_price"])
 
     def test_ignores_old_rupiah_multiplier_for_kgm_in_date_range(self):
         with patch.object(

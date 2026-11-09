@@ -626,6 +626,7 @@ export default function WeeklyAveragePricePage() {
                             ? Number(row.price_rp_per_sm3 || 0)
                             : 0,
                         rupiah_multiplier: row.rupiah_multiplier ?? null,
+                        price_active: row.price_active !== false,
                         sm3_override: row.sm3_override ?? null,
                         mmbtu_override: row.mmbtu_override ?? null,
                         total_usd_override: row.total_usd_override ?? null,
@@ -732,6 +733,7 @@ export default function WeeklyAveragePricePage() {
                 price_usd_per_mmbtu: 0,
                 price_rp_per_sm3: 0,
                 rupiah_multiplier: null,
+                price_active: true,
                 sm3_override: null,
                 mmbtu_override: null,
                 total_usd_override: null,
@@ -750,6 +752,7 @@ export default function WeeklyAveragePricePage() {
                 price_unit: customerEntry.price_unit,
                 price_usd_per_mmbtu: customerEntry.price_unit === 'USD_MMBTU' ? price : 0,
                 price_rp_per_sm3: customerEntry.price_unit === 'IDR_SM3' ? price : 0,
+                price_active: true,
                 rupiah_multiplier: customerEntry.price_unit === 'IDR_SM3'
                     ? usesAveragePriceRupiahMultiplier(customerKey) ? price : null
                     : priceChanged ? null : existingRow.rupiah_multiplier,
@@ -773,6 +776,7 @@ export default function WeeklyAveragePricePage() {
                             price_unit: updatedRow.price_unit,
                             price_usd_per_mmbtu: updatedRow.price_usd_per_mmbtu,
                             price_rp_per_sm3: updatedRow.price_rp_per_sm3,
+                            price_active: true,
                             total_usd_override: null,
                             rupiah_override: null,
                         }

@@ -64,6 +64,12 @@ def initialize_database(connection_factory, app_username, app_password):
                 "ADD COLUMN rupiah_multiplier DOUBLE NULL "
                 "AFTER price_rp_per_sm3"
             )
+        if "price_active" not in average_price_column_names:
+            con.execute(
+                "ALTER TABLE monthly_average_price_inputs "
+                "ADD COLUMN price_active BOOLEAN NOT NULL DEFAULT TRUE "
+                "AFTER rupiah_multiplier"
+            )
         for column_name in (
             "sm3_override",
             "mmbtu_override",
