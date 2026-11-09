@@ -476,6 +476,12 @@ export default function WeeklyAveragePricePage() {
     }, [selectedMonth]);
 
     useEffect(() => {
+        if (!sheetSyncStatus) return undefined;
+        const timeout = window.setTimeout(() => setSheetSyncStatus(''), 5000);
+        return () => window.clearTimeout(timeout);
+    }, [sheetSyncStatus]);
+
+    useEffect(() => {
         if (
             !selectedMonth
             || !canEdit
@@ -810,7 +816,7 @@ export default function WeeklyAveragePricePage() {
         )));
     }
 
-    async function syncPricesFromSheet(customerMappings = []) {
+    async function syncPricesFromSheet(customerMappings = [], showStatus = false) {
         if (!selectedMonth || sheetSyncInFlight.current) return;
         const syncMonth = selectedMonth;
         sheetSyncInFlight.current = true;
@@ -850,9 +856,11 @@ export default function WeeklyAveragePricePage() {
             setExchangeRateInputError(false);
             setExchangeRateInputDirty(false);
             setError('');
-            setSheetSyncStatus(
-                `Terakhir tersinkron ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}. ${result.imported} harga diperbarui dari ${result.source} untuk ${monthLabel(syncMonth)}.`,
-            );
+            if (showStatus) {
+                setSheetSyncStatus(
+                    `Sinkron selesai ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}. ${result.imported} harga diperbarui dari ${result.source} untuk ${monthLabel(syncMonth)}.`,
+                );
+            }
             if (result.created_customers.length > 0) {
                 setNotice(`${result.created_customers.length} customer baru ditambahkan ke master.`);
             }
@@ -870,7 +878,7 @@ export default function WeeklyAveragePricePage() {
             setError(`Pilih operator dan wilayah untuk customer ${incompleteCustomer.customer}.`);
             return;
         }
-        await syncPricesFromSheet(pendingSheetCustomers);
+        await syncPricesFromSheet(pendingSheetCustomers, true);
     }
 
     const workbookAreaOrder = selectedMonth >= '2026-01' && selectedMonth < '2026-08'
@@ -1015,12 +1023,6 @@ export default function WeeklyAveragePricePage() {
             .map((area) => [area.region, area.rupiah / area.sm3]),
     );
     const averagePriceRpSm3 = totals.sm3 > 0 ? totals.rupiah / totals.sm3 : 0;
-    const hasUncalculatedPriceRows = calculationRows.some((row) =>
-        !row.has_valid_price
-        && (row.price_unit === 'IDR_SM3'
-            ? Number(row.price_rp_per_sm3) > 0
-            : Number(row.price_usd_per_mmbtu) > 0),
-    );
     const customerSuggestions = Array.from(new Map(
         [
             ...pdfCustomerNames,
@@ -1094,12 +1096,7 @@ export default function WeeklyAveragePricePage() {
             {error && <div className="notice bad" role="alert">{error}</div>}
             {notice && <div className="notice good" role="status">{notice}</div>}
             {canEdit && sheetSyncStatus && (
-                <div className="notice" role="status">{sheetSyncStatus} Sinkron otomatis setiap 5 menit selama halaman terbuka.</div>
-            )}
-            {hasUncalculatedPriceRows && (
-                <div className="notice" role="status">
-                    Beberapa harga sudah tercatat, tetapi belum dapat dihitung karena kurs atau faktor konversi belum tersedia. Baris tersebut tidak masuk total.
-                </div>
+                <div className="notice" role="status">{sheetSyncStatus}</div>
             )}
 
             <section className="average-kpi-grid">
@@ -1258,7 +1255,7 @@ export default function WeeklyAveragePricePage() {
                     <div className="average-toolbar average-source-actions">
                         <button
                             type="button"
-                            onClick={() => syncPricesFromSheet()}
+                            onClick={() => syncPricesFromSheet([], true)}
                             disabled={importingSheet || saving || loading || customersLoading || !selectedMonth}
                         >
                             {importingSheet ? 'Menyinkronkan...' : 'Sinkronkan Harga Google'}
