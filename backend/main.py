@@ -452,13 +452,13 @@ def parse_average_price_cell(value, unit_hint=""):
     if "$" in text or "usd" in normalized_text:
         price_unit = "USD_MMBTU"
     elif "rp" in normalized_text or "idr" in normalized_text:
-        price_unit = "IDR_USD_MULTIPLIER"
+        price_unit = "IDR_SM3"
     else:
         hint = str(unit_hint or "").lower()
         if "$" in hint or "usd" in hint:
             price_unit = "USD_MMBTU"
         elif "rp" in hint or "idr" in hint:
-            price_unit = "IDR_USD_MULTIPLIER"
+            price_unit = "IDR_SM3"
         else:
             price_unit = "USD_MMBTU"
 
@@ -4769,7 +4769,6 @@ def calculate_average_price(
     mmbtu_override=None,
     total_usd_override=None,
     rupiah_override=None,
-    rupiah_multiplier=None,
 ):
     volume_mmbtu = (
         float(mmbtu_override)
@@ -4781,8 +4780,7 @@ def calculate_average_price(
         total_usd = rupiah / exchange_rate if exchange_rate > 0 else 0.0
     else:
         total_usd = volume_mmbtu * price_usd
-        rate = float(rupiah_multiplier or 0)
-        rupiah = total_usd * (rate if rate > 0 else exchange_rate)
+        rupiah = total_usd * exchange_rate
     if total_usd_override is not None:
         total_usd = float(total_usd_override)
         if rupiah_override is None:
@@ -4801,7 +4799,6 @@ def has_valid_average_price(
     mmbtu_override=None,
     total_usd_override=None,
     rupiah_override=None,
-    rupiah_multiplier=None,
 ):
     if price_unit == "IDR_SM3":
         return price_rp > 0
@@ -4810,8 +4807,7 @@ def has_valid_average_price(
         for value in (mmbtu_override, total_usd_override, rupiah_override)
     )
     return price_usd > 0 and (
-        (factor > 0 and (exchange_rate > 0 or float(rupiah_multiplier or 0) > 0))
-        or has_workbook_totals
+        (factor > 0 and exchange_rate > 0) or has_workbook_totals
     )
 
 
@@ -5408,34 +5404,13 @@ async def sync_monthly_average_price_sheet(request: Request):
             if source_key in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
                 continue
             matching_customers = customers_by_canonical_key.get(source_key, [])
-            if entry["price_unit"] == "IDR_USD_MULTIPLIER":
-                priced_customers = []
-                for candidate in matching_customers:
-                    candidate_input = con.execute(
-                        "SELECT price_usd_per_mmbtu FROM monthly_average_price_inputs "
-                        "WHERE month_start=%s AND customer_key=%s",
-                        (month_start.isoformat(), candidate["customer_key"]),
-                    ).fetchone()
-                    if candidate_input and float(candidate_input["price_usd_per_mmbtu"] or 0) > 0:
-                        priced_customers.append(candidate)
-                if priced_customers:
-                    matching_customers = priced_customers
-                else:
-                    exact_customers = [
-                        customer
-                        for customer in matching_customers
-                        if norm(customer["customer_key"]) == source_key
-                    ]
-                    if exact_customers:
-                        matching_customers = exact_customers
-            else:
-                exact_customers = [
-                    customer
-                    for customer in matching_customers
-                    if norm(customer["customer_key"]) == source_key
-                ]
-                if exact_customers:
-                    matching_customers = exact_customers
+            exact_customers = [
+                customer
+                for customer in matching_customers
+                if norm(customer["customer_key"]) == source_key
+            ]
+            if exact_customers:
+                matching_customers = exact_customers
             if len(matching_customers) > 1:
                 raise HTTPException(
                     status_code=409,
@@ -5489,41 +5464,16 @@ async def sync_monthly_average_price_sheet(request: Request):
                 customers_by_canonical_key[source_key] = [customer]
 
             price_unit = entry["price_unit"]
-            rupiah_multiplier = None
-            if price_unit == "IDR_USD_MULTIPLIER":
-                existing_input = con.execute(
-                    "SELECT price_usd_per_mmbtu FROM monthly_average_price_inputs "
-                    "WHERE month_start=%s AND customer_key=%s",
-                    (month_start.isoformat(), customer_key),
-                ).fetchone()
-                price_unit = "USD_MMBTU"
-                price_usd = (
-                    float(existing_input["price_usd_per_mmbtu"] or 0)
-                    if entry["active"] and existing_input
-                    else 0
-                )
-                price_rp = 0
-                rupiah_multiplier = entry["price"] if entry["active"] else None
-            else:
-                price_usd = (
-                    entry["price"]
-                    if entry["active"] and price_unit == "USD_MMBTU"
-                    else 0
-                )
-                price_rp = (
-                    entry["price"]
-                    if entry["active"] and price_unit == "IDR_SM3"
-                    else 0
-                )
+            price_usd = entry["price"] if entry["active"] and price_unit == "USD_MMBTU" else 0
+            price_rp = entry["price"] if entry["active"] and price_unit == "IDR_SM3" else 0
             con.execute(
                 "INSERT INTO monthly_average_price_inputs("
                 "month_start,customer_key,region,price_unit,price_usd_per_mmbtu,"
-                "price_rp_per_sm3,rupiah_multiplier,include_in_summary,updated_at) "
-                "VALUES(%s,%s,%s,%s,%s,%s,%s,1,%s) "
+                "price_rp_per_sm3,include_in_summary,updated_at) "
+                "VALUES(%s,%s,%s,%s,%s,%s,1,%s) "
                 "ON DUPLICATE KEY UPDATE price_unit=VALUES(price_unit),"
                 "price_usd_per_mmbtu=VALUES(price_usd_per_mmbtu),"
                 "price_rp_per_sm3=VALUES(price_rp_per_sm3),"
-                "rupiah_multiplier=VALUES(rupiah_multiplier),"
                 "total_usd_override=NULL,rupiah_override=NULL,updated_at=VALUES(updated_at)",
                 (
                     month_start.isoformat(),
@@ -5532,7 +5482,6 @@ async def sync_monthly_average_price_sheet(request: Request):
                     price_unit,
                     price_usd,
                     price_rp,
-                    rupiah_multiplier,
                     timestamp,
                 ),
             )
@@ -5589,7 +5538,6 @@ def monthly_average_price(request: Request, month: str):
                    COALESCE(price_inputs.price_unit,'USD_MMBTU') AS price_unit,
                    COALESCE(price_inputs.price_usd_per_mmbtu,0) AS price_usd_per_mmbtu,
                    COALESCE(price_inputs.price_rp_per_sm3,0) AS price_rp_per_sm3,
-                   price_inputs.rupiah_multiplier,
                    price_inputs.sm3_override,
                    price_inputs.mmbtu_override,
                    price_inputs.total_usd_override,
@@ -5610,7 +5558,6 @@ def monthly_average_price(request: Request, month: str):
             GROUP BY c.customer_key,c.customer_name,c.operator,
                      price_inputs.region,price_inputs.price_unit,
                      price_inputs.price_usd_per_mmbtu,price_inputs.price_rp_per_sm3,
-                     price_inputs.rupiah_multiplier,
                      price_inputs.sm3_override,price_inputs.mmbtu_override,
                      price_inputs.total_usd_override,price_inputs.rupiah_override,
                      price_inputs.include_in_summary,
@@ -5674,7 +5621,6 @@ def monthly_average_price(request: Request, month: str):
         price_unit = row.get("price_unit") or "USD_MMBTU"
         price = float(row["price_usd_per_mmbtu"] or 0)
         price_rp = float(row.get("price_rp_per_sm3") or 0)
-        rupiah_multiplier = float(row.get("rupiah_multiplier") or 0)
         is_valid_price = has_valid_average_price(
             price_unit,
             price,
@@ -5684,7 +5630,6 @@ def monthly_average_price(request: Request, month: str):
             mmbtu_override,
             total_usd_override,
             rupiah_override,
-            rupiah_multiplier,
         )
         mmbtu, total_usd, rupiah = calculate_average_price(
             sm3,
@@ -5696,7 +5641,6 @@ def monthly_average_price(request: Request, month: str):
             mmbtu_override,
             total_usd_override,
             rupiah_override,
-            rupiah_multiplier,
         )
         include_in_summary = (
             True if is_legacy_workbook_row else bool(row.get("include_in_summary", True))
@@ -5726,7 +5670,6 @@ def monthly_average_price(request: Request, month: str):
             "volume_mmbtu": mmbtu,
             "price_usd_per_mmbtu": price,
             "price_rp_per_sm3": price_rp,
-            "rupiah_multiplier": rupiah_multiplier,
             "sm3_override": sm3_override,
             "mmbtu_override": mmbtu_override,
             "total_usd_override": total_usd_override,
@@ -5781,7 +5724,6 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
                    COALESCE(price_inputs.price_unit,'USD_MMBTU') AS price_unit,
                    COALESCE(price_inputs.price_usd_per_mmbtu,0) AS price_usd_per_mmbtu,
                    COALESCE(price_inputs.price_rp_per_sm3,0) AS price_rp_per_sm3,
-                   price_inputs.rupiah_multiplier,
                    price_inputs.sm3_override,
                    price_inputs.mmbtu_override,
                    price_inputs.total_usd_override,
@@ -5803,7 +5745,6 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             GROUP BY c.customer_key,c.customer_name,c.operator,period,
                      price_inputs.region,price_inputs.price_unit,
                      price_inputs.price_usd_per_mmbtu,price_inputs.price_rp_per_sm3,
-                     price_inputs.rupiah_multiplier,
                      price_inputs.sm3_override,price_inputs.mmbtu_override,
                      price_inputs.total_usd_override,price_inputs.rupiah_override,
                      price_inputs.include_in_summary,
@@ -5818,7 +5759,6 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
                    DATE_FORMAT(price_inputs.month_start, '%%Y-%%m') AS period,
                    price_inputs.region,price_inputs.price_unit,
                    price_inputs.price_usd_per_mmbtu,price_inputs.price_rp_per_sm3,
-                   price_inputs.rupiah_multiplier,
                    price_inputs.sm3_override,price_inputs.mmbtu_override,
                    price_inputs.total_usd_override,price_inputs.rupiah_override,
                    price_inputs.include_in_summary,
@@ -5891,7 +5831,6 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
         price_unit = row.get("price_unit") or "USD_MMBTU"
         price = float(row["price_usd_per_mmbtu"] or 0)
         price_rp = float(row.get("price_rp_per_sm3") or 0)
-        rupiah_multiplier = float(row.get("rupiah_multiplier") or 0)
         exchange_rate = float(row["exchange_rate"] or 0)
         is_valid_price = has_valid_average_price(
             price_unit,
@@ -5902,7 +5841,6 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             mmbtu_override,
             total_usd_override,
             rupiah_override,
-            rupiah_multiplier,
         )
         mmbtu, total_usd, rupiah = calculate_average_price(
             sm3,
@@ -5914,7 +5852,6 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             mmbtu_override,
             total_usd_override,
             rupiah_override,
-            rupiah_multiplier,
         )
         include_in_summary = (
             True
@@ -5947,7 +5884,6 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             "volume_mmbtu": mmbtu,
             "price_usd_per_mmbtu": price,
             "price_rp_per_sm3": price_rp,
-            "rupiah_multiplier": rupiah_multiplier,
             "sm3_override": sm3_override,
             "mmbtu_override": mmbtu_override,
             "total_usd_override": total_usd_override,
@@ -6026,13 +5962,9 @@ async def save_monthly_average_price(request: Request):
             if price_unit == "IDR_SM3":
                 price_usd = 0.0
                 price_rp = float(entry.get("price_rp_per_sm3") or 0)
-                rupiah_multiplier = None
             elif price_unit == "USD_MMBTU":
                 price_usd = float(entry.get("price_usd_per_mmbtu") or 0)
                 price_rp = 0.0
-                rupiah_multiplier = entry.get("rupiah_multiplier")
-                if rupiah_multiplier is not None:
-                    rupiah_multiplier = float(rupiah_multiplier)
             else:
                 raise ValueError
             if (
@@ -6041,13 +5973,6 @@ async def save_monthly_average_price(request: Request):
                 or price_usd < 0
                 or not math.isfinite(price_rp)
                 or price_rp < 0
-                or (
-                    rupiah_multiplier is not None
-                    and (
-                        not math.isfinite(rupiah_multiplier)
-                        or rupiah_multiplier < 0
-                    )
-                )
             ):
                 raise ValueError
             if canonical_average_price_customer_key(customer_key) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
@@ -6085,7 +6010,6 @@ async def save_monthly_average_price(request: Request):
                 price_unit,
                 price_usd,
                 price_rp,
-                rupiah_multiplier,
                 *overrides,
                 include_in_summary,
             ))
@@ -6134,7 +6058,6 @@ async def save_monthly_average_price(request: Request):
             price_unit,
             price_usd,
             price_rp,
-            rupiah_multiplier,
             sm3_override,
             mmbtu_override,
             total_usd_override,
@@ -6144,13 +6067,12 @@ async def save_monthly_average_price(request: Request):
             con.execute(
                 "INSERT INTO monthly_average_price_inputs("
                 "month_start,customer_key,region,price_unit,price_usd_per_mmbtu,"
-                "price_rp_per_sm3,rupiah_multiplier,sm3_override,mmbtu_override,total_usd_override,"
+                "price_rp_per_sm3,sm3_override,mmbtu_override,total_usd_override,"
                 "rupiah_override,include_in_summary,updated_at) "
-                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON DUPLICATE KEY UPDATE region=VALUES(region),price_unit=VALUES(price_unit),"
                 "price_usd_per_mmbtu=VALUES(price_usd_per_mmbtu),"
                 "price_rp_per_sm3=VALUES(price_rp_per_sm3),"
-                "rupiah_multiplier=VALUES(rupiah_multiplier),"
                 "sm3_override=VALUES(sm3_override),mmbtu_override=VALUES(mmbtu_override),"
                 "total_usd_override=VALUES(total_usd_override),"
                 "rupiah_override=VALUES(rupiah_override),"
@@ -6162,7 +6084,6 @@ async def save_monthly_average_price(request: Request):
                     price_unit,
                     price_usd,
                     price_rp,
-                    rupiah_multiplier,
                     sm3_override,
                     mmbtu_override,
                     total_usd_override,

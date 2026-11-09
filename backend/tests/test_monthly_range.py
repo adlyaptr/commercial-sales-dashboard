@@ -89,7 +89,6 @@ class MemoryAveragePriceRange:
             "price_unit": "USD_MMBTU",
             "price_usd_per_mmbtu": 1,
             "price_rp_per_sm3": 0,
-            "rupiah_multiplier": None,
             "sm3_override": None,
             "mmbtu_override": None,
             "total_usd_override": None,
@@ -460,27 +459,6 @@ class MonthlyRangeTests(unittest.TestCase):
         self.assertEqual(row["price_unit"], "IDR_SM3")
         self.assertAlmostEqual(row["rupiah"], row["sm3"] * 8725)
         self.assertAlmostEqual(row["total_usd"], row["rupiah"] / 17895)
-
-    def test_uses_pulled_rupiah_multiplier_in_selected_range(self):
-        class PulledRupiahAveragePriceRange(MemoryAveragePriceRange):
-            def execute(self, statement, parameters=None):
-                result = super().execute(statement, parameters)
-                if "FROM monthly_average_price_inputs price_inputs" in statement:
-                    return result
-                rows = result.fetchall()
-                rows[0]["rupiah_multiplier"] = 8225
-                return SimpleNamespace(fetchall=lambda: rows)
-
-        with patch.object(main, "db", return_value=PulledRupiahAveragePriceRange()):
-            result = main.monthly_average_price_range(
-                FakeRequest(),
-                "2026-10-01",
-                "2026-10-31",
-            )
-
-        row = result["rows"][0]
-        self.assertEqual(row["rupiah_multiplier"], 8225)
-        self.assertAlmostEqual(row["rupiah"], row["total_usd"] * 8225)
 
 
 if __name__ == "__main__":

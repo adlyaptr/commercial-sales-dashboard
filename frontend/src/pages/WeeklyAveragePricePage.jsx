@@ -60,9 +60,6 @@ const aggregateDuplicateCustomers = (rows) => {
             price_rp_per_sm3: samePriceUnit && primaryRow.price_unit === 'IDR_SM3'
                 ? price
                 : primaryRow.price_rp_per_sm3,
-            rupiah_multiplier: customerRows.every(
-                (row) => Number(row.rupiah_multiplier || 0) === Number(primaryRow.rupiah_multiplier || 0),
-            ) ? primaryRow.rupiah_multiplier : null,
             include_in_summary: customerRows.every(
                 (row) => row.include_in_summary !== false,
             ),
@@ -625,9 +622,6 @@ export default function WeeklyAveragePricePage() {
                         price_rp_per_sm3: row.price_unit === 'IDR_SM3'
                             ? Number(row.price_rp_per_sm3 || 0)
                             : 0,
-                        rupiah_multiplier: row.price_unit === 'IDR_SM3'
-                            ? null
-                            : row.rupiah_multiplier ?? null,
                         sm3_override: row.sm3_override ?? null,
                         mmbtu_override: row.mmbtu_override ?? null,
                         total_usd_override: row.total_usd_override ?? null,
@@ -733,7 +727,6 @@ export default function WeeklyAveragePricePage() {
                 price_unit: customerEntry.price_unit,
                 price_usd_per_mmbtu: 0,
                 price_rp_per_sm3: 0,
-                rupiah_multiplier: null,
                 sm3_override: null,
                 mmbtu_override: null,
                 total_usd_override: null,
@@ -752,9 +745,6 @@ export default function WeeklyAveragePricePage() {
                 price_unit: customerEntry.price_unit,
                 price_usd_per_mmbtu: customerEntry.price_unit === 'USD_MMBTU' ? price : 0,
                 price_rp_per_sm3: customerEntry.price_unit === 'IDR_SM3' ? price : 0,
-                rupiah_multiplier: customerEntry.price_unit === 'IDR_SM3'
-                    ? null
-                    : existingRow.rupiah_multiplier,
                 total_usd_override: priceChanged ? null : existingRow.total_usd_override,
                 rupiah_override: priceChanged ? null : existingRow.rupiah_override,
             };
@@ -886,11 +876,10 @@ export default function WeeklyAveragePricePage() {
         const priceUnit = row.price_unit || 'USD_MMBTU';
         const priceUsd = Number(row.price_usd_per_mmbtu || 0);
         const priceRp = Number(row.price_rp_per_sm3 || 0);
-        const rupiahMultiplier = Number(row.rupiah_multiplier || 0);
         const exchangeRate = Number(report.exchange_rate || 0);
         const calculatedRp = priceUnit === 'IDR_SM3'
             ? sm3 * priceRp
-            : volumeMmbtu * priceUsd * (rupiahMultiplier > 0 ? rupiahMultiplier : exchangeRate);
+            : volumeMmbtu * priceUsd * exchangeRate;
         const totalRp = row.rupiah_override != null
             ? Number(row.rupiah_override)
             : calculatedRp;
@@ -1017,7 +1006,7 @@ export default function WeeklyAveragePricePage() {
         !row.has_valid_price
         && (row.price_unit === 'IDR_SM3'
             ? Number(row.price_rp_per_sm3) > 0
-            : Number(row.price_usd_per_mmbtu) > 0 || Number(row.rupiah_multiplier) > 0),
+            : Number(row.price_usd_per_mmbtu) > 0),
     );
     const customerSuggestions = Array.from(new Map(
         [
@@ -1096,7 +1085,7 @@ export default function WeeklyAveragePricePage() {
             )}
             {hasUncalculatedPriceRows && (
                 <div className="notice" role="status">
-                    Beberapa harga sudah tercatat, tetapi belum dapat dihitung karena kurs, faktor konversi, atau harga USD/MMBTU sebagai dasar pengali Rupiah belum tersedia. Baris tersebut tidak masuk total.
+                    Beberapa harga sudah tercatat, tetapi belum dapat dihitung karena kurs atau faktor konversi belum tersedia. Baris tersebut tidak masuk total.
                 </div>
             )}
 
@@ -1177,9 +1166,6 @@ export default function WeeklyAveragePricePage() {
                                                                     {row.price_unit === 'IDR_SM3'
                                                                         ? formatDecimal(row.price_rp_per_sm3, 2)
                                                                         : formatDecimal(row.price_usd_per_mmbtu, 2)}
-                                                                    {row.price_unit !== 'IDR_SM3' && Number(row.rupiah_multiplier) > 0
-                                                                        ? <small> · Rp {formatInteger(row.rupiah_multiplier)} / USD</small>
-                                                                        : null}
                                                                 </>
                                                                 : '—'}
                                                             </td>
