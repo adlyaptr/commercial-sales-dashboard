@@ -18,9 +18,13 @@ import UsersPage from './pages/UsersPage';
 const YearlyPage = lazy(() => import('./pages/YearlyPage'));
 const IssuePage = lazy(() => import('./pages/IssuePage'));
 const BudgetPage = lazy(() => import('./pages/BudgetPage'));
+const SphPage = lazy(() => import('./pages/SphPage'));
 
 function DashboardAccess({ user, onLogout }) {
     const location = useLocation();
+    if (user?.application === 'sph') {
+        return <Navigate to="/sph" replace />;
+    }
     if (!user && !['/', '/beranda'].includes(location.pathname)) {
         return <Navigate to="/login" replace />;
     }
@@ -29,6 +33,21 @@ function DashboardAccess({ user, onLogout }) {
             user={user || { role: 'public' }}
             onLogout={onLogout}
         />
+    );
+}
+
+function SphAccess({ user, onLogout }) {
+    if (!user) return <Navigate to="/login" replace />;
+    if (
+        user.application !== 'sph' ||
+        (user.role !== 'admin' && !user.sphRole)
+    ) {
+        return <Navigate to="/beranda" replace />;
+    }
+    return (
+        <Suspense fallback={<div className="app-loading">Memuat SPH CNG Reethau...</div>}>
+            <SphPage user={user} onLogout={onLogout} />
+        </Suspense>
     );
 }
 
@@ -55,7 +74,16 @@ function App() {
             <Routes>
                 <Route
                     path="/login"
-                    element={user ? <Navigate to="/beranda" replace /> : <LoginPage onLogin={setUser} />}
+                    element={user ? <Navigate to={user.application === 'sph' ? '/sph' : '/beranda'} replace /> : <LoginPage onLogin={setUser} />}
+                />
+                <Route
+                    path="/sph/*"
+                    element={(
+                        <SphAccess
+                            user={user}
+                            onLogout={() => setUser(null)}
+                        />
+                    )}
                 />
                 <Route
                     element={(

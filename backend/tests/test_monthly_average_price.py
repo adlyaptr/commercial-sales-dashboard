@@ -1,4 +1,5 @@
 import asyncio
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -67,6 +68,8 @@ class MemoryMonthlyAveragePrice:
             return SimpleNamespace(fetchall=lambda: [
                 {"region": "JAWA BARAT", "target_price_rp_sm3": 8250},
             ])
+        if statement.startswith("SELECT filename,imported_at,customer_keys_json"):
+            return SimpleNamespace(fetchone=lambda: None)
         raise AssertionError(f"Unexpected SQL in monthly Average Price test: {statement}")
 
     @staticmethod
@@ -117,6 +120,78 @@ class MemoryCustomerMappings:
             }
             return SimpleNamespace(rowcount=1)
         raise AssertionError(f"Unexpected SQL in customer mapping test: {statement}")
+
+
+class MemoryAveragePriceSheetSync:
+    def __init__(self):
+        self.customers = [
+            {"customer_key": "optima", "customer_name": "OPTIMA", "operator": "SETU"},
+            {"customer_key": "clin", "customer_name": "CLIN", "operator": "SETU"},
+        ]
+        self.price_inputs = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def execute(self, statement, parameters=None):
+        if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
+            return SimpleNamespace(fetchall=lambda: list(self.customers))
+        if statement.startswith("SELECT filename,customer_keys_json"):
+            return SimpleNamespace(fetchone=lambda: None)
+        if statement.startswith("SELECT customer_key,operator FROM customers WHERE customer_key"):
+            customer = next(
+                (item for item in self.customers if item["customer_key"] == parameters[0]),
+                None,
+            )
+            return SimpleNamespace(fetchone=lambda: customer)
+        if statement.startswith("INSERT INTO customers"):
+            key, name, operator = parameters
+            customer = {"customer_key": key, "customer_name": name, "operator": operator}
+            self.customers.append(customer)
+            return SimpleNamespace(rowcount=1)
+        if statement.startswith("INSERT INTO monthly_average_price_inputs"):
+            self.price_inputs.append((statement, parameters))
+            return SimpleNamespace(rowcount=1)
+        raise AssertionError(f"Unexpected SQL in Average Price sheet sync test: {statement}")
+
+
+class MemoryMonthlyAveragePriceWorkbookImport:
+    def __init__(self):
+        self.customers = [{
+            "customer_key": "clin",
+            "customer_name": "CLIN",
+            "operator": "SETU",
+        }]
+        self.writes = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def execute(self, statement, parameters=None):
+        if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
+            return SimpleNamespace(fetchall=lambda: self.customers)
+        if statement.startswith("DELETE FROM monthly_average_price_inputs"):
+            self.writes.append(("delete", parameters))
+            return SimpleNamespace(rowcount=1)
+        if statement.startswith("INSERT INTO monthly_average_price_"):
+            self.writes.append((statement, parameters))
+            return SimpleNamespace(rowcount=1)
+        raise AssertionError(f"Unexpected SQL in Average Price workbook import test: {statement}")
+
+
+class FakeUploadFile:
+    def __init__(self, filename, content):
+        self.filename = filename
+        self.content = content
+
+    async def read(self):
+        return self.content
 
 
 class MonthlyAveragePriceTests(unittest.TestCase):
@@ -234,6 +309,131 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertEqual(report["totals"]["usd"], 500)
         self.assertEqual(report["totals"]["rupiah"], 8400000)
 
+    def test_uses_imported_workbook_summary_as_monthly_totals(self):
+        class ImportedWorkbookAveragePrice(MemoryMonthlyAveragePrice):
+            def execute(self, statement, parameters=None):
+                if statement.startswith("SELECT filename,imported_at,customer_keys_json"):
+                    return SimpleNamespace(fetchone=lambda: {
+                        "filename": "Average Selling Price 2026.xlsx",
+                        "imported_at": "2026-11-09T12:00:00",
+                        "customer_keys_json": '["customer-1"]',
+                        "summary_sm3": 1200,
+                        "summary_rupiah": 9000000,
+                        "summary_average_price": 7500,
+                    })
+                return super().execute(statement, parameters)
+
+        with patch.object(main, "db", return_value=ImportedWorkbookAveragePrice()):
+            report = main.monthly_average_price(FakeRequest(), "2026-10")
+
+        self.assertEqual(report["source"], "workbook")
+        self.assertEqual(report["workbook_customer_keys"], ["customer-1"])
+        self.assertEqual(report["totals"]["sm3"], 1200)
+        self.assertEqual(report["totals"]["rupiah"], 9000000)
+        self.assertEqual(report["totals"]["average_price_rp_sm3"], 7500)
+
+    def test_parses_monthly_average_price_workbook_cached_values(self):
+        workbook = main.Workbook()
+        worksheet = workbook.active
+        worksheet.title = "AVG Jan"
+        worksheet.cell(1, 1, "Januari 2026")
+        worksheet.cell(1, 16, 2000)
+        worksheet.cell(1, 18, 200000)
+        worksheet.cell(4, 2, "CLIN")
+        for column, value in enumerate((50000, 1800, 20, 36000, 450000000), start=3):
+            worksheet.cell(4, column, value)
+        worksheet.cell(5, 2, "Customer Rupiah")
+        for column, value in enumerate((100, 0, None, 0, 100000), start=3):
+            worksheet.cell(5, column, value)
+        worksheet.cell(6, 2, "Kurs JISDOR")
+        worksheet.cell(6, 3, 12500)
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+
+        parsed = main.parse_monthly_average_price_workbook(
+            buffer.getvalue(),
+            "Average Selling Price 2026.xlsx",
+        )
+
+        self.assertEqual(parsed["months"][0]["month"], "2026-01")
+        self.assertEqual(len(parsed["months"][0]["entries"]), 2)
+        self.assertEqual(parsed["months"][0]["entries"][0]["customer"], "CLIN")
+        rupiah_entry = parsed["months"][0]["entries"][1]
+        self.assertEqual(rupiah_entry["price_unit"], "IDR_SM3")
+        self.assertEqual(rupiah_entry["price_rp_per_sm3"], 1000)
+        self.assertEqual(rupiah_entry["total_usd_override"], 0)
+        self.assertEqual(parsed["months"][0]["summary_sm3"], 100)
+        self.assertEqual(parsed["months"][0]["summary_rupiah"], 200000)
+
+    def test_imports_workbook_rows_and_locks_google_sync_for_imported_month(self):
+        database = MemoryMonthlyAveragePriceWorkbookImport()
+        parsed = {
+            "filename": "Average Selling Price 2026.xlsx",
+            "months": [{
+                "month": "2026-01",
+                "entries": [{
+                    "customer": "CLIN",
+                    "region": "JAWA BARAT",
+                    "price_unit": "USD_MMBTU",
+                    "price_usd_per_mmbtu": 20,
+                    "price_rp_per_sm3": 0,
+                    "sm3_override": 50000,
+                    "mmbtu_override": 1800,
+                    "total_usd_override": 36000,
+                    "rupiah_override": 450000000,
+                    "include_in_summary": True,
+                }],
+                "exchange_rate": 12500,
+                "summary_sm3": 50000,
+                "summary_rupiah": 450000000,
+                "summary_average_price": 9000,
+            }],
+        }
+        with (
+            patch.object(main, "parse_monthly_average_price_workbook", return_value=parsed),
+            patch.object(main, "db", return_value=database),
+        ):
+            result = asyncio.run(main.import_monthly_average_price_workbook(
+                FakeRequest(),
+                FakeUploadFile("Average Selling Price 2026.xlsx", b"workbook"),
+            ))
+
+        self.assertEqual(result["imported_rows"], 1)
+        self.assertEqual(result["imported_months"][0]["month"], "2026-01")
+        input_write = next(
+            write for write in database.writes
+            if write[0].startswith("INSERT INTO monthly_average_price_inputs")
+        )
+        self.assertEqual(input_write[1][1:5], ("clin", "JAWA BARAT", "USD_MMBTU", 20))
+        self.assertEqual(input_write[1][6:10], (50000, 1800, 36000, 450000000))
+
+    def test_google_sheet_sync_does_not_override_workbook_import(self):
+        database = MemoryAveragePriceSheetSync()
+        database.execute = lambda statement, parameters=None: (
+            SimpleNamespace(fetchone=lambda: {
+                "filename": "Average Selling Price 2026.xlsx",
+                "customer_keys_json": '["clin"]',
+            })
+            if (
+                statement.startswith("SELECT filename,customer_keys_json")
+                and parameters == ("2026-01-01",)
+            )
+            else (_ for _ in ()).throw(AssertionError(f"Unexpected SQL: {statement}"))
+        )
+        request = FakeRequest({"month": "2026-01", "customer_mappings": []})
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(
+                main,
+                "import_monthly_average_price_sheet",
+                side_effect=AssertionError("Google Sheet must not be fetched"),
+            ),
+        ):
+            result = asyncio.run(main.sync_monthly_average_price_sheet(request))
+
+        self.assertTrue(result["workbook_locked"])
+        self.assertEqual(result["sheet_customer_keys"], ["clin"])
+
     def test_saves_monthly_factors_exchange_rate_and_customer_price(self):
         database = MemoryMonthlyAveragePriceWrites()
         payload = {
@@ -252,7 +452,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
                 "price_usd_per_mmbtu": 1,
                 "include_in_summary": False,
             }],
-            "targets": {"JAWA BARAT": 8250},
+            "targets": {"JAWA BARAT": 8249.908607122522},
         }
         with patch.object(main, "db", return_value=database):
             result = asyncio.run(main.save_monthly_average_price(FakeRequest(payload)))
@@ -274,7 +474,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             parameters for statement, parameters in database.statements
             if statement.startswith("INSERT INTO monthly_average_price_targets")
         )
-        self.assertEqual(target_insert[:3], ("2026-10-01", "JAWA BARAT", 8250.0))
+        self.assertEqual(target_insert[:3], ("2026-10-01", "JAWA BARAT", 8250))
 
     def test_saves_rupiah_price_per_sm3(self):
         database = MemoryMonthlyAveragePriceWrites()
@@ -361,6 +561,220 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             with self.assertRaises(main.HTTPException) as error:
                 main.monthly_average_price(FakeRequest(), "2026-13")
         self.assertEqual(error.exception.status_code, 400)
+
+    def test_parses_usd_and_rupiah_price_formats_from_sheet_cells(self):
+        self.assertEqual(
+            main.parse_average_price_cell("$ 14,15"),
+            {"price_unit": "USD_MMBTU", "price": 14.15, "active": True},
+        )
+        self.assertEqual(
+            main.parse_average_price_cell("Rp10.225"),
+            {"price_unit": "IDR_SM3", "price": 10225, "active": True},
+        )
+        self.assertEqual(
+            main.parse_average_price_cell("off", "$ 12,20"),
+            {"price_unit": "USD_MMBTU", "price": 0.0, "active": False},
+        )
+
+    def test_parses_sheet_prices_for_selected_month_and_ignores_off_rows(self):
+        values = [
+            ["Harga Customer 2026"],
+            ["No", "Nama Customer", "USD / Rp", "Jan", "Feb", "Mar"],
+            ["1", "MKG", "$ 14,15", "$ 14,15", "$ 14,15", "$ 15,25"],
+            ["2", "CLIN", "", "Rp8.725", "Rp8.725", "Rp9.000"],
+            ["3", "TOMIMOTO", "$ 12,20", "$ 12,20", "$ 12,20", "off"],
+        ]
+
+        self.assertEqual(
+            main.parse_average_price_sheet_values(values, "2026-03"),
+            [
+                {"customer": "MKG", "price_unit": "USD_MMBTU", "price": 15.25, "active": True},
+                {"customer": "CLIN", "price_unit": "IDR_SM3", "price": 9000, "active": True},
+                {"customer": "TOMIMOTO", "price_unit": "USD_MMBTU", "price": 0.0, "active": False},
+            ],
+        )
+
+    def test_blank_month_value_is_imported_as_inactive_price(self):
+        values = [
+            ["No", "Nama Customer", "USD / Rp", "Jan"],
+            ["1", "Customer A", "", "12,50"],
+            ["2", "Customer B", "", ""],
+        ]
+        self.assertEqual(
+            main.parse_average_price_sheet_values(values, "2026-01"),
+            [
+                {"customer": "Customer A", "price_unit": "USD_MMBTU", "price": 12.5, "active": True},
+                {"customer": "Customer B", "price_unit": "USD_MMBTU", "price": 0.0, "active": False},
+            ],
+        )
+
+    def test_sheet_import_falls_back_to_public_csv_without_service_account(self):
+        credential_file = Path(__file__).with_name("missing-average-price-credentials.json")
+        csv_content = (
+            "No,Nama Customer,USD / Rp,Jan,Feb,Mar\n"
+            "1,MKG,\"$ 14,15\",\"$ 14,15\",\"$ 14,15\",\"$ 15,25\"\n"
+            "2,CLIN,,Rp8.725,Rp8.725,Rp9.000\n"
+        ).encode("utf-8")
+        response = io.BytesIO(csv_content)
+        response.status = 200
+        with (
+            patch.object(main, "ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE", str(credential_file)),
+            patch.object(main, "urlopen", return_value=response),
+        ):
+            result = main.import_monthly_average_price_sheet(FakeRequest(), "2026-03")
+
+        self.assertEqual(result["source"], "Harga Customer 2026")
+        self.assertEqual(result["month"], "2026-03")
+        self.assertEqual(
+            result["entries"],
+            [
+                {"customer": "MKG", "price_unit": "USD_MMBTU", "price": 15.25, "active": True},
+                {"customer": "CLIN", "price_unit": "IDR_SM3", "price": 9000, "active": True},
+            ],
+        )
+
+    def test_public_sheet_fetch_reports_private_sheet_access(self):
+        with patch.object(main, "urlopen", side_effect=main.URLError("Unauthorized")):
+            with self.assertRaises(main.HTTPException) as error:
+                main.fetch_public_average_price_sheet_values()
+        self.assertEqual(error.exception.status_code, 502)
+
+    def test_sheet_sync_updates_prices_and_registers_new_customer_mapping(self):
+        database = MemoryAveragePriceSheetSync()
+        imported = {
+            "source": "Harga Customer 2026",
+            "entries": [
+                {
+                    "customer": "OAJ",
+                    "price_unit": "USD_MMBTU",
+                    "price": 16.8,
+                    "active": True,
+                },
+                {
+                    "customer": "CLIN",
+                    "price_unit": "IDR_SM3",
+                    "price": 0,
+                    "active": False,
+                },
+                {
+                    "customer": "Customer Baru",
+                    "price_unit": "USD_MMBTU",
+                    "price": 12.5,
+                    "active": True,
+                },
+            ],
+        }
+        request = FakeRequest({
+            "month": "2026-03",
+            "customer_mappings": [{
+                "customer": "Customer Baru",
+                "operator": "BLORA",
+                "region": "JAWA TENGAH",
+            }],
+        })
+        with (
+            patch.object(main, "import_monthly_average_price_sheet", return_value=imported),
+            patch.object(main, "db", return_value=database),
+        ):
+            result = asyncio.run(main.sync_monthly_average_price_sheet(request))
+
+        self.assertEqual(result["imported"], 3)
+        self.assertEqual(result["deactivated"], 1)
+        self.assertEqual(result["created_customers"], ["Customer Baru"])
+        self.assertEqual(result["unmatched_customers"], [])
+        self.assertEqual(
+            result["sheet_customer_keys"],
+            ["clin", "customerbaru", "optima"],
+        )
+        self.assertEqual(len(database.price_inputs), 3)
+        optima_row = next(row for row in database.price_inputs if row[1][1] == "optima")
+        self.assertEqual(optima_row[1][3:6], ("USD_MMBTU", 16.8, 0))
+        inactive_row = next(row for row in database.price_inputs if row[1][1] == "clin")
+        self.assertEqual(inactive_row[1][3:6], ("IDR_SM3", 0, 0))
+
+    def test_sheet_sync_prefers_exact_clin_master_over_its_long_name_alias(self):
+        database = MemoryAveragePriceSheetSync()
+        database.customers.append({
+            "customer_key": "ptciptalestariideanusa",
+            "customer_name": "PT Cipta Lestari Idea Nusa",
+            "operator": "SETU",
+        })
+        imported = {
+            "source": "Harga Customer 2026",
+            "entries": [{
+                "customer": "CLIN",
+                "price_unit": "IDR_SM3",
+                "price": 8725,
+                "active": True,
+            }],
+        }
+        request = FakeRequest({"month": "2026-03", "customer_mappings": []})
+        with (
+            patch.object(main, "import_monthly_average_price_sheet", return_value=imported),
+            patch.object(main, "db", return_value=database),
+        ):
+            result = asyncio.run(main.sync_monthly_average_price_sheet(request))
+
+        self.assertEqual(result["imported"], 1)
+        self.assertEqual(result["unmatched_customers"], [])
+        self.assertEqual(
+            result["sheet_customer_keys"],
+            ["clin"],
+        )
+        self.assertEqual(len(database.price_inputs), 1)
+        self.assertEqual(database.price_inputs[0][1][1], "clin")
+
+    def test_sheet_sync_returns_unmapped_customer_for_admin_prompt(self):
+        database = MemoryAveragePriceSheetSync()
+        imported = {
+            "source": "Harga Customer 2026",
+            "entries": [{
+                "customer": "Customer Baru",
+                "price_unit": "USD_MMBTU",
+                "price": 12.5,
+                "active": True,
+            }],
+        }
+        request = FakeRequest({"month": "2026-03", "customer_mappings": []})
+        with (
+            patch.object(main, "import_monthly_average_price_sheet", return_value=imported),
+            patch.object(main, "db", return_value=database),
+        ):
+            result = asyncio.run(main.sync_monthly_average_price_sheet(request))
+
+        self.assertEqual(result["unmatched_customers"], ["Customer Baru"])
+        self.assertEqual(result["imported"], 0)
+        self.assertEqual(database.price_inputs, [])
+
+    def test_sheet_sync_matches_concord_industry_to_existing_concord_customer(self):
+        database = MemoryAveragePriceSheetSync()
+        database.customers.append({
+            "customer_key": "concord",
+            "customer_name": "Concord",
+            "operator": "SETU",
+        })
+        imported = {
+            "source": "Harga Customer 2026",
+            "entries": [{
+                "customer": "Concord Industry",
+                "price_unit": "USD_MMBTU",
+                "price": 13.25,
+                "active": True,
+            }],
+        }
+        request = FakeRequest({"month": "2026-03", "customer_mappings": []})
+        with (
+            patch.object(main, "import_monthly_average_price_sheet", return_value=imported),
+            patch.object(main, "db", return_value=database),
+        ):
+            result = asyncio.run(main.sync_monthly_average_price_sheet(request))
+
+        self.assertEqual(result["imported"], 1)
+        self.assertEqual(result["created_customers"], [])
+        self.assertEqual(result["unmatched_customers"], [])
+        self.assertEqual(result["sheet_customer_keys"], ["concord"])
+        self.assertEqual(len(database.price_inputs), 1)
+        self.assertEqual(database.price_inputs[0][1][1], "concord")
 
 
 if __name__ == "__main__":

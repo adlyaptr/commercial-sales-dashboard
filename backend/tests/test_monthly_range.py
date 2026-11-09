@@ -263,6 +263,43 @@ class MonthlyRangeTests(unittest.TestCase):
         self.assertEqual(result["totals"]["usd"], 500)
         self.assertEqual(result["totals"]["rupiah"], 8400000)
 
+    def test_uses_workbook_summary_for_complete_imported_month(self):
+        class WorkbookSummaryAveragePriceRange(MemoryAveragePriceRange):
+            def execute(self, statement, parameters=None):
+                result = super().execute(statement, parameters)
+                if "FROM monthly_average_price_inputs price_inputs" not in statement:
+                    return result
+                return SimpleNamespace(fetchall=lambda: [{
+                    "customer_key": "customer-1",
+                    "customer_name": "Customer Contoh",
+                    "operator": "SETU",
+                    "period": "2026-10",
+                    "region": "JAWA BARAT",
+                    "price_unit": "USD_MMBTU",
+                    "price_usd_per_mmbtu": 1,
+                    "price_rp_per_sm3": 0,
+                    "sm3_override": 1200,
+                    "mmbtu_override": 42,
+                    "total_usd_override": 500,
+                    "rupiah_override": 8400000,
+                    "include_in_summary": True,
+                    "sm3_per_mmbtu": 29.3078,
+                    "exchange_rate": 17895,
+                    "workbook_summary_sm3": 1000,
+                    "workbook_summary_rupiah": 9000000,
+                }])
+
+        with patch.object(main, "db", return_value=WorkbookSummaryAveragePriceRange()):
+            result = main.monthly_average_price_range(
+                FakeRequest(),
+                "2026-10-01",
+                "2026-10-31",
+            )
+
+        self.assertEqual(result["totals"]["sm3"], 1000)
+        self.assertEqual(result["totals"]["rupiah"], 9000000)
+        self.assertEqual(result["totals"]["average_price_rp_sm3"], 9000)
+
     def test_calculates_totals_from_workbook_mmbtu_when_amount_overrides_are_missing(self):
         class WorkbookMmbtuOnlyRange(MemoryAveragePriceRange):
             def execute(self, statement, parameters=None):

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js';
 import { useOutletContext } from 'react-router-dom';
@@ -47,6 +47,9 @@ const templateCustomerOrder = [
     'Djarum', 'Surya Pamenang (Global)', 'Pentawira / REN',
 ];
 const customerOrderAliases = {
+    ptciptalestariideanusa: 'CLIN',
+    ptmitrakayagalvanize: 'MKG',
+    ptoptimadhijaya: 'OPTIMA',
     adp: 'Alia Digital',
     ami: 'ATEJA',
     altksomasami: 'altinex /masami',
@@ -313,6 +316,11 @@ export default function WeeklyAveragePricePage() {
     const [report, setReport] = useState({ rows: [], operator_factors: {}, exchange_rate: 0, targets: {}, totals: {} });
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [importingSheet, setImportingSheet] = useState(false);
+    const [importingWorkbook, setImportingWorkbook] = useState(false);
+    const [pendingSheetCustomers, setPendingSheetCustomers] = useState([]);
+    const [sheetCustomerKeys, setSheetCustomerKeys] = useState([]);
+    const [sheetSyncStatus, setSheetSyncStatus] = useState('');
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [exchangeRateInput, setExchangeRateInput] = useState('');
@@ -321,6 +329,8 @@ export default function WeeklyAveragePricePage() {
     const [selectedCustomerKey, setSelectedCustomerKey] = useState('');
     const [customerCatalog, setCustomerCatalog] = useState([]);
     const [customersLoading, setCustomersLoading] = useState(true);
+    const sheetSyncInFlight = useRef(false);
+    const workbookFileInput = useRef(null);
     const [customerEntry, setCustomerEntry] = useState({
         customer: '',
         operator: '',
@@ -357,6 +367,9 @@ export default function WeeklyAveragePricePage() {
         setLoading(true);
         setError('');
         setSelectedCustomerKey('');
+        setPendingSheetCustomers([]);
+        setSheetCustomerKeys([]);
+        setSheetSyncStatus('');
         setExchangeRateInput('');
         setExchangeRateInputError(false);
         setExchangeRateInputDirty(false);
@@ -372,7 +385,16 @@ export default function WeeklyAveragePricePage() {
             .then((data) => {
                 if (!active) return;
                 setSelectedCustomerKey('');
-                setReport(data);
+                setReport({
+                    ...data,
+                    targets: Object.fromEntries(
+                        Object.entries(data.targets || {}).map(([key, value]) => [
+                            key,
+                            value == null ? null : Math.round(Number(value)),
+                        ]),
+                    ),
+                });
+                setSheetCustomerKeys(data.workbook_customer_keys || []);
                 setExchangeRateInput(data.exchange_rate
                     ? Number.isInteger(Number(data.exchange_rate))
                         ? formatInteger(data.exchange_rate)
@@ -384,6 +406,26 @@ export default function WeeklyAveragePricePage() {
             .finally(() => active && setLoading(false));
         return () => { active = false; };
     }, [selectedMonth]);
+
+    useEffect(() => {
+        if (
+            !selectedMonth
+            || !canEdit
+            || loading
+            || customersLoading
+            || report.source === 'workbook'
+        ) return undefined;
+        let active = true;
+        const sync = () => {
+            if (active) syncPricesFromSheet();
+        };
+        sync();
+        const interval = window.setInterval(sync, 5 * 60 * 1000);
+        return () => {
+            active = false;
+            window.clearInterval(interval);
+        };
+    }, [selectedMonth, canEdit, loading, customersLoading, report.source]);
 
     function selectCustomer(customerKey) {
         const row = report.rows.find((item) => item.customer_key === customerKey);
@@ -459,9 +501,13 @@ export default function WeeklyAveragePricePage() {
     }
 
     function updateTarget(area, value) {
+        const numericValue = value === '' ? '' : Number(value);
+        const roundedValue = value === '' || !Number.isFinite(numericValue)
+            ? value
+            : Math.round(numericValue);
         setReport((current) => ({
             ...current,
-            targets: { ...current.targets, [area]: value },
+            targets: { ...current.targets, [area]: roundedValue },
         }));
     }
 
@@ -492,7 +538,7 @@ export default function WeeklyAveragePricePage() {
                         key,
                         nextReport.targets[key] === '' || nextReport.targets[key] == null
                             ? null
-                            : Number(nextReport.targets[key]),
+                            : Math.round(Number(nextReport.targets[key])),
                     ])),
                     entries: nextReport.rows.map((row) => ({
                         customer_key: row.customer_key,
@@ -632,6 +678,135 @@ export default function WeeklyAveragePricePage() {
         );
     }
 
+    function updatePendingSheetCustomer(customer, field, value) {
+        setPendingSheetCustomers((current) => current.map((item) => (
+            item.customer === customer ? { ...item, [field]: value } : item
+        )));
+    }
+
+    async function syncPricesFromSheet(customerMappings = []) {
+        if (!selectedMonth || sheetSyncInFlight.current) return;
+        const syncMonth = selectedMonth;
+        sheetSyncInFlight.current = true;
+        setImportingSheet(true);
+        setError('');
+        try {
+            const result = await api('/api/monthly-average-price/sheet-sync', {
+                method: 'POST',
+                body: {
+                    month: syncMonth,
+                    customer_mappings: customerMappings,
+                },
+                signal: AbortSignal.timeout(30000),
+            });
+            if (selectedMonth !== syncMonth) return;
+            if (result.workbook_locked) {
+                setSheetCustomerKeys(result.sheet_customer_keys || []);
+                setSheetSyncStatus(
+                    `Periode ${monthLabel(syncMonth)} memakai workbook Excel sebagai acuan; sinkronisasi Google Sheet tidak mengubah data.`,
+                );
+                const workbookReport = await api(
+                    `/api/monthly-average-price?month=${encodeURIComponent(syncMonth)}`,
+                );
+                if (selectedMonth === syncMonth) setReport(workbookReport);
+                return;
+            }
+            setSheetCustomerKeys(result.sheet_customer_keys || []);
+            setPendingSheetCustomers((current) => result.unmatched_customers.map((customer) => (
+                current.find((item) => item.customer === customer)
+                || { customer, operator: '', region: '' }
+            )));
+            if (customerMappings.length > 0) {
+                const refreshedCustomers = await api('/api/customers');
+                setCustomerCatalog(refreshedCustomers);
+            }
+            const refreshedReport = await api(
+                `/api/monthly-average-price?month=${encodeURIComponent(syncMonth)}`,
+            );
+            if (selectedMonth !== syncMonth) return;
+            setReport(refreshedReport);
+            setExchangeRateInput(refreshedReport.exchange_rate
+                ? Number.isInteger(Number(refreshedReport.exchange_rate))
+                    ? formatInteger(refreshedReport.exchange_rate)
+                    : String(refreshedReport.exchange_rate)
+                : '');
+            setExchangeRateInputError(false);
+            setExchangeRateInputDirty(false);
+            setError('');
+            setSheetSyncStatus(
+                `Terakhir tersinkron ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}. ${result.imported} harga diperbarui dari ${result.source} untuk ${monthLabel(syncMonth)}.`,
+            );
+            if (result.created_customers.length > 0) {
+                setNotice(`${result.created_customers.length} customer baru ditambahkan ke master.`);
+            }
+        } catch (requestError) {
+            setError(requestError.message);
+        } finally {
+            sheetSyncInFlight.current = false;
+            setImportingSheet(false);
+        }
+    }
+
+    async function importWorkbook(file) {
+        if (!file) return;
+        setImportingWorkbook(true);
+        setError('');
+        try {
+            const body = new FormData();
+            body.append('file', file);
+            const result = await api('/api/monthly-average-price/workbook-import', {
+                method: 'POST',
+                body,
+                signal: AbortSignal.timeout(120000),
+            });
+            if (!Array.isArray(result.imported_months) || !result.imported_months.length) {
+                throw new Error('Server tidak mengembalikan daftar bulan hasil impor workbook.');
+            }
+            const importedMonthLabels = result.imported_months
+                .map((item) => monthLabel(item.month))
+                .join(', ');
+            if (result.imported_months.some((item) => item.month === selectedMonth)) {
+                const refreshedReport = await api(
+                    `/api/monthly-average-price?month=${encodeURIComponent(selectedMonth)}`,
+                );
+                setReport({
+                    ...refreshedReport,
+                    targets: Object.fromEntries(
+                        Object.entries(refreshedReport.targets || {}).map(([key, value]) => [
+                            key,
+                            value == null ? null : Math.round(Number(value)),
+                        ]),
+                    ),
+                });
+                setSheetCustomerKeys(refreshedReport.workbook_customer_keys || []);
+                setExchangeRateInput(refreshedReport.exchange_rate
+                    ? Number.isInteger(Number(refreshedReport.exchange_rate))
+                        ? formatInteger(refreshedReport.exchange_rate)
+                        : String(refreshedReport.exchange_rate)
+                    : '');
+                setExchangeRateInputDirty(false);
+                setPendingSheetCustomers([]);
+                setSheetSyncStatus('');
+            }
+            setNotice(
+                `Workbook ${result.filename} berhasil diimpor untuk ${result.imported_months.length} bulan: ${importedMonthLabels}. Excel menjadi acuan dan sinkronisasi Google Sheet tidak menimpa bulan tersebut.`,
+            );
+        } catch (requestError) {
+            setError(requestError.message);
+        } finally {
+            setImportingWorkbook(false);
+        }
+    }
+
+    async function addSheetCustomers() {
+        const incompleteCustomer = pendingSheetCustomers.find((item) => !item.operator || !item.region);
+        if (incompleteCustomer) {
+            setError(`Pilih operator dan wilayah untuk customer ${incompleteCustomer.customer}.`);
+            return;
+        }
+        await syncPricesFromSheet(pendingSheetCustomers);
+    }
+
     const workbookAreaOrder = selectedMonth >= '2026-01' && selectedMonth < '2026-08'
         ? ['JAWA BARAT', 'JAWA TENGAH DAN TIMUR', 'WILAYAH BELUM DIPETAKAN']
         : ['JAWA BARAT', 'JAWA TENGAH', 'JAWA TIMUR', 'WILAYAH BELUM DIPETAKAN'];
@@ -689,7 +864,16 @@ export default function WeeklyAveragePricePage() {
             return leftOrder - rightOrder || left.index - right.index;
         })
         .map(({ row }) => row);
-    const displayRows = calculatedRows.filter((row) =>
+    const sheetCustomerKeySet = new Set(sheetCustomerKeys.map(normalizeCustomerOrder));
+    const inSheetUnmappedCustomers = calculatedRows.filter((row) =>
+        row.workbook_group.index >= workbookCustomerGroups.length
+        && sheetCustomerKeySet.has(normalizeCustomerOrder(row.customer_key)),
+    );
+    const calculationRows = calculatedRows.filter((row) =>
+        row.workbook_group.index < workbookCustomerGroups.length
+        || sheetCustomerKeySet.has(normalizeCustomerOrder(row.customer_key)),
+    );
+    const displayRows = calculationRows.filter((row) =>
         row.sm3 > 0
         || Number(row.price_usd_per_mmbtu) > 0
         || Number(row.price_rp_per_sm3) > 0
@@ -715,7 +899,7 @@ export default function WeeklyAveragePricePage() {
             displayRowNumbers.set(row.customer_key, index + 1);
         });
     });
-    const totals = calculatedRows.filter((row) =>
+    const calculatedTotals = calculationRows.filter((row) =>
         row.has_valid_price && row.include_in_summary !== false,
     ).reduce((sum, row) => ({
         sm3: sum.sm3 + row.sm3,
@@ -723,7 +907,14 @@ export default function WeeklyAveragePricePage() {
         usd: sum.usd + row.total_usd,
         rupiah: sum.rupiah + row.rupiah,
     }), { sm3: 0, mmbtu: 0, usd: 0, rupiah: 0 });
-    const validRowsByArea = calculatedRows
+    const totals = report.workbook_import
+        ? {
+            ...calculatedTotals,
+            sm3: Number(report.workbook_import.summary_sm3),
+            rupiah: Number(report.workbook_import.summary_rupiah),
+        }
+        : calculatedTotals;
+    const validRowsByArea = calculationRows
         .filter((row) => row.has_valid_price && row.sm3 > 0)
         .reduce((areas, row) => {
             const areaRows = areas.get(row.workbook_area) || [];
@@ -741,7 +932,7 @@ export default function WeeklyAveragePricePage() {
         ['JAWA TENGAH', { region: 'JAWA TENGAH', sm3: 0, mmbtu: 0, usd: 0, rupiah: 0 }],
         ['JAWA TIMUR', { region: 'JAWA TIMUR', sm3: 0, mmbtu: 0, usd: 0, rupiah: 0 }],
     ]);
-    calculatedRows.filter((row) =>
+    calculationRows.filter((row) =>
         row.has_valid_price
         && (row.include_in_summary !== false || standaloneAreas.has(row.workbook_area)),
     ).forEach((row) => {
@@ -761,8 +952,10 @@ export default function WeeklyAveragePricePage() {
             .filter((area) => area.sm3 > 0)
             .map((area) => [area.region, area.rupiah / area.sm3]),
     );
-    const averagePriceRpSm3 = totals.sm3 > 0 ? totals.rupiah / totals.sm3 : 0;
-    const hasUncalculatedPriceRows = calculatedRows.some((row) =>
+    const averagePriceRpSm3 = report.workbook_import
+        ? Number(report.workbook_import.summary_average_price)
+        : totals.sm3 > 0 ? totals.rupiah / totals.sm3 : 0;
+    const hasUncalculatedPriceRows = calculationRows.some((row) =>
         !row.has_valid_price
         && (row.price_unit === 'IDR_SM3'
             ? Number(row.price_rp_per_sm3) > 0
@@ -800,8 +993,8 @@ export default function WeeklyAveragePricePage() {
         const targetValue = report.targets[area.key];
         const target = targetValue == null || targetValue === '' ? null : Number(targetValue);
         const hasRegionalRows = area.key === 'ALL_EXCEPT_JATIM'
-            ? calculatedRows.some((row) => row.include_in_summary !== false)
-            : calculatedRows.some((row) => area.regions.includes(row.workbook_area));
+            ? calculationRows.some((row) => row.include_in_summary !== false)
+            : calculationRows.some((row) => area.regions.includes(row.workbook_area));
         return {
             ...area,
             target,
@@ -813,7 +1006,7 @@ export default function WeeklyAveragePricePage() {
     const selectedCustomer = report.rows.find((row) => row.customer_key === selectedCustomerKey);
     const selectedCustomerHasWorkbookData = Number(selectedCustomer?.sm3_override) > 0
         && !selectedCustomer?.region;
-    const hasUnassignedWorkbookRegions = calculatedRows.some(
+    const hasUnassignedWorkbookRegions = inSheetUnmappedCustomers.some(
         (row) => Number(row.sm3_override) > 0 && !row.region,
     );
     const comparisonChartData = {
@@ -840,6 +1033,14 @@ export default function WeeklyAveragePricePage() {
         <div className={`weekly-average-page${canViewCustomerResults ? '' : ' average-price-user-page'}`}>
             {error && <div className="notice bad" role="alert">{error}</div>}
             {notice && <div className="notice good" role="status">{notice}</div>}
+            {canEdit && sheetSyncStatus && (
+                <div className="notice" role="status">{sheetSyncStatus} Sinkron otomatis setiap 5 menit selama halaman terbuka.</div>
+            )}
+            {canEdit && report.workbook_import && (
+                <div className="notice" role="status">
+                    Acuan Excel aktif untuk {monthLabel(selectedMonth)} dari {report.workbook_import.filename}. Sinkronisasi Google Sheet dan input harga manual dinonaktifkan untuk bulan ini.
+                </div>
+            )}
             {hasUncalculatedPriceRows && (
                 <div className="notice" role="status">
                     Beberapa harga sudah tercatat, tetapi belum dapat dihitung karena kurs atau faktor konversi belum tersedia. Baris tersebut tidak masuk total.
@@ -995,8 +1196,87 @@ export default function WeeklyAveragePricePage() {
                     <div className="average-panel-heading">
                         <b>Input Average Price Customer</b>
                     </div>
+                    <div className="average-toolbar average-source-actions">
+                        <input
+                            ref={workbookFileInput}
+                            hidden
+                            type="file"
+                            accept=".xlsx,.xlsm"
+                            onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = '';
+                                importWorkbook(file);
+                            }}
+                        />
+                        <button
+                            className="average-add-button"
+                            type="button"
+                            onClick={() => workbookFileInput.current?.click()}
+                            disabled={importingWorkbook || importingSheet || saving || loading || !selectedMonth}
+                        >
+                            {importingWorkbook ? 'Mengimpor workbook...' : 'Impor Excel Average Price'}
+                        </button>
+                        {report.source !== 'workbook' && (
+                            <button
+                                type="button"
+                                onClick={() => syncPricesFromSheet()}
+                                disabled={importingSheet || importingWorkbook || saving || loading || customersLoading || !selectedMonth}
+                            >
+                                {importingSheet ? 'Menyinkronkan...' : 'Sinkronkan Harga Google'}
+                            </button>
+                        )}
+                    </div>
                 </div>
-                <form className="average-entry-form" onSubmit={saveCustomerEntry}>
+                {pendingSheetCustomers.length > 0 && (
+                    <section className="average-new-customer-panel" aria-label="Pemetaan customer baru dari spreadsheet">
+                        <div>
+                            <b>Customer baru perlu dipetakan</b>
+                            <span>Pilih operator dan wilayah agar customer dapat ditambahkan ke master dan harga disinkronkan.</span>
+                        </div>
+                        {pendingSheetCustomers.map((item) => (
+                            <div className="average-new-customer-row" key={item.customer}>
+                                <strong>{item.customer}</strong>
+                                <label>
+                                    Operator
+                                    <select
+                                        value={item.operator}
+                                        onChange={(event) => updatePendingSheetCustomer(item.customer, 'operator', event.target.value)}
+                                    >
+                                        <option value="">Pilih operator</option>
+                                        {operators.map((operator) => (
+                                            <option key={operator} value={operator}>{operator}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <label>
+                                    Wilayah
+                                    <select
+                                        value={item.region}
+                                        onChange={(event) => updatePendingSheetCustomer(item.customer, 'region', event.target.value)}
+                                    >
+                                        <option value="">Pilih wilayah</option>
+                                        {regions.map((region) => (
+                                            <option key={region} value={region}>{region}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+                        ))}
+                        <button
+                            className="average-add-button"
+                            type="button"
+                            onClick={addSheetCustomers}
+                            disabled={importingSheet || pendingSheetCustomers.some((item) => !item.operator || !item.region)}
+                        >
+                            {importingSheet ? 'Menyimpan pemetaan...' : 'Tambahkan Customer dan Sinkronkan'}
+                        </button>
+                    </section>
+                )}
+                {report.workbook_import ? (
+                    <div className="notice">
+                        Data volume, harga, MMBTU, dan total mengikuti workbook. Unggah workbook terbaru untuk memperbarui bulan ini.
+                    </div>
+                ) : <form className="average-entry-form" onSubmit={saveCustomerEntry}>
                     <label>
                         Periode
                         <input readOnly value={monthLabel(selectedMonth)} />
@@ -1083,7 +1363,7 @@ export default function WeeklyAveragePricePage() {
                             {saving ? 'Menyimpan...' : 'Simpan Harga'}
                         </button>
                     </div>
-                </form>
+                </form>}
                 </>}
                 <div className="average-conversion-panel">
                     <div className="average-data-heading average-conversion-heading">
@@ -1092,7 +1372,7 @@ export default function WeeklyAveragePricePage() {
                         </div>
                         <label className="average-filter-field">
                             <span>Kurs Rp/USD</span>
-                            {canEdit ? (
+                            {canEdit && !report.workbook_import ? (
                                 <input
                                     aria-label="Kurs Rupiah per USD"
                                     type="text"
@@ -1117,7 +1397,7 @@ export default function WeeklyAveragePricePage() {
                             <tbody>{operators.map((operator, index) => <tr key={operator}>
                                 <td>{index + 1}</td>
                                 <td>{operator}</td>
-                                <td>{canEdit
+                                <td>{canEdit && !report.workbook_import
                                     ? <input aria-label={`Faktor konversi ${operator}`} type="number" min="0" step="0.0001" value={report.operator_factors[operator] || ''} onChange={(event) => updateFactor(operator, event.target.value)} />
                                     : report.operator_factors[operator] || '—'}</td>
                                 <td>MMBTU = Sm³ ÷ faktor</td>

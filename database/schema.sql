@@ -86,6 +86,16 @@ CREATE TABLE IF NOT EXISTS monthly_average_price_targets (
     PRIMARY KEY(month_start, region)
 );
 
+CREATE TABLE IF NOT EXISTS monthly_average_price_workbook_imports (
+    month_start DATE NOT NULL PRIMARY KEY,
+    filename VARCHAR(255) NOT NULL,
+    imported_at TEXT NOT NULL,
+    customer_keys_json LONGTEXT NOT NULL,
+    summary_sm3 DOUBLE NOT NULL,
+    summary_rupiah DOUBLE NOT NULL,
+    summary_average_price DOUBLE NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS complaints (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     report_date DATE NOT NULL,
@@ -104,5 +114,61 @@ CREATE TABLE IF NOT EXISTS complaints (
 CREATE TABLE IF NOT EXISTS app_users (
     username VARCHAR(191) PRIMARY KEY,
     password_hash TEXT NOT NULL,
-    role VARCHAR(16) NOT NULL DEFAULT 'division'
+    role VARCHAR(16) NOT NULL DEFAULT 'division',
+    sph_role VARCHAR(32) NULL
+);
+
+CREATE TABLE IF NOT EXISTS sph_customers (
+    customer_key VARCHAR(191) PRIMARY KEY,
+    customer_name VARCHAR(255) NOT NULL,
+    address_line1 TEXT NOT NULL,
+    address_line2 TEXT NOT NULL,
+    created_by VARCHAR(191) NOT NULL,
+    created_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sph_sequences (
+    month_key CHAR(7) PRIMARY KEY,
+    next_value INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS sph_proposals (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    proposal_number VARCHAR(80) NOT NULL UNIQUE,
+    customer_key VARCHAR(191) NOT NULL,
+    proposal_date DATE NOT NULL,
+    volume_min DECIMAL(16,2) NOT NULL,
+    volume_max DECIMAL(16,2) NOT NULL,
+    price_usd DECIMAL(12,2) NOT NULL,
+    status VARCHAR(24) NOT NULL,
+    version INT NOT NULL DEFAULT 0,
+    top_percent DECIMAL(5,2) NOT NULL DEFAULT 90,
+    guarantee VARCHAR(64) NOT NULL,
+    due_day TINYINT NOT NULL DEFAULT 20,
+    exchange_clause BOOLEAN NOT NULL DEFAULT FALSE,
+    contract_years TINYINT NOT NULL DEFAULT 2,
+    reethau_obligations TEXT NOT NULL,
+    customer_obligations TEXT NOT NULL,
+    approvals TEXT NOT NULL,
+    sent_date DATE NULL,
+    approved_at DATE NULL,
+    actual_volume DECIMAL(16,2) NULL,
+    created_by VARCHAR(191) NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_sph_proposals_status (status),
+    INDEX idx_sph_proposals_customer (customer_key),
+    CONSTRAINT fk_sph_proposals_customer
+        FOREIGN KEY (customer_key) REFERENCES sph_customers(customer_key)
+);
+
+CREATE TABLE IF NOT EXISTS sph_proposal_logs (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    proposal_id BIGINT NOT NULL,
+    actor_username VARCHAR(191) NOT NULL,
+    actor_role VARCHAR(32) NOT NULL,
+    message TEXT NOT NULL,
+    created_at DATETIME NOT NULL,
+    INDEX idx_sph_proposal_logs_proposal (proposal_id, id),
+    CONSTRAINT fk_sph_logs_proposal
+        FOREIGN KEY (proposal_id) REFERENCES sph_proposals(id) ON DELETE CASCADE
 );

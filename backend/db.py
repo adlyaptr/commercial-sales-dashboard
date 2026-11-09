@@ -12,6 +12,14 @@ def initialize_database(connection_factory, app_username, app_password):
             if statement.strip():
                 con.execute(statement)
 
+        con.execute(
+            "UPDATE sph_proposals SET status='approved',"
+            "approved_at=COALESCE(approved_at,CURRENT_DATE),updated_at=CURRENT_TIMESTAMP "
+            "WHERE status='review' AND CASE WHEN JSON_VALID(approvals) "
+            "THEN JSON_CONTAINS(approvals,%s) ELSE 0 END=1",
+            ('"commercial_head"',),
+        )
+
         user_columns = con.execute(
             """
             SELECT COLUMN_NAME FROM information_schema.COLUMNS
@@ -22,6 +30,10 @@ def initialize_database(connection_factory, app_username, app_password):
             con.execute(
                 "ALTER TABLE app_users ADD COLUMN role VARCHAR(16) "
                 "NOT NULL DEFAULT 'division'"
+            )
+        if not any(column["COLUMN_NAME"] == "sph_role" for column in user_columns):
+            con.execute(
+                "ALTER TABLE app_users ADD COLUMN sph_role VARCHAR(32) NULL"
             )
 
         average_price_columns = con.execute(

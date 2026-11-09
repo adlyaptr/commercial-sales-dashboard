@@ -11,6 +11,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Optional
@@ -18,6 +19,7 @@ from urllib.error import URLError
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 from urllib.request import Request as URLRequest, urlopen
 from zoneinfo import ZoneInfo
+from zipfile import BadZipFile
 
 import pymysql
 from google.auth.exceptions import GoogleAuthError
@@ -33,6 +35,10 @@ from starlette.middleware.sessions import SessionMiddleware
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.utils.exceptions import InvalidFileException
+import reportlab
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 try:
     from .db import initialize_database
@@ -43,6 +49,18 @@ except ImportError:
     
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIST = BASE_DIR / "static" / "react"
+SPH_PDF_FONT_DIR = Path(reportlab.__file__).parent / "fonts"
+pdfmetrics.registerFont(TTFont("SphSans", str(SPH_PDF_FONT_DIR / "Vera.ttf")))
+pdfmetrics.registerFont(TTFont("SphSans-Bold", str(SPH_PDF_FONT_DIR / "VeraBd.ttf")))
+pdfmetrics.registerFont(TTFont("SphSans-Italic", str(SPH_PDF_FONT_DIR / "VeraIt.ttf")))
+pdfmetrics.registerFont(TTFont("SphSans-BoldItalic", str(SPH_PDF_FONT_DIR / "VeraBI.ttf")))
+pdfmetrics.registerFontFamily(
+    "SphSans",
+    normal="SphSans",
+    bold="SphSans-Bold",
+    italic="SphSans-Italic",
+    boldItalic="SphSans-BoldItalic",
+)
 load_dotenv(BASE_DIR / ".env")
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -67,7 +85,20 @@ ISSUE_SHEET_ID = os.getenv(
 ISSUE_SHEET_GID = os.getenv("ISSUE_SHEET_GID", "418759575").strip()
 ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv(
     "ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE",
-    "/run/secrets/issue-google-service-account.json",
+    (
+        "/run/secrets/issue-google-service-account.json"
+        if APP_ENV == "production"
+        else str(BASE_DIR.parent / "secrets" / "issue-google-service-account.json")
+    ),
+).strip()
+AVERAGE_PRICE_SHEET_ID = os.getenv(
+    "AVERAGE_PRICE_SHEET_ID",
+    "1IoDGktFicMKKzu6m015onxv7WBhreqqwz0j7A_k6T1o",
+).strip()
+AVERAGE_PRICE_SHEET_GID = os.getenv("AVERAGE_PRICE_SHEET_GID", "421480429").strip()
+AVERAGE_PRICE_SHEET_TITLE = os.getenv(
+    "AVERAGE_PRICE_SHEET_TITLE",
+    "Harga Customer 2026",
 ).strip()
 ISSUE_SHEET_CACHE_SECONDS = 300
 _issue_sheet_cache = {"expires_at": 0.0, "data": None}
@@ -204,11 +235,13 @@ def is_admin(request: Request) -> bool:
     return role == "admin" or (role is None and username == APP_USERNAME)
 
 
-def require_login(request: Request):
+def require_login(request: Request, application: str = "commercial"):
     if not logged_in(request):
         if request.session.get("username"):
             request.session.clear()
         raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
+    if request.session.get("application", "commercial") != application:
+        raise HTTPException(status_code=403, detail="Aplikasi ini tidak sesuai dengan sesi login.")
     if is_admin(request):
         return
     if request.session.get("role") != "user":
@@ -226,8 +259,52 @@ def require_login(request: Request):
 def require_admin(request: Request):
     if not logged_in(request):
         raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu.")
+    if request.session.get("application", "commercial") != "commercial":
+        raise HTTPException(status_code=403, detail="Aplikasi ini tidak sesuai dengan sesi login.")
     if not is_admin(request):
         raise HTTPException(status_code=403, detail="Akses khusus admin.")
+
+
+def require_sph_admin(request: Request):
+    require_login(request, "sph")
+    if not is_admin(request):
+        raise HTTPException(status_code=403, detail="Akses khusus admin.")
+
+
+SPH_ROLES = {
+    "sales": "Sales",
+    "commercial_head": "Commercial Head",
+    "director": "Direksi",
+    "legal": "Legal",
+}
+
+
+def require_sph_access(request: Request):
+    require_login(request, "sph")
+    username = request.session["username"]
+    with db() as con:
+        user = con.execute(
+            "SELECT role,sph_role FROM app_users WHERE username=%s", (username,)
+        ).fetchone()
+    if not user or (
+        user["role"] != "admin"
+        and (user["role"] != "user" or user.get("sph_role") not in SPH_ROLES)
+    ):
+        request.session.clear()
+        raise HTTPException(status_code=403, detail="Akun ini tidak memiliki akses ke SPH CNG.")
+    request.session["role"] = user["role"]
+    request.session["sph_role"] = user.get("sph_role")
+    return user
+
+
+def require_sph_role(request: Request, role: str):
+    user = require_sph_access(request)
+    if user.get("sph_role") != role:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Tindakan ini hanya dapat dilakukan oleh {SPH_ROLES[role]}.",
+        )
+    return user
 
 
 def require_home_access(request: Request):
@@ -235,6 +312,8 @@ def require_home_access(request: Request):
         if request.session.get("username"):
             request.session.clear()
         return
+    if request.session.get("application", "commercial") != "commercial":
+        raise HTTPException(status_code=403, detail="Aplikasi ini tidak sesuai dengan sesi login.")
     username = request.session["username"]
     role = request.session.get("role")
     if role == "admin" or (role is None and username == APP_USERNAME):
@@ -302,6 +381,216 @@ def parse_number(value) -> float:
         return float(s)
     except ValueError:
         return 0.0
+
+
+AVERAGE_PRICE_MONTH_HEADERS = {
+    1: {"jan", "januari"},
+    2: {"feb", "februari"},
+    3: {"mar", "maret"},
+    4: {"apr", "april"},
+    5: {"mei", "may"},
+    6: {"jun", "juni"},
+    7: {"jul", "juli"},
+    8: {"agu", "agt", "agustus"},
+    9: {"sep", "september"},
+    10: {"okt", "oktober"},
+    11: {"nov", "november"},
+    12: {"des", "desember"},
+}
+AVERAGE_PRICE_CUSTOMER_ALIASES = {
+    "ptciptalestariideanusa": "clin",
+    "ptmitrakayagalvanize": "mkg",
+    "ptoptimadhijaya": "optima",
+    "concordindustry": "concord",
+    "oaj": "optima",
+    "optimaadhijaya": "optima",
+    "adp": "aliadigital",
+    "ami": "ateja",
+    "altksomasami": "altinexmasami",
+    "calbeeksobmi": "calbeeace",
+    "cisfksorrs": "cisfrrs",
+    "dic": "dicgrapichs",
+    "gfranca": "gfrancaekek",
+    "gfrsurcharge": "gfrsurcharge",
+    "gfatom": "gfatom",
+    "gfkulit": "gfkulit",
+    "hci": "honchuan",
+    "hli": "hligreenpower",
+    "idpksoaae": "indoneptuneaae",
+    "hskksogas": "hskgas",
+    "indofood": "indofoodnsf",
+    "ka": "karisma",
+    "kgmksorrs": "kgmrrs",
+    "niagagaram": "niagagaram",
+    "pcimengger": "pcimengger",
+    "pa": "cvpa",
+    "spglobal": "suryapamenangglobal",
+    "spksojes": "suryapamenangjes",
+    "greenpulse": "greenpulse",
+    "jiuqi": "jiuqi",
+    "djarum": "djarum",
+    "kimiafarmaksoineko": "kimiafarmima",
+    "kimiafarmaima": "kimiafarmima",
+    "ksn": "ksnmaja",
+    "pentawiraksoren": "pentawiraren",
+    "fjiksosalmah": "fjisbi",
+    "fjiksbi": "fjisbi",
+    "tongjiksogas": "tongtjigas",
+    "winglokksoebm": "winglokebm",
+}
+
+
+def canonical_average_price_customer_key(value):
+    key = norm(value)
+    return AVERAGE_PRICE_CUSTOMER_ALIASES.get(key, key)
+
+
+def parse_average_price_cell(value, unit_hint=""):
+    text = str(value or "").strip()
+    normalized_text = text.lower()
+    if "$" in text or "usd" in normalized_text:
+        price_unit = "USD_MMBTU"
+    elif "rp" in normalized_text or "idr" in normalized_text:
+        price_unit = "IDR_SM3"
+    else:
+        hint = str(unit_hint or "").lower()
+        if "$" in hint or "usd" in hint:
+            price_unit = "USD_MMBTU"
+        elif "rp" in hint or "idr" in hint:
+            price_unit = "IDR_SM3"
+        else:
+            price_unit = "USD_MMBTU"
+
+    if not text or norm(text) in {"off", "na", "n/a"} or text in {"-", "—"}:
+        return {"price_unit": price_unit, "price": 0.0, "active": False}
+
+    number_text = re.sub(r"[^0-9,.]", "", text)
+    if not number_text:
+        return None
+    if "," in number_text and "." in number_text:
+        decimal_separator = "," if number_text.rfind(",") > number_text.rfind(".") else "."
+        thousands_separator = "." if decimal_separator == "," else ","
+        number_text = number_text.replace(thousands_separator, "")
+        number_text = number_text.replace(decimal_separator, ".")
+    elif "," in number_text:
+        decimal_places = len(number_text.rsplit(",", 1)[-1])
+        number_text = number_text.replace(",", "." if decimal_places in {1, 2} else "")
+    elif "." in number_text:
+        decimal_places = len(number_text.rsplit(".", 1)[-1])
+        if decimal_places == 3:
+            number_text = number_text.replace(".", "")
+
+    try:
+        price = float(number_text)
+    except ValueError:
+        return None
+    if not math.isfinite(price) or price <= 0:
+        return None
+    return {"price_unit": price_unit, "price": price, "active": True}
+
+
+def parse_average_price_sheet_values(values, month):
+    month_number = int(month.split("-")[1])
+    month_headers = AVERAGE_PRICE_MONTH_HEADERS[month_number]
+    header_row_index = None
+    customer_column = None
+    month_column = None
+    unit_column = None
+
+    for row_index, row in enumerate(values[:20]):
+        normalized_headers = [norm(value) for value in row]
+        customer_index = next(
+            (
+                index for index, value in enumerate(normalized_headers)
+                if value in {"namacustomer", "customer", "customername"}
+            ),
+            None,
+        )
+        selected_month_index = next(
+            (
+                index for index, value in enumerate(normalized_headers)
+                if value in month_headers
+            ),
+            None,
+        )
+        if customer_index is not None and selected_month_index is not None:
+            header_row_index = row_index
+            customer_column = customer_index
+            month_column = selected_month_index
+            unit_column = next(
+                (
+                    index for index, value in enumerate(normalized_headers)
+                    if value in {"usdrp", "priceunit", "satuanharga"}
+                ),
+                None,
+            )
+            break
+
+    if header_row_index is None:
+        raise HTTPException(
+            status_code=502,
+            detail="Header customer dan bulan tidak ditemukan pada tab Harga Customer 2026.",
+        )
+
+    entries = []
+    seen_customers = set()
+    for row in values[header_row_index + 1:]:
+        if customer_column >= len(row):
+            continue
+        customer = str(row[customer_column] or "").strip()
+        if not customer:
+            continue
+        unit_hint = row[unit_column] if unit_column is not None and unit_column < len(row) else ""
+        cell_value = row[month_column] if month_column < len(row) else ""
+        parsed_price = parse_average_price_cell(cell_value, unit_hint)
+        if parsed_price is None:
+            continue
+        customer_key = canonical_average_price_customer_key(customer)
+        if customer_key in seen_customers:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Customer {customer} muncul lebih dari sekali pada sheet harga.",
+            )
+        seen_customers.add(customer_key)
+        entries.append({
+            "customer": customer,
+            "price_unit": parsed_price["price_unit"],
+            "price": parsed_price["price"],
+            "active": parsed_price["active"],
+        })
+    return entries
+
+
+def fetch_public_average_price_sheet_values():
+    sheet_url = (
+        f"https://docs.google.com/spreadsheets/d/{AVERAGE_PRICE_SHEET_ID}"
+        f"/gviz/tq?tqx=out%3Acsv&gid={quote(AVERAGE_PRICE_SHEET_GID, safe='')}"
+    )
+    request = URLRequest(
+        sheet_url,
+        headers={"User-Agent": "CommercialSalesDashboard/1.0"},
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            csv_bytes = response.read(5_000_001)
+    except (URLError, TimeoutError, OSError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Spreadsheet belum dapat dibaca oleh server. Bagikan akses Viewer kepada "
+                "service account aplikasi, atau aktifkan akses publik baca-saja pada spreadsheet."
+            ),
+        ) from exc
+    if len(csv_bytes) > 5_000_000:
+        raise HTTPException(status_code=502, detail="Ukuran spreadsheet harga melebihi batas 5 MB.")
+    try:
+        text = csv_bytes.decode("utf-8-sig")
+        return list(csv.reader(StringIO(text, newline="")))
+    except (UnicodeDecodeError, csv.Error) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Format CSV spreadsheet harga tidak valid.",
+        ) from exc
 
 
 def parse_date(value) -> Optional[str]:
@@ -946,11 +1235,16 @@ def normalize_customer_mapping(customer_value, operator_value):
 @app.post("/api/login")
 async def login(request: Request):
     payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Format login tidak valid.")
     username = str(payload.get("username", ""))
     password = str(payload.get("password", ""))
+    application = str(payload.get("application", "commercial"))
+    if application not in {"commercial", "sph"}:
+        raise HTTPException(status_code=400, detail="Pilihan aplikasi tidak valid.")
     with db() as con:
         row = con.execute(
-            "SELECT password_hash,role FROM app_users WHERE username=%s",
+            "SELECT password_hash,role,sph_role FROM app_users WHERE username=%s",
             (username,),
         ).fetchone()
     if (
@@ -959,9 +1253,16 @@ async def login(request: Request):
         or not verify_user_password(password, row["password_hash"])
     ):
         return JSONResponse({"detail": "Username atau password salah."}, status_code=401)
+    if application == "sph" and row["role"] != "admin" and row.get("sph_role") not in SPH_ROLES:
+        return JSONResponse(
+            {"detail": "Akun ini belum diberi role SPH CNG oleh Admin."},
+            status_code=403,
+        )
     request.session.clear()
     request.session["username"] = username
     request.session["role"] = row["role"]
+    request.session["application"] = application
+    request.session["sph_role"] = row.get("sph_role")
     return {"ok": True}
 
 
@@ -980,13 +1281,27 @@ def me(request: Request):
     username = request.session["username"]
     with db() as con:
         user = con.execute(
-            "SELECT role FROM app_users WHERE username=%s", (username,)
+            "SELECT role,sph_role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
     if not user or user["role"] not in {"admin", "user"}:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
     request.session["role"] = user["role"]
-    return {"username": username, "role": user["role"]}
+    application = request.session.get("application", "commercial")
+    if (
+        application == "sph"
+        and user["role"] != "admin"
+        and user.get("sph_role") not in SPH_ROLES
+    ):
+        request.session.clear()
+        raise HTTPException(status_code=403, detail="Akun ini tidak memiliki akses ke SPH CNG.")
+    request.session["sph_role"] = user.get("sph_role")
+    return {
+        "username": username,
+        "role": user["role"],
+        "sphRole": user.get("sph_role"),
+        "application": application,
+    }
 
 
 @app.get("/api/users")
@@ -994,9 +1309,43 @@ def list_users(request: Request):
     require_admin(request)
     with db() as con:
         users = con.execute(
-            "SELECT username,role FROM app_users ORDER BY role,username"
+            "SELECT username,role,sph_role FROM app_users ORDER BY role,username"
         ).fetchall()
     return users
+
+
+@app.get("/api/sph/users")
+def list_sph_users(request: Request):
+    require_sph_admin(request)
+    with db() as con:
+        users = con.execute(
+            "SELECT username,role,sph_role FROM app_users WHERE role IN ('admin','user') ORDER BY role,username"
+        ).fetchall()
+    return users
+
+
+@app.put("/api/sph/users/{username}/role")
+async def update_sph_user_role(username: str, request: Request):
+    require_sph_admin(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Format role SPH tidak valid.")
+    sph_role = payload.get("sphRole")
+    if sph_role is not None and (
+        not isinstance(sph_role, str) or sph_role not in SPH_ROLES
+    ):
+        raise HTTPException(status_code=400, detail="Role SPH tidak dikenal.")
+    with db() as con:
+        user = con.execute(
+            "SELECT role FROM app_users WHERE username=%s", (username,)
+        ).fetchone()
+        if not user or user["role"] not in {"admin", "user"}:
+            raise HTTPException(status_code=404, detail="Akun pengguna tidak ditemukan.")
+        con.execute(
+            "UPDATE app_users SET sph_role=%s WHERE username=%s",
+            (sph_role, username),
+        )
+    return {"username": username, "sphRole": sph_role}
 
 
 @app.post("/api/users")
@@ -1071,6 +1420,739 @@ def delete_user(username: str, request: Request):
             raise HTTPException(status_code=404, detail="Akun pengguna tidak ditemukan.")
         con.execute("DELETE FROM app_users WHERE username=%s", (username,))
     return {"ok": True}
+
+
+SPH_STATUSES = {
+    "draft": "Draft",
+    "review": "Review",
+    "approved": "Disetujui",
+    "sent": "Terkirim",
+    "negotiation": "Negosiasi",
+    "customer_approved": "Disetujui Pelanggan",
+    "pjbg": "Proses PJBG",
+    "active": "Aktif",
+}
+
+SPH_GUARANTEES = {
+    "Cash Deposit",
+    "Bank Guarantee",
+    "Parent Company Guarantee",
+    "N/A",
+}
+
+
+def _sph_now():
+    return datetime.now(ZoneInfo("Asia/Jakarta")).replace(tzinfo=None, microsecond=0)
+
+
+def _sph_text(value, label, maximum=10000, required=False):
+    if value is not None and not isinstance(value, str):
+        raise HTTPException(status_code=400, detail=f"{label} harus berupa teks.")
+    text = str(value or "").strip()
+    if required and not text:
+        raise HTTPException(status_code=400, detail=f"{label} wajib diisi.")
+    if len(text) > maximum:
+        raise HTTPException(status_code=400, detail=f"{label} terlalu panjang.")
+    return text
+
+
+def _sph_validate_proposal(payload):
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Format SPH tidak valid.")
+    customer_name = _sph_text(payload.get("customerName"), "Nama pelanggan", 255, True)
+    customer_key = norm(customer_name)
+    if not customer_key or len(customer_key) > 191:
+        raise HTTPException(status_code=400, detail="Nama pelanggan tidak valid.")
+    try:
+        proposal_date = date.fromisoformat(str(payload.get("proposalDate", "")))
+        numeric_fields = (
+            payload.get("volumeMin"),
+            payload.get("volumeMax"),
+            payload.get("priceUsd"),
+            payload.get("topPercent", 90),
+        )
+        if any(isinstance(value, bool) for value in numeric_fields):
+            raise InvalidOperation
+        volume_min, volume_max, price_usd, top_percent = (
+            Decimal(str(value)) for value in numeric_fields
+        )
+        due_value = payload.get("dueDay", 20)
+        years_value = payload.get("contractYears", 2)
+        if isinstance(due_value, bool) or isinstance(years_value, bool):
+            raise ValueError
+        due_day, contract_years = int(due_value), int(years_value)
+        if Decimal(str(due_value)) != due_day or Decimal(str(years_value)) != contract_years:
+            raise ValueError
+    except (InvalidOperation, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Tanggal dan angka pada SPH harus valid.")
+    if (
+        not all(value.is_finite() for value in (volume_min, volume_max, price_usd, top_percent))
+        or any(value.normalize().as_tuple().exponent < -2 for value in (
+            volume_min, volume_max, price_usd, top_percent
+        ))
+        or volume_min <= 0
+        or volume_max < volume_min
+        or volume_max > Decimal("99999999999999.99")
+        or price_usd <= 0
+        or price_usd > Decimal("9999999999.99")
+        or not 0 <= top_percent <= 100
+        or not 1 <= due_day <= 28
+        or not 1 <= contract_years <= 15
+    ):
+        raise HTTPException(status_code=400, detail="Nilai volume, harga, TOP, atau termin di luar batas.")
+    guarantee_value = payload.get("guarantee", "Cash Deposit")
+    if not isinstance(guarantee_value, str):
+        raise HTTPException(status_code=400, detail="Jenis jaminan tidak valid.")
+    guarantee = guarantee_value
+    if guarantee not in SPH_GUARANTEES:
+        raise HTTPException(status_code=400, detail="Jenis jaminan tidak valid.")
+    exchange_clause = payload.get("exchangeClause", False)
+    if not isinstance(exchange_clause, bool):
+        raise HTTPException(status_code=400, detail="Klausul tukar menukar tidak valid.")
+    return {
+        "customer_key": customer_key,
+        "customer_name": customer_name,
+        "address_line1": _sph_text(payload.get("addressLine1"), "Alamat pelanggan", 2000),
+        "address_line2": _sph_text(payload.get("addressLine2"), "Alamat pelanggan", 2000),
+        "proposal_date": proposal_date,
+        "volume_min": volume_min,
+        "volume_max": volume_max,
+        "price_usd": price_usd,
+        "top_percent": top_percent,
+        "guarantee": guarantee,
+        "due_day": due_day,
+        "exchange_clause": exchange_clause,
+        "contract_years": contract_years,
+        "reethau_obligations": _sph_text(payload.get("reethauObligations"), "Kewajiban Reethau"),
+        "customer_obligations": _sph_text(payload.get("customerObligations"), "Kewajiban pelanggan"),
+    }
+
+
+def _sph_approval_route():
+    return ["commercial_head"]
+
+
+def _sph_proposal_row(con, proposal_id):
+    return con.execute(
+        "SELECT p.id,p.proposal_number AS number,p.customer_key,"
+        "c.customer_name AS customerName,c.address_line1 AS addressLine1,"
+        "c.address_line2 AS addressLine2,p.proposal_date AS proposalDate,"
+        "p.volume_min AS volumeMin,p.volume_max AS volumeMax,p.price_usd AS priceUsd,"
+        "p.status,p.version,p.top_percent AS topPercent,p.guarantee,p.due_day AS dueDay,"
+        "p.exchange_clause AS exchangeClause,p.contract_years AS contractYears,"
+        "p.reethau_obligations AS reethauObligations,"
+        "p.customer_obligations AS customerObligations,p.approvals,p.sent_date AS sentDate,"
+        "p.approved_at AS approvedAt,p.actual_volume AS actualVolume,p.created_by AS createdBy,"
+        "p.updated_at AS updatedAt FROM sph_proposals p "
+        "JOIN sph_customers c ON c.customer_key=p.customer_key WHERE p.id=%s",
+        (proposal_id,),
+    ).fetchone()
+
+
+def _sph_proposal_json(row):
+    if not row:
+        return None
+    result = dict(row)
+    result["id"] = int(result["id"])
+    result["version"] = int(result["version"])
+    result["exchangeClause"] = bool(result["exchangeClause"])
+    result["approvals"] = json.loads(result["approvals"] or "[]")
+    for key in ("proposalDate", "sentDate", "approvedAt"):
+        if result[key] is not None:
+            result[key] = result[key].isoformat()
+    if result["updatedAt"] is not None:
+        result["updatedAt"] = result["updatedAt"].isoformat()
+    for key in ("volumeMin", "volumeMax", "priceUsd", "topPercent", "actualVolume"):
+        if result[key] is not None:
+            result[key] = float(result[key])
+    return result
+
+
+def _sph_log(con, proposal_id, request, message):
+    role = request.session.get("sph_role") or "admin"
+    con.execute(
+        "INSERT INTO sph_proposal_logs"
+        "(proposal_id,actor_username,actor_role,message,created_at) "
+        "VALUES(%s,%s,%s,%s,%s)",
+        (proposal_id, request.session["username"], role, message, _sph_now()),
+    )
+
+
+def _sph_get_proposal(proposal_id):
+    with db() as con:
+        row = _sph_proposal_row(con, proposal_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="SPH tidak ditemukan.")
+        return _sph_proposal_json(row)
+
+
+@app.get("/api/sph/proposals")
+def sph_list_proposals(request: Request):
+    require_sph_access(request)
+    with db() as con:
+        rows = con.execute(
+            "SELECT p.id,p.proposal_number AS number,c.customer_name AS customerName,"
+            "p.proposal_date AS proposalDate,p.volume_min AS volumeMin,"
+            "p.volume_max AS volumeMax,p.price_usd AS priceUsd,p.top_percent AS topPercent,"
+            "p.status,p.version,p.actual_volume AS actualVolume,p.updated_at AS updatedAt "
+            "FROM sph_proposals p JOIN sph_customers c ON c.customer_key=p.customer_key "
+            "ORDER BY p.updated_at DESC,p.id DESC"
+        ).fetchall()
+    proposals = []
+    for row in rows:
+        proposal = dict(row)
+        proposal["id"] = int(proposal["id"])
+        proposal["version"] = int(proposal["version"])
+        proposal["proposalDate"] = proposal["proposalDate"].isoformat()
+        proposal["updatedAt"] = proposal["updatedAt"].isoformat()
+        for key in ("volumeMin", "volumeMax", "priceUsd", "topPercent", "actualVolume"):
+            if proposal[key] is not None:
+                proposal[key] = float(proposal[key])
+        proposals.append(proposal)
+    return proposals
+
+
+@app.get("/api/sph/proposals/{proposal_id}")
+def sph_get_proposal(proposal_id: int, request: Request):
+    require_sph_access(request)
+    proposal = _sph_get_proposal(proposal_id)
+    with db() as con:
+        logs = con.execute(
+            "SELECT actor_username AS actor,actor_role AS actorRole,message,"
+            "created_at AS createdAt FROM sph_proposal_logs "
+            "WHERE proposal_id=%s ORDER BY id DESC",
+            (proposal_id,),
+        ).fetchall()
+    proposal["history"] = [
+        {
+            **dict(log),
+            "createdAt": log["createdAt"].isoformat(),
+            "actorRoleLabel": SPH_ROLES.get(log["actorRole"], "Admin"),
+        }
+        for log in logs
+    ]
+    proposal["approvalRoute"] = _sph_approval_route()
+    return proposal
+
+
+@app.post("/api/sph/proposals")
+async def sph_create_proposal(request: Request):
+    require_sph_role(request, "sales")
+    proposal = _sph_validate_proposal(await request.json())
+    now = _sph_now()
+    month_key = proposal["proposal_date"].strftime("%Y-%m")
+    with db() as con:
+        con.execute(
+            "INSERT INTO sph_customers(customer_key,customer_name,address_line1,"
+            "address_line2,created_by,created_at) VALUES(%s,%s,%s,%s,%s,%s) "
+            "ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),"
+            "address_line1=VALUES(address_line1),address_line2=VALUES(address_line2)",
+            (
+                proposal["customer_key"], proposal["customer_name"],
+                proposal["address_line1"], proposal["address_line2"],
+                request.session["username"], now,
+            ),
+        )
+        con.execute(
+            "INSERT IGNORE INTO sph_sequences(month_key,next_value) VALUES(%s,0)",
+            (month_key,),
+        )
+        sequence = con.execute(
+            "SELECT next_value FROM sph_sequences WHERE month_key=%s FOR UPDATE",
+            (month_key,),
+        ).fetchone()["next_value"] + 1
+        con.execute(
+            "UPDATE sph_sequences SET next_value=%s WHERE month_key=%s",
+            (sequence, month_key),
+        )
+        number = f"SPH-{proposal['proposal_date']:%Y-%m}-MKT-{sequence:03d}"
+        cursor = con.execute(
+            "INSERT INTO sph_proposals(proposal_number,customer_key,proposal_date,"
+            "volume_min,volume_max,price_usd,status,version,top_percent,guarantee,"
+            "due_day,exchange_clause,contract_years,reethau_obligations,"
+            "customer_obligations,approvals,created_by,updated_at) "
+            "VALUES(%s,%s,%s,%s,%s,%s,'draft',0,%s,%s,%s,%s,%s,%s,%s,'[]',%s,%s)",
+            (
+                number, proposal["customer_key"], proposal["proposal_date"],
+                proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
+                proposal["top_percent"], proposal["guarantee"], proposal["due_day"],
+                proposal["exchange_clause"], proposal["contract_years"],
+                proposal["reethau_obligations"], proposal["customer_obligations"],
+                request.session["username"], now,
+            ),
+        )
+        proposal_id = cursor.lastrowid
+        _sph_log(con, proposal_id, request, "Membuat draft SPH.")
+    return _sph_get_proposal(proposal_id)
+
+
+@app.put("/api/sph/proposals/{proposal_id}")
+async def sph_update_proposal(proposal_id: int, request: Request):
+    require_sph_role(request, "sales")
+    proposal = _sph_validate_proposal(await request.json())
+    now = _sph_now()
+    with db() as con:
+        current = _sph_proposal_row(con, proposal_id)
+        if not current:
+            raise HTTPException(status_code=404, detail="SPH tidak ditemukan.")
+        if current["status"] == "active":
+            raise HTTPException(status_code=409, detail="SPH berstatus Aktif tidak dapat diedit.")
+        con.execute(
+            "INSERT INTO sph_customers(customer_key,customer_name,address_line1,"
+            "address_line2,created_by,created_at) VALUES(%s,%s,%s,%s,%s,%s) "
+            "ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),"
+            "address_line1=VALUES(address_line1),address_line2=VALUES(address_line2)",
+            (
+                proposal["customer_key"], proposal["customer_name"],
+                proposal["address_line1"], proposal["address_line2"],
+                request.session["username"], now,
+            ),
+        )
+        was_submitted = current["status"] != "draft"
+        update_result = con.execute(
+            "UPDATE sph_proposals SET customer_key=%s,proposal_date=%s,status='draft',"
+            "volume_min=%s,volume_max=%s,price_usd=%s,top_percent=%s,guarantee=%s,"
+            "due_day=%s,exchange_clause=%s,contract_years=%s,reethau_obligations=%s,"
+            "customer_obligations=%s,version=version+%s,approvals='[]',"
+            "approved_at=NULL,sent_date=NULL,updated_at=%s WHERE id=%s AND status <> 'active'",
+            (
+                proposal["customer_key"], proposal["proposal_date"],
+                proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
+                proposal["top_percent"], proposal["guarantee"], proposal["due_day"],
+                proposal["exchange_clause"], proposal["contract_years"],
+                proposal["reethau_obligations"], proposal["customer_obligations"],
+                int(was_submitted), now, proposal_id,
+            ),
+        )
+        if update_result.rowcount != 1:
+            latest = _sph_proposal_row(con, proposal_id)
+            if not latest:
+                raise HTTPException(status_code=404, detail="SPH tidak ditemukan.")
+            if latest["status"] == "active":
+                raise HTTPException(status_code=409, detail="SPH berubah menjadi Aktif dan tidak dapat diedit.")
+        message = (
+            "Memperbarui SPH dan mengembalikan versi baru ke Draft."
+            if was_submitted
+            else "Memperbarui draft SPH."
+        )
+        _sph_log(con, proposal_id, request, message)
+    return _sph_get_proposal(proposal_id)
+
+
+@app.post("/api/sph/proposals/{proposal_id}/actions")
+async def sph_proposal_action(proposal_id: int, request: Request):
+    require_sph_access(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Format tindakan tidak valid.")
+    action = payload.get("action")
+    if not isinstance(action, str):
+        raise HTTPException(status_code=400, detail="Jenis tindakan tidak valid.")
+    now = _sph_now()
+    with db() as con:
+        current_row = _sph_proposal_row(con, proposal_id)
+        if not current_row:
+            raise HTTPException(status_code=404, detail="SPH tidak ditemukan.")
+        proposal = _sph_proposal_json(current_row)
+        status = proposal["status"]
+        sph_role = request.session.get("sph_role")
+        allowed_role = None
+        next_status = status
+        message = None
+        update = None
+        if action == "submit" and status == "draft":
+            allowed_role, next_status = "sales", "review"
+            update = ("UPDATE sph_proposals SET status=%s,approvals='[]',updated_at=%s WHERE id=%s", (next_status, now, proposal_id))
+            message = "Mengirim SPH untuk review."
+        elif action in {"approve", "return"} and status == "review":
+            approvals = proposal["approvals"]
+            route = _sph_approval_route()
+            if len(approvals) >= len(route):
+                raise HTTPException(status_code=409, detail="Tahap persetujuan SPH sudah selesai.")
+            allowed_role = route[len(approvals)]
+            if action == "approve":
+                approvals.append(allowed_role)
+                next_status = "approved" if len(approvals) == len(route) else "review"
+                update = (
+                    "UPDATE sph_proposals SET status=%s,approvals=%s,approved_at=%s,updated_at=%s WHERE id=%s"
+                    if next_status == "approved"
+                    else "UPDATE sph_proposals SET status=%s,approvals=%s,updated_at=%s WHERE id=%s",
+                    (
+                        (next_status, json.dumps(approvals), now.date(), now, proposal_id)
+                        if next_status == "approved"
+                        else (next_status, json.dumps(approvals), now, proposal_id)
+                    ),
+                )
+                message = f"Persetujuan {SPH_ROLES[allowed_role]} dicatat."
+            else:
+                next_status = "draft"
+                update = (
+                    "UPDATE sph_proposals SET status=%s,approvals='[]',updated_at=%s WHERE id=%s",
+                    (next_status, now, proposal_id),
+                )
+                message = _sph_text(payload.get("reason"), "Alasan pengembalian", 2000, True)
+                message = f"SPH dikembalikan ke draft: {message}"
+        elif action == "mark_sent" and status == "approved":
+            allowed_role, next_status = "sales", "sent"
+            update = (
+                "UPDATE sph_proposals SET status=%s,sent_date=%s,updated_at=%s WHERE id=%s",
+                (next_status, now.date(), now, proposal_id),
+            )
+            message = "SPH dikirim kepada pelanggan."
+        elif action in {"customer_approved", "negotiation"} and status == "sent":
+            allowed_role = "sales"
+            next_status = "customer_approved" if action == "customer_approved" else "negotiation"
+            update = (
+                "UPDATE sph_proposals SET status=%s,updated_at=%s WHERE id=%s",
+                (next_status, now, proposal_id),
+            )
+            message = (
+                "Pelanggan menyetujui SPH."
+                if action == "customer_approved"
+                else "Pelanggan meminta negosiasi."
+            )
+        elif action == "revise" and status == "negotiation":
+            allowed_role, next_status = "sales", "draft"
+            update = (
+                "UPDATE sph_proposals SET status=%s,version=version+1,approvals='[]',"
+                "approved_at=NULL,sent_date=NULL,updated_at=%s WHERE id=%s",
+                (next_status, now, proposal_id),
+            )
+            message = "Membuat revisi SPH dari hasil negosiasi."
+        elif action == "handoff_legal" and status == "customer_approved":
+            allowed_role, next_status = "sales", "pjbg"
+            update = (
+                "UPDATE sph_proposals SET status=%s,updated_at=%s WHERE id=%s",
+                (next_status, now, proposal_id),
+            )
+            message = "Dokumen diserahkan ke Legal untuk proses PJBG."
+        elif action == "activate" and status == "pjbg":
+            allowed_role, next_status = "legal", "active"
+            update = (
+                "UPDATE sph_proposals SET status=%s,updated_at=%s WHERE id=%s",
+                (next_status, now, proposal_id),
+            )
+            message = "PJBG selesai dan pelanggan diaktifkan."
+        elif action == "record_actual" and status == "active":
+            allowed_role = "commercial_head"
+            try:
+                actual_raw = payload.get("actualVolume")
+                if isinstance(actual_raw, bool):
+                    raise InvalidOperation
+                actual_volume = Decimal(str(actual_raw))
+            except (InvalidOperation, TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="Volume aktual harus berupa angka.")
+            if (
+                not actual_volume.is_finite()
+                or actual_volume < 0
+                or actual_volume > Decimal("99999999999999.99")
+                or actual_volume.normalize().as_tuple().exponent < -2
+            ):
+                raise HTTPException(status_code=400, detail="Volume aktual tidak valid.")
+            update = (
+                "UPDATE sph_proposals SET actual_volume=%s,updated_at=%s WHERE id=%s",
+                (actual_volume, now, proposal_id),
+            )
+            message = f"Mencatat volume aktual {actual_volume:g} MMBTU."
+        else:
+            raise HTTPException(status_code=409, detail="Tindakan tidak sesuai dengan status SPH.")
+        if sph_role != allowed_role:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tindakan ini hanya dapat dilakukan oleh {SPH_ROLES[allowed_role]}.",
+            )
+        con.execute(*update)
+        _sph_log(con, proposal_id, request, message)
+    return _sph_get_proposal(proposal_id)
+
+
+@app.get("/api/sph/proposals/{proposal_id}/pdf")
+def sph_proposal_pdf(proposal_id: int, request: Request):
+    require_sph_access(request)
+    proposal = _sph_get_proposal(proposal_id)
+    with db() as con:
+        _sph_log(con, proposal_id, request, "Mengunduh PDF SPH.")
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (
+            PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+        )
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail="Generator PDF SPH belum tersedia.") from exc
+
+    output = BytesIO()
+    document = SimpleDocTemplate(
+        output, pagesize=A4, rightMargin=28 * mm, leftMargin=28 * mm,
+        topMargin=35 * mm, bottomMargin=18 * mm,
+        title=f"Surat Penawaran Harga {proposal['number']}",
+        author="Reethau",
+    )
+    sph_pdf_logo = BASE_DIR / "static" / "reethau-sph.png"
+    if not sph_pdf_logo.is_file():
+        raise HTTPException(status_code=503, detail="Logo template PDF SPH tidak tersedia.")
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name="SphBody", parent=styles["BodyText"], fontName="Times-Roman",
+        fontSize=9, leading=10.2, alignment=TA_LEFT, spaceAfter=1,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphSection", parent=styles["BodyText"], fontName="Times-Bold",
+        fontSize=10, leading=12, textColor=colors.black,
+        leftIndent=6 * mm,
+        spaceBefore=5, spaceAfter=3, keepWithNext=True,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphIndented", parent=styles["BodyText"], fontName="Times-Roman",
+        fontSize=9, leading=10.2, leftIndent=12 * mm, spaceAfter=1,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphList", parent=styles["BodyText"], fontName="Times-Roman",
+        fontSize=9, leading=10.2, leftIndent=12 * mm, spaceAfter=1,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphTableHeader", parent=styles["BodyText"], fontName="Times-Bold",
+        fontSize=9, leading=10, alignment=TA_CENTER,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphWatermark", parent=styles["BodyText"], fontName="Helvetica-Bold",
+        fontSize=28, textColor=colors.HexColor("#b94a48"),
+    ))
+    safe = lambda value: str(value or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+    def obligation_lines(value):
+        lines = [line.strip() for line in str(value or "").splitlines() if line.strip()]
+        return [
+            Paragraph(f"{index}. {safe(line)}", styles["SphList"])
+            for index, line in enumerate(lines, start=1)
+        ] or [Paragraph("-", styles["SphBody"])]
+
+    proposal_date = date.fromisoformat(proposal["proposalDate"])
+    weekdays = ("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+    months = (
+        "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+        "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+    )
+    date_label = (
+        f"{weekdays[proposal_date.weekday()]}, {proposal_date.day} "
+        f"{months[proposal_date.month - 1]} {proposal_date.year}"
+    )
+    address = ", ".join(
+        part.strip().rstrip(",")
+        for part in (proposal["addressLine1"], proposal["addressLine2"])
+        if part.strip()
+    )
+    contract_year_words = {
+        1: "Satu", 2: "Dua", 3: "Tiga", 4: "Empat", 5: "Lima",
+        6: "Enam", 7: "Tujuh", 8: "Delapan", 9: "Sembilan",
+        10: "Sepuluh", 11: "Sebelas", 12: "Dua Belas",
+        13: "Tiga Belas", 14: "Empat Belas", 15: "Lima Belas",
+    }
+    def format_volume(value):
+        formatted = f"{value:,.2f}".rstrip("0").rstrip(".")
+        return formatted.replace(",", "\0").replace(".", ",").replace("\0", ".")
+
+    volume_min = format_volume(proposal["volumeMin"])
+    volume_max = format_volume(proposal["volumeMax"])
+    price = f"{proposal['priceUsd']:.2f}"
+    story = [
+        Table(
+            [
+                ["No", ":", Paragraph(f"<b>{safe(proposal['number'])}</b>", styles["SphBody"])],
+                ["Hari/Tanggal", ":", date_label],
+            ],
+            colWidths=[22 * mm, 4 * mm, document.width - 26 * mm],
+            style=TableStyle([
+                ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]),
+        ),
+        Spacer(1, 7 * mm),
+        Paragraph("Kepada Yth.", styles["SphBody"]),
+        Paragraph(f"<b>{safe(proposal['customerName'])}</b>", styles["SphBody"]),
+        Paragraph(safe(address) or "-", styles["SphBody"]),
+        Spacer(1, 3 * mm),
+        Table(
+            [[
+                "Perihal",
+                ":",
+                Paragraph(
+                    f"<b>Penawaran Harga Compressed Natural Gas (CNG) "
+                    f"{safe(proposal['customerName'])}</b>",
+                    styles["SphBody"],
+                ),
+            ]],
+            colWidths=[22 * mm, 4 * mm, document.width - 26 * mm],
+            style=TableStyle([
+                ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]),
+        ),
+        Spacer(1, 3 * mm),
+        Paragraph("Dengan hormat,", styles["SphBody"]),
+        Paragraph(
+            "Kami PT Reethau Cipta Energi merupakan perusahaan yang bergerak di bidang "
+            "penyaluran Compressed Natural Gas (CNG) yang memiliki mother station "
+            "berlokasi di Jalan Raya Setu, Bekasi, Jawa Barat. Dengan ini kami bermaksud "
+            "memberikan penawaran harga CNG dengan kondisi penawaran sebagai berikut:",
+            styles["SphBody"],
+        ),
+        Paragraph("A. Kondisi Penawaran", styles["SphSection"]),
+        Paragraph(
+            "Harga jual dan volume penggunaan Compressed Natural Gas (CNG) Direct "
+            "sebagai berikut:",
+            styles["SphIndented"],
+        ),
+    ]
+    rows = [
+        [
+            Paragraph("Volume Min<br/>(MMBTU)", styles["SphTableHeader"]),
+            Paragraph("Volume Max<br/>(MMBTU)", styles["SphTableHeader"]),
+            Paragraph("USD/MMBTU", styles["SphTableHeader"]),
+        ],
+        [volume_min, volume_max, price],
+    ]
+    offer_table_width = 110 * mm
+    table = Table(
+        rows,
+        colWidths=[offer_table_width / 3] * 3,
+        repeatRows=1,
+        hAlign="CENTER",
+    )
+    table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), .5, colors.HexColor("#9aa69e")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8cc63f")),
+        ("FONTNAME", (0, 1), (-1, 1), "Times-Bold"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.extend([
+        Spacer(1, 2 * mm),
+        table,
+        Paragraph("B. Detail Penawaran", styles["SphSection"]),
+        Paragraph(
+            f"1. Masa kontrak {proposal['contractYears']} "
+            f"({contract_year_words[proposal['contractYears']]}) tahun.",
+            styles["SphIndented"],
+        ),
+        Paragraph("2. Garansi supply atau garansi kelangsungan pasokan CNG.", styles["SphIndented"]),
+        Paragraph(
+            "3. Perhitungan pemakaian CNG menggunakan metering milik "
+            "PT Reethau Cipta Energi.",
+            styles["SphIndented"],
+        ),
+        Paragraph(
+            "4. Konversi sm3 menjadi MMBTU berdasarkan spesifikasi gas (nilai kalori) "
+            "yang akan dikalkulasi setiap bulannya.",
+            styles["SphIndented"],
+        ),
+        Paragraph(
+            f"5. Menggunakan jaminan pembayaran berupa {safe(proposal['guarantee'])}.",
+            styles["SphIndented"],
+        ),
+        Paragraph(
+            f"6. Dikenakan TOP (Take or Pay) {proposal['topPercent']:g}% dari "
+            "pengambilan minimum pemakaian.",
+            styles["SphIndented"],
+        ),
+        Paragraph(
+            f"7. Pembayaran dilakukan oleh Pihak Kedua paling lambat tanggal "
+            f"{proposal['dueDay']} setiap bulannya ke rekening Pihak Pertama, "
+            "PT Reethau Cipta Energi, PT Bank Mandiri No. Rekening "
+            "167-000701735-2 (IDR).",
+            styles["SphIndented"],
+        ),
+        Paragraph(
+            "8. Sumber gas langsung dari PT Pertamina dan memiliki Izin Niaga Gas CNG.",
+            styles["SphIndented"],
+        ),
+        Paragraph(
+            "9. Harga gas dapat berubah berdasarkan eskalasi harga resmi dari "
+            "pemerintah dan/atau sumber gas.",
+            styles["SphIndented"],
+        ),
+        Paragraph("C. Kewajiban PT Reethau Cipta Energi", styles["SphSection"]),
+        *obligation_lines(proposal["reethauObligations"]),
+        Paragraph("D. Kewajiban Customer", styles["SphSection"]),
+        *obligation_lines(proposal["customerObligations"]),
+        Paragraph("E. Lain-lain", styles["SphSection"]),
+        Paragraph("Draft Perjanjian Jual Beli Gas akan diberikan secara terpisah.", styles["SphIndented"]),
+        PageBreak(),
+        Paragraph(
+            "Demikian surat penawaran harga Compressed Natural Gas (CNG) ini yang "
+            "dapat kami sampaikan. Atas perhatian dan kerja sama Anda, kami ucapkan "
+            "terima kasih.",
+            styles["SphBody"],
+        ),
+        Spacer(1, 12 * mm),
+        Table(
+            [[Paragraph(
+                "Hormat kami,<br/><b>PT Reethau Cipta Energi</b><br/><br/><br/><br/>"
+                "<b>Commercial Head</b>",
+                styles["SphBody"],
+            )]],
+            colWidths=[85 * mm],
+            hAlign="LEFT",
+        ),
+    ])
+    is_draft = proposal["status"] == "draft"
+
+    def page_footer(canvas, _document):
+        canvas.saveState()
+        logo_width = 60 * mm
+        logo_height = logo_width * 0.6
+        canvas.drawImage(
+            str(sph_pdf_logo),
+            14 * mm,
+            A4[1] - 2 * mm - logo_height,
+            width=logo_width,
+            height=logo_height,
+            mask="auto",
+        )
+        if is_draft:
+            canvas.setFillColor(colors.Color(.8, .2, .2, alpha=.12))
+            canvas.setFont("Helvetica-Bold", 34)
+            canvas.translate(A4[0] / 2, A4[1] / 2)
+            canvas.rotate(35)
+            canvas.drawCentredString(0, 0, "DRAFT")
+            canvas.rotate(-35)
+            canvas.translate(-A4[0] / 2, -A4[1] / 2)
+        canvas.setFillColor(colors.HexColor("#4f5551"))
+        canvas.setFont("Helvetica-Bold", 5.5)
+        canvas.drawString(20 * mm, 19 * mm, "OFFICE")
+        canvas.setFont("Helvetica", 5.5)
+        canvas.drawString(20 * mm, 16 * mm, "PT Reethau Cipta Energi")
+        canvas.drawString(20 * mm, 13 * mm, "Jl. Darmawangsa Raya No. 8,")
+        canvas.drawString(20 * mm, 10 * mm, "Kebayoran Baru - Jakarta Selatan 12160")
+        canvas.drawCentredString(A4[0] * .64, 13 * mm, "P: +62 21 723 1238   |   +62 21 720 7130")
+        canvas.drawRightString(A4[0] - 20 * mm, 13 * mm, "www.reethau.com")
+        canvas.restoreState()
+
+    document.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
+    output.seek(0)
+    filename = f"{proposal['number'].replace('/', '-')}.pdf"
+    return StreamingResponse(
+        output, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/api/import/preview")
@@ -3728,6 +4810,718 @@ def has_valid_average_price(
     )
 
 
+AVERAGE_PRICE_WORKBOOK_MONTH_NAMES = {
+    month: names for month, names in AVERAGE_PRICE_MONTH_HEADERS.items()
+}
+
+
+def parse_monthly_average_price_workbook(content: bytes, filename: str):
+    try:
+        workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
+    except (BadZipFile, InvalidFileException, OSError, ValueError, KeyError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="File Excel Average Price tidak dapat dibaca.",
+        ) from exc
+
+    months = []
+    try:
+        for worksheet in workbook.worksheets:
+            title = str(worksheet.title).strip()
+            if not norm(title).startswith("avg"):
+                continue
+            month_name = norm(title)[3:]
+            month_number = next(
+                (
+                    month
+                    for month, names in AVERAGE_PRICE_WORKBOOK_MONTH_NAMES.items()
+                    if month_name in {norm(name) for name in names}
+                ),
+                None,
+            )
+            if month_number is None:
+                continue
+            if worksheet.max_row > 10000 or worksheet.max_column > 100:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Ukuran sheet {title} melebihi batas yang didukung.",
+                )
+
+            title_value = worksheet.cell(1, 1).value
+            if isinstance(title_value, datetime):
+                year = title_value.year
+            else:
+                year_match = re.search(r"\b(20\d{2})\b", str(title_value or ""))
+                if not year_match:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Tahun laporan tidak ditemukan pada sheet {title}.",
+                    )
+                year = int(year_match.group(1))
+
+            is_three_region_layout = month_number >= 8
+            blocks = (
+                [("JAWA BARAT", 2), ("JAWA TENGAH", 10), ("JAWA TIMUR", 16)]
+                if is_three_region_layout
+                else [("JAWA BARAT", 2), ("JAWA TENGAH DAN TIMUR", 10)]
+            )
+            exchange_rate = None
+            for _, customer_column in blocks:
+                for row_number in range(4, worksheet.max_row + 1):
+                    label = worksheet.cell(row_number, customer_column).value
+                    if not isinstance(label, str) or "kursjisdor" not in norm(label):
+                        continue
+                    rate = worksheet.cell(row_number, customer_column + 1).value
+                    if isinstance(rate, (int, float)) and math.isfinite(float(rate)) and rate > 0:
+                        exchange_rate = float(rate)
+                        break
+                if exchange_rate is not None:
+                    break
+
+            detail_entries = []
+            for block_region, customer_column in blocks:
+                for row_number in range(4, worksheet.max_row + 1):
+                    customer = worksheet.cell(row_number, customer_column).value
+                    if not isinstance(customer, str) or not customer.strip():
+                        continue
+                    customer_name = customer.strip()
+                    customer_name_key = norm(customer_name)
+                    if (
+                        customer_name_key in {
+                            "zebra", "total", "subtotal", "direct", "kso",
+                            "jawabarat", "jawatengah", "jawatimur",
+                            "jawatengahdantimur", "jabar", "jateng", "jatim",
+                            "allarea", "rata2", "area",
+                            *(norm(operator) for operator in CUSTOMER_ASSIGNMENTS),
+                        }
+                        or customer_name_key.startswith("allarea")
+                        or customer_name_key.startswith(("target", "prognosa"))
+                        or "kursjisdor" in customer_name_key
+                    ):
+                        continue
+
+                    values = [
+                        worksheet.cell(row_number, customer_column + offset).value
+                        for offset in range(1, 6)
+                    ]
+                    if not any(value is not None for value in values):
+                        continue
+                    missing_values = {
+                        index for index, value in enumerate(values) if value is None
+                    }
+                    raw = [
+                        float(value) if isinstance(value, (int, float)) else 0.0
+                        for value in values
+                    ]
+                    if 0 in missing_values and any(raw[index] for index in (1, 3, 4)):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"Volume customer {customer_name} pada sheet {title}, "
+                                f"baris {row_number} tidak memiliki hasil formula tersimpan."
+                            ),
+                        )
+                    if 1 in missing_values and raw[3] > 0 and raw[2] <= 0:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"MMBTU customer {customer_name} pada sheet {title}, "
+                                f"baris {row_number} tidak dapat dipastikan dari workbook."
+                            ),
+                        )
+                    if 3 in missing_values and raw[4] > 0 and not exchange_rate:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"Total USD customer {customer_name} pada sheet {title}, "
+                                f"baris {row_number} tidak dapat dihitung tanpa kurs JISDOR."
+                            ),
+                        )
+                    if 4 in missing_values and raw[3] > 0 and not exchange_rate:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"Total Rupiah customer {customer_name} pada sheet {title}, "
+                                f"baris {row_number} tidak dapat dihitung tanpa kurs JISDOR."
+                            ),
+                        )
+                    values = list(values)
+                    for index in (0, 1, 3, 4):
+                        if values[index] is None:
+                            values[index] = 0
+                    if values[2] is None:
+                        values[2] = 0
+                    if not all(
+                        isinstance(value, (int, float))
+                        and math.isfinite(float(value))
+                        and float(value) >= 0
+                        for value in values
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"Nilai customer {customer_name} pada sheet {title}, "
+                                f"baris {row_number} tidak lengkap. Simpan ulang workbook "
+                                "di Excel agar hasil formula tersedia."
+                            ),
+                        )
+
+                    sm3, mmbtu, price, total_usd, rupiah = map(float, values)
+                    if 3 in missing_values and rupiah > 0 and exchange_rate:
+                        total_usd = rupiah / exchange_rate
+                    if 4 in missing_values and total_usd > 0 and exchange_rate:
+                        rupiah = total_usd * exchange_rate
+                    if mmbtu <= 0 and total_usd > 0 and price > 0:
+                        mmbtu = total_usd / price
+                    if price <= 0 and mmbtu > 0 and total_usd > 0:
+                        price = total_usd / mmbtu
+                    price_unit = "USD_MMBTU"
+                    price_rp = 0.0
+                    if price <= 0 and rupiah > 0 and sm3 > 0:
+                        price_unit = "IDR_SM3"
+                        price_rp = rupiah / sm3
+                    detail_entries.append({
+                        "customer": customer_name,
+                        "region": block_region,
+                        "price_unit": price_unit,
+                        "price_usd_per_mmbtu": price if price_unit == "USD_MMBTU" else 0.0,
+                        "price_rp_per_sm3": price_rp,
+                        "sm3_override": sm3,
+                        "mmbtu_override": mmbtu,
+                        "total_usd_override": total_usd,
+                        "rupiah_override": rupiah,
+                        "include_in_summary": not (
+                            (month_number >= 9 and block_region == "JAWA TIMUR")
+                            or (month_number == 6 and customer_name_key == "ksnranca")
+                        ),
+                    })
+
+            if not detail_entries:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Data customer tidak ditemukan pada sheet {title}.",
+                )
+
+            summary_average_column, summary_rupiah_column = (
+                (22, 24) if is_three_region_layout else (16, 18)
+            )
+            summary_average = worksheet.cell(1, summary_average_column).value
+            summary_rupiah = worksheet.cell(1, summary_rupiah_column).value
+            if not all(
+                isinstance(value, (int, float))
+                and math.isfinite(float(value))
+                and float(value) >= 0
+                for value in (summary_average, summary_rupiah)
+            ) or not float(summary_average):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Ringkasan Average Price pada sheet {title} tidak tersedia. "
+                        "Simpan ulang workbook di Excel agar hasil formula tersedia."
+                    ),
+                )
+
+            summary_rupiah = float(summary_rupiah)
+            summary_average = float(summary_average)
+            months.append({
+                "month": f"{year:04d}-{month_number:02d}",
+                "entries": detail_entries,
+                "exchange_rate": (
+                    exchange_rate
+                    if exchange_rate is not None
+                    else (
+                        sum(entry["rupiah_override"] for entry in detail_entries)
+                        / sum(entry["total_usd_override"] for entry in detail_entries)
+                        if sum(entry["total_usd_override"] for entry in detail_entries) > 0
+                        else 0.0
+                    )
+                ),
+                "summary_sm3": summary_rupiah / summary_average,
+                "summary_rupiah": summary_rupiah,
+                "summary_average_price": summary_average,
+            })
+    finally:
+        workbook.close()
+
+    if not months:
+        raise HTTPException(
+            status_code=400,
+            detail="Workbook tidak memiliki sheet AVG bulanan yang didukung.",
+        )
+    if len({month["month"] for month in months}) != len(months):
+        raise HTTPException(
+            status_code=400,
+            detail="Workbook memiliki lebih dari satu sheet untuk bulan yang sama.",
+        )
+    return {"filename": filename, "months": months}
+
+
+@app.post("/api/monthly-average-price/workbook-import")
+async def import_monthly_average_price_workbook(
+    request: Request,
+    file: UploadFile = File(...),
+):
+    require_admin(request)
+    filename = Path(file.filename or "average-price.xlsx").name
+    if Path(filename).suffix.lower() not in {".xlsx", ".xlsm"}:
+        raise HTTPException(status_code=400, detail="Gunakan file Excel .xlsx atau .xlsm.")
+    content = await file.read()
+    if len(content) > 30 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Ukuran file maksimal 30 MB.")
+
+    parsed_workbook = parse_monthly_average_price_workbook(content, filename)
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    total_rows = 0
+    imported_months = []
+    with db() as con:
+        customer_rows = con.execute(
+            "SELECT customer_key,customer_name,operator FROM customers"
+        ).fetchall()
+        customers_by_canonical_key = {}
+        for customer in customer_rows:
+            key = canonical_average_price_customer_key(customer["customer_key"])
+            customers_by_canonical_key.setdefault(key, []).append(customer)
+
+        prepared_months = []
+        unmatched_customers = set()
+        for month_data in parsed_workbook["months"]:
+            prepared_entries = {}
+            for entry in month_data["entries"]:
+                source_key = canonical_average_price_customer_key(entry["customer"])
+                matches = customers_by_canonical_key.get(source_key, [])
+                exact_matches = [
+                    customer for customer in matches
+                    if norm(customer["customer_key"]) == source_key
+                ]
+                if exact_matches:
+                    matches = exact_matches
+                if len(matches) > 1:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"Customer {entry['customer']} cocok dengan lebih dari satu "
+                            "customer master. Perbaiki pemetaan sebelum impor."
+                        ),
+                    )
+                if not matches:
+                    unmatched_customers.add(entry["customer"])
+                    continue
+
+                customer = matches[0]
+                customer_key = customer["customer_key"]
+                region = entry["region"]
+                prepared = prepared_entries.get(customer_key)
+                if prepared:
+                    prepared["sm3_override"] += entry["sm3_override"]
+                    prepared["mmbtu_override"] += entry["mmbtu_override"]
+                    prepared["total_usd_override"] += entry["total_usd_override"]
+                    prepared["rupiah_override"] += entry["rupiah_override"]
+                    if prepared["region"] != region:
+                        prepared["region"] = "JAWA TENGAH DAN TIMUR"
+                    prepared["include_in_summary"] = (
+                        prepared["include_in_summary"] and entry["include_in_summary"]
+                    )
+                    prepared["price_usd_per_mmbtu"] = (
+                        prepared["total_usd_override"] / prepared["mmbtu_override"]
+                        if prepared["mmbtu_override"] > 0
+                        else 0.0
+                    )
+                else:
+                    prepared_entries[customer_key] = {
+                        **entry,
+                        "customer_key": customer_key,
+                        "region": (
+                            REGION_BY_CUSTOMER.get(customer_key)
+                            or entry["region"]
+                        ),
+                        "operator": customer["operator"],
+                    }
+            if unmatched_customers:
+                continue
+
+            operator_totals = {}
+            for entry in prepared_entries.values():
+                operator_totals.setdefault(entry["operator"], [0.0, 0.0])
+                operator_totals[entry["operator"]][0] += entry["sm3_override"]
+                operator_totals[entry["operator"]][1] += entry["mmbtu_override"]
+            prepared_months.append((month_data, prepared_entries, operator_totals))
+
+        if unmatched_customers:
+            names = ", ".join(sorted(unmatched_customers))
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Customer pada workbook belum cocok dengan master: {names}. "
+                    "Tambahkan atau perbaiki pemetaan customer sebelum mengimpor."
+                ),
+            )
+
+        for month_data, entries, operator_totals in prepared_months:
+            month_start = f"{month_data['month']}-01"
+            con.execute(
+                "DELETE FROM monthly_average_price_inputs WHERE month_start=%s",
+                (month_start,),
+            )
+            for operator in OPERATORS:
+                sm3_total, mmbtu_total = operator_totals.get(operator, (0.0, 0.0))
+                factor = sm3_total / mmbtu_total if mmbtu_total > 0 else 0.0
+                con.execute(
+                    "INSERT INTO monthly_average_price_operator_factors("
+                    "month_start,operator,sm3_per_mmbtu,updated_at) "
+                    "VALUES(%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                    "sm3_per_mmbtu=VALUES(sm3_per_mmbtu),updated_at=VALUES(updated_at)",
+                    (month_start, operator, factor, timestamp),
+                )
+            con.execute(
+                "INSERT INTO monthly_average_price_exchange_rates("
+                "month_start,exchange_rate,updated_at) VALUES(%s,%s,%s) "
+                "ON DUPLICATE KEY UPDATE exchange_rate=VALUES(exchange_rate),"
+                "updated_at=VALUES(updated_at)",
+                (month_start, month_data["exchange_rate"], timestamp),
+            )
+            for entry in entries.values():
+                con.execute(
+                    "INSERT INTO monthly_average_price_inputs("
+                    "month_start,customer_key,region,price_unit,price_usd_per_mmbtu,"
+                    "price_rp_per_sm3,sm3_override,mmbtu_override,total_usd_override,"
+                    "rupiah_override,include_in_summary,updated_at) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        month_start,
+                        entry["customer_key"],
+                        entry["region"],
+                        entry["price_unit"],
+                        entry["price_usd_per_mmbtu"],
+                        entry["price_rp_per_sm3"],
+                        entry["sm3_override"],
+                        entry["mmbtu_override"],
+                        entry["total_usd_override"],
+                        entry["rupiah_override"],
+                        entry["include_in_summary"],
+                        timestamp,
+                    ),
+                )
+            customer_keys = sorted(norm(entry["customer_key"]) for entry in entries.values())
+            con.execute(
+                "INSERT INTO monthly_average_price_workbook_imports("
+                "month_start,filename,imported_at,customer_keys_json,summary_sm3,"
+                "summary_rupiah,summary_average_price) VALUES(%s,%s,%s,%s,%s,%s,%s) "
+                "ON DUPLICATE KEY UPDATE filename=VALUES(filename),"
+                "imported_at=VALUES(imported_at),customer_keys_json=VALUES(customer_keys_json),"
+                "summary_sm3=VALUES(summary_sm3),summary_rupiah=VALUES(summary_rupiah),"
+                "summary_average_price=VALUES(summary_average_price)",
+                (
+                    month_start,
+                    parsed_workbook["filename"],
+                    timestamp,
+                    json.dumps(customer_keys),
+                    month_data["summary_sm3"],
+                    month_data["summary_rupiah"],
+                    month_data["summary_average_price"],
+                ),
+            )
+            imported_months.append({
+                "month": month_data["month"],
+                "rows": len(entries),
+                "average_price": month_data["summary_average_price"],
+            })
+            total_rows += len(entries)
+
+    return {
+        "ok": True,
+        "filename": parsed_workbook["filename"],
+        "imported_months": imported_months,
+        "imported_rows": total_rows,
+        "source_priority": "workbook",
+    }
+
+
+@app.get("/api/monthly-average-price/sheet-import")
+def import_monthly_average_price_sheet(request: Request, month: str):
+    require_admin(request)
+    try:
+        month_start = date.fromisoformat(f"{month}-01")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Format bulan harus YYYY-MM.") from exc
+    if month_start.strftime("%Y-%m") != month:
+        raise HTTPException(status_code=400, detail="Format bulan harus YYYY-MM.")
+
+    credential_path = Path(ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE)
+    if not credential_path.is_file() or credential_path.stat().st_size == 0:
+        values = fetch_public_average_price_sheet_values()
+        source_title = AVERAGE_PRICE_SHEET_TITLE
+    else:
+        try:
+            service_account_info = json.loads(credential_path.read_text(encoding="utf-8"))
+            credentials = Credentials.from_service_account_info(
+                service_account_info,
+                scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+            )
+        except (OSError, ValueError, TypeError, KeyError, GoogleAuthError) as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Kredensial Google service account tidak valid atau belum lengkap.",
+            ) from exc
+
+        api_base = f"https://sheets.googleapis.com/v4/spreadsheets/{AVERAGE_PRICE_SHEET_ID}"
+        session = AuthorizedSession(credentials)
+        try:
+            metadata_response = session.get(
+                f"{api_base}?fields=sheets(properties(sheetId,title))",
+                timeout=15,
+            )
+            if metadata_response.status_code in {401, 403}:
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        "Google Sheets API menolak akses service account. Aktifkan Google Sheets API "
+                        "dan bagikan spreadsheet sebagai Viewer ke client_email pada kredensial server."
+                    ),
+                )
+            if metadata_response.status_code == 404:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Spreadsheet Average Price tidak ditemukan. Periksa AVERAGE_PRICE_SHEET_ID.",
+                )
+            metadata_response.raise_for_status()
+            metadata = metadata_response.json()
+            if not isinstance(metadata, dict):
+                raise HTTPException(status_code=502, detail="Respons metadata Google Sheets tidak valid.")
+            sheet = next(
+                (
+                    item.get("properties", {})
+                    for item in metadata.get("sheets", [])
+                    if isinstance(item, dict)
+                    and str(item.get("properties", {}).get("sheetId")) == AVERAGE_PRICE_SHEET_GID
+                ),
+                None,
+            )
+            if not sheet or not sheet.get("title"):
+                raise HTTPException(
+                    status_code=502,
+                    detail="Tab Google Sheets dengan AVERAGE_PRICE_SHEET_GID tersebut tidak ditemukan.",
+                )
+
+            encoded_range = quote(f"'{sheet['title']}'!A1:O5000", safe="")
+            values_response = session.get(
+                f"{api_base}/values/{encoded_range}?valueRenderOption=FORMATTED_VALUE",
+                timeout=15,
+            )
+            if values_response.status_code in {401, 403}:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Service account tidak dapat membaca tab harga. Pastikan akses Viewer sudah diberikan.",
+                )
+            values_response.raise_for_status()
+            values_payload = values_response.json()
+            if not isinstance(values_payload, dict):
+                raise HTTPException(status_code=502, detail="Respons data Google Sheets tidak valid.")
+            values = values_payload.get("values", [])
+            source_title = str(sheet["title"])
+        except HTTPException:
+            raise
+        except (RequestException, GoogleAuthError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Google Sheets API tidak merespons. Coba tarik harga kembali beberapa saat lagi.",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Google Sheets API mengembalikan respons JSON yang tidak valid.",
+            ) from exc
+
+    entries = parse_average_price_sheet_values(values, month)
+    return {"month": month, "entries": entries, "source": source_title}
+
+
+@app.post("/api/monthly-average-price/sheet-sync")
+async def sync_monthly_average_price_sheet(request: Request):
+    require_admin(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Format data sinkronisasi tidak valid.")
+    month = str(payload.get("month", "")).strip()
+    mappings = payload.get("customer_mappings", [])
+    try:
+        month_start = date.fromisoformat(f"{month}-01")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Format bulan harus YYYY-MM.") from exc
+    if month_start.strftime("%Y-%m") != month or not isinstance(mappings, list):
+        raise HTTPException(status_code=400, detail="Bulan atau pemetaan customer tidak valid.")
+
+    with db() as con:
+        workbook_import = con.execute(
+            "SELECT filename,customer_keys_json FROM monthly_average_price_workbook_imports "
+            "WHERE month_start=%s",
+            (month_start.isoformat(),),
+        ).fetchone()
+    if workbook_import:
+        workbook_customer_keys = json.loads(workbook_import["customer_keys_json"])
+        if not isinstance(workbook_customer_keys, list) or any(
+            not isinstance(key, str) for key in workbook_customer_keys
+        ):
+            raise HTTPException(
+                status_code=500,
+                detail="Daftar customer pada impor workbook tersimpan dalam format tidak valid.",
+            )
+        return {
+            "month": month,
+            "source": workbook_import["filename"],
+            "imported": 0,
+            "deactivated": 0,
+            "created_customers": [],
+            "unmatched_customers": [],
+            "sheet_customer_keys": workbook_customer_keys,
+            "workbook_locked": True,
+        }
+
+    imported = import_monthly_average_price_sheet(request, month)
+    entries = imported["entries"]
+    sheet_customers = {
+        canonical_average_price_customer_key(entry["customer"])
+        for entry in entries
+    }
+    normalized_mappings = {}
+    for mapping in mappings:
+        if not isinstance(mapping, dict):
+            raise HTTPException(status_code=400, detail="Format pemetaan customer tidak valid.")
+        customer_name = str(mapping.get("customer", "")).strip()
+        customer_key, customer_name, operator = normalize_customer_mapping(
+            customer_name,
+            mapping.get("operator"),
+        )
+        region = str(mapping.get("region", "")).strip().upper()
+        if region not in {"JAWA BARAT", "JAWA TENGAH", "JAWA TIMUR", "JAWA TENGAH DAN TIMUR"}:
+            raise HTTPException(status_code=400, detail="Wilayah customer baru tidak valid.")
+        source_key = canonical_average_price_customer_key(customer_name)
+        if source_key not in sheet_customers:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Customer {customer_name} tidak ditemukan pada sheet harga bulan ini.",
+            )
+        if source_key in normalized_mappings:
+            raise HTTPException(status_code=400, detail=f"Pemetaan duplikat untuk {customer_name}.")
+        normalized_mappings[source_key] = {
+            "customer_key": customer_key,
+            "customer_name": customer_name,
+            "operator": operator,
+            "region": region,
+        }
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    unmatched_customers = []
+    imported_count = 0
+    deactivated_count = 0
+    created_customers = []
+    sheet_customer_keys = set(sheet_customers)
+    with db() as con:
+        customer_rows = con.execute(
+            "SELECT customer_key,customer_name,operator FROM customers"
+        ).fetchall()
+        customers_by_canonical_key = {}
+        for customer in customer_rows:
+            key = canonical_average_price_customer_key(customer["customer_key"])
+            customers_by_canonical_key.setdefault(key, []).append(customer)
+
+        for entry in entries:
+            source_key = canonical_average_price_customer_key(entry["customer"])
+            matching_customers = customers_by_canonical_key.get(source_key, [])
+            exact_customers = [
+                customer
+                for customer in matching_customers
+                if norm(customer["customer_key"]) == source_key
+            ]
+            if exact_customers:
+                matching_customers = exact_customers
+            if len(matching_customers) > 1:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Nama customer {entry['customer']} cocok dengan lebih dari satu customer master.",
+                )
+            if matching_customers:
+                customer = matching_customers[0]
+                customer_key = customer["customer_key"]
+                sheet_customer_keys.add(norm(customer_key))
+                region = (
+                    REGION_BY_CUSTOMER.get(customer_key)
+                    or REGION_BY_OPERATOR.get(customer["operator"], "")
+                )
+            else:
+                if not entry["active"] and source_key not in normalized_mappings:
+                    continue
+                mapping = normalized_mappings.get(source_key)
+                if not mapping:
+                    unmatched_customers.append(entry["customer"])
+                    continue
+                existing = con.execute(
+                    "SELECT customer_key,operator FROM customers WHERE customer_key=%s",
+                    (mapping["customer_key"],),
+                ).fetchone()
+                if existing and existing["operator"] != mapping["operator"]:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"Customer {mapping['customer_name']} sudah terdaftar dengan operator berbeda. "
+                            "Hubungi Admin untuk memperbaiki mapping."
+                        ),
+                    )
+                if not existing:
+                    con.execute(
+                        "INSERT INTO customers(customer_key,customer_name,operator) VALUES(%s,%s,%s)",
+                        (
+                            mapping["customer_key"],
+                            mapping["customer_name"],
+                            mapping["operator"],
+                        ),
+                    )
+                    created_customers.append(mapping["customer_name"])
+                customer = {
+                    "customer_key": mapping["customer_key"],
+                    "customer_name": mapping["customer_name"],
+                    "operator": mapping["operator"],
+                }
+                customer_key = mapping["customer_key"]
+                sheet_customer_keys.add(norm(customer_key))
+                region = mapping["region"]
+                customers_by_canonical_key[source_key] = [customer]
+
+            price_unit = entry["price_unit"]
+            price_usd = entry["price"] if entry["active"] and price_unit == "USD_MMBTU" else 0
+            price_rp = entry["price"] if entry["active"] and price_unit == "IDR_SM3" else 0
+            con.execute(
+                "INSERT INTO monthly_average_price_inputs("
+                "month_start,customer_key,region,price_unit,price_usd_per_mmbtu,"
+                "price_rp_per_sm3,include_in_summary,updated_at) "
+                "VALUES(%s,%s,%s,%s,%s,%s,1,%s) "
+                "ON DUPLICATE KEY UPDATE price_unit=VALUES(price_unit),"
+                "price_usd_per_mmbtu=VALUES(price_usd_per_mmbtu),"
+                "price_rp_per_sm3=VALUES(price_rp_per_sm3),"
+                "total_usd_override=NULL,rupiah_override=NULL,updated_at=VALUES(updated_at)",
+                (
+                    month_start.isoformat(),
+                    customer_key,
+                    region,
+                    price_unit,
+                    price_usd,
+                    price_rp,
+                    timestamp,
+                ),
+            )
+            imported_count += 1
+            deactivated_count += int(not entry["active"])
+
+    return {
+        "month": month,
+        "source": imported["source"],
+        "imported": imported_count,
+        "deactivated": deactivated_count,
+        "created_customers": created_customers,
+        "unmatched_customers": unmatched_customers,
+        "sheet_customer_keys": sorted(sheet_customer_keys),
+    }
+
+
 @app.get("/api/monthly-average-price")
 def monthly_average_price(request: Request, month: str):
     require_login(request)
@@ -3798,7 +5592,24 @@ def monthly_average_price(request: Request, month: str):
             "WHERE month_start=%s",
             (month_start.isoformat(),),
         ).fetchall()
+        workbook_import = con.execute(
+            "SELECT filename,imported_at,customer_keys_json,summary_sm3,"
+            "summary_rupiah,summary_average_price "
+            "FROM monthly_average_price_workbook_imports WHERE month_start=%s",
+            (month_start.isoformat(),),
+        ).fetchone()
     exchange_rate = float(exchange["exchange_rate"] or 0) if exchange else 0.0
+
+    workbook_customer_keys = []
+    if workbook_import:
+        workbook_customer_keys = json.loads(workbook_import["customer_keys_json"])
+        if not isinstance(workbook_customer_keys, list) or any(
+            not isinstance(key, str) for key in workbook_customer_keys
+        ):
+            raise HTTPException(
+                status_code=500,
+                detail="Daftar customer pada impor workbook tersimpan dalam format tidak valid.",
+            )
 
     rows = []
     totals = {"sm3": 0.0, "mmbtu": 0.0, "usd": 0.0, "rupiah": 0.0}
@@ -3867,9 +5678,24 @@ def monthly_average_price(request: Request, month: str):
     totals["average_price_rp_sm3"] = (
         totals["rupiah"] / totals["sm3"] if totals["sm3"] else 0.0
     )
+    if workbook_import:
+        totals["sm3"] = float(workbook_import["summary_sm3"])
+        totals["rupiah"] = float(workbook_import["summary_rupiah"])
+        totals["average_price_rp_sm3"] = float(
+            workbook_import["summary_average_price"]
+        )
     return {
         "month": month,
         "exchange_rate": exchange_rate,
+        "source": "workbook" if workbook_import else "system",
+        "workbook_import": ({
+            "filename": workbook_import["filename"],
+            "imported_at": workbook_import["imported_at"],
+            "summary_sm3": float(workbook_import["summary_sm3"]),
+            "summary_rupiah": float(workbook_import["summary_rupiah"]),
+            "summary_average_price": float(workbook_import["summary_average_price"]),
+        } if workbook_import else None),
+        "workbook_customer_keys": workbook_customer_keys,
         "operator_factors": {
             row["operator"]: float(row["sm3_per_mmbtu"] or 0)
             for row in factor_rows
@@ -3944,7 +5770,9 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
                    price_inputs.total_usd_override,price_inputs.rupiah_override,
                    price_inputs.include_in_summary,
                    COALESCE(operator_factors.sm3_per_mmbtu,0) AS sm3_per_mmbtu,
-                   COALESCE(exchange_rates.exchange_rate,0) AS exchange_rate
+                   COALESCE(exchange_rates.exchange_rate,0) AS exchange_rate,
+                   workbook_import.summary_sm3 AS workbook_summary_sm3,
+                   workbook_import.summary_rupiah AS workbook_summary_rupiah
             FROM monthly_average_price_inputs price_inputs
             JOIN customers c ON c.customer_key=price_inputs.customer_key
             LEFT JOIN monthly_average_price_operator_factors operator_factors
@@ -3952,6 +5780,8 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
              AND operator_factors.operator=c.operator
             LEFT JOIN monthly_average_price_exchange_rates exchange_rates
               ON exchange_rates.month_start=price_inputs.month_start
+            LEFT JOIN monthly_average_price_workbook_imports workbook_import
+              ON workbook_import.month_start=price_inputs.month_start
             WHERE price_inputs.month_start >= %s AND price_inputs.month_start <= %s
             ORDER BY price_inputs.month_start,c.operator,c.customer_name
             """,
@@ -3962,11 +5792,18 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
         ).fetchall()
 
     totals = {"sm3": 0.0, "mmbtu": 0.0, "usd": 0.0, "rupiah": 0.0}
+    totals_by_month = {}
+    workbook_summaries = {}
     rows = []
     rows_by_period_customer = {
         (row["period"], row["customer_key"]): row for row in sales_rows
     }
     for row in input_rows:
+        if row.get("workbook_summary_sm3") is not None:
+            workbook_summaries[row["period"]] = {
+                "sm3": float(row["workbook_summary_sm3"]),
+                "rupiah": float(row["workbook_summary_rupiah"]),
+            }
         period_start = date.fromisoformat(f"{row['period']}-01")
         next_period_start = (
             date(period_start.year + 1, 1, 1)
@@ -4035,6 +5872,12 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             totals["mmbtu"] += mmbtu
             totals["usd"] += total_usd
             totals["rupiah"] += rupiah
+            monthly_totals = totals_by_month.setdefault(
+                row["period"],
+                {"sm3": 0.0, "rupiah": 0.0},
+            )
+            monthly_totals["sm3"] += sm3
+            monthly_totals["rupiah"] += rupiah
         rows.append({
             "month": row["period"],
             "customer_key": row["customer_key"],
@@ -4059,6 +5902,18 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             "include_in_summary": include_in_summary,
             "rupiah": rupiah,
         })
+    for period, summary in workbook_summaries.items():
+        period_start = date.fromisoformat(f"{period}-01")
+        next_month_start = (
+            date(period_start.year + 1, 1, 1)
+            if period_start.month == 12
+            else date(period_start.year, period_start.month + 1, 1)
+        )
+        if start > period_start or end < next_month_start - timedelta(days=1):
+            continue
+        calculated_month = totals_by_month.get(period, {"sm3": 0.0, "rupiah": 0.0})
+        totals["sm3"] += summary["sm3"] - calculated_month["sm3"]
+        totals["rupiah"] += summary["rupiah"] - calculated_month["rupiah"]
     totals["average_price_rp_sm3"] = (
         totals["rupiah"] / totals["sm3"] if totals["sm3"] else 0.0
     )
@@ -4187,7 +6042,7 @@ async def save_monthly_average_price(request: Request):
             target_value = float(target)
             if not math.isfinite(target_value) or target_value < 0:
                 raise ValueError
-            normalized_targets[region] = target_value
+            normalized_targets[region] = math.floor(target_value + 0.5)
     except (AttributeError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="Bulan dan angka input harus valid dan non-negatif.") from exc
 
