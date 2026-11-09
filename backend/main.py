@@ -154,6 +154,7 @@ if (FRONTEND_DIST / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
 OPERATORS = ["SETU", "KHT", "BLORA", "WUNUT"]
+AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS = {"pentawira", "pentawiraren"}
 CUSTOMER_ASSIGNMENTS = {*OPERATORS, "OFF"}
 REGION_BY_OPERATOR = {
     "SETU": "JAWA BARAT",
@@ -5400,6 +5401,8 @@ async def sync_monthly_average_price_sheet(request: Request):
 
         for entry in entries:
             source_key = canonical_average_price_customer_key(entry["customer"])
+            if source_key in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
+                continue
             matching_customers = customers_by_canonical_key.get(source_key, [])
             exact_customers = [
                 customer
@@ -5604,14 +5607,16 @@ def monthly_average_price(request: Request, month: str):
     rows = []
     totals = {"sm3": 0.0, "mmbtu": 0.0, "usd": 0.0, "rupiah": 0.0}
     for row in sales_rows:
+        if norm(row["customer_key"]) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
+            continue
         so_sm3 = float(row["so_sm3"] or 0)
         actual_sm3 = float(row["actual_sm3"] or 0)
         is_legacy_workbook_row = row["customer_key"] in legacy_workbook_customer_keys
-        sm3_override = None if is_legacy_workbook_row else row.get("sm3_override")
-        mmbtu_override = None if is_legacy_workbook_row else row.get("mmbtu_override")
-        total_usd_override = None if is_legacy_workbook_row else row.get("total_usd_override")
-        rupiah_override = None if is_legacy_workbook_row else row.get("rupiah_override")
-        sm3 = float(sm3_override) if sm3_override is not None else actual_sm3
+        sm3_override = None
+        mmbtu_override = None
+        total_usd_override = None
+        rupiah_override = None
+        sm3 = actual_sm3
         factor = float(row["sm3_per_mmbtu"] or 0)
         price_unit = row.get("price_unit") or "USD_MMBTU"
         price = float(row["price_usd_per_mmbtu"] or 0)
@@ -5640,6 +5645,13 @@ def monthly_average_price(request: Request, month: str):
         include_in_summary = (
             True if is_legacy_workbook_row else bool(row.get("include_in_summary", True))
         )
+        region_key = norm(row.get("region") or "")
+        customer_name_key = norm(row["customer_name"])
+        if (
+            (month_start.month >= 9 and region_key == "jawatimur")
+            or (month_start.month == 6 and customer_name_key == "ksnranca")
+        ):
+            include_in_summary = False
         if is_valid_price and include_in_summary:
             totals["sm3"] += sm3
             totals["mmbtu"] += mmbtu
@@ -5775,7 +5787,9 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
     totals = {"sm3": 0.0, "mmbtu": 0.0, "usd": 0.0, "rupiah": 0.0}
     rows = []
     rows_by_period_customer = {
-        (row["period"], row["customer_key"]): row for row in sales_rows
+        (row["period"], row["customer_key"]): row
+        for row in sales_rows
+        if norm(row["customer_key"]) not in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS
     }
     legacy_workbook_months = {
         row["period"]
@@ -5783,6 +5797,8 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
         if row.get("workbook_summary_sm3") is not None
     }
     for row in input_rows:
+        if norm(row["customer_key"]) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
+            continue
         period_start = date.fromisoformat(f"{row['period']}-01")
         next_period_start = (
             date(period_start.year + 1, 1, 1)
@@ -5805,37 +5821,12 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
         so_sm3 = float(row["so_sm3"] or 0)
         actual_sm3 = float(row["actual_sm3"] or 0)
         period_start = date.fromisoformat(f"{row['period']}-01")
-        next_period_start = (
-            date(period_start.year + 1, 1, 1)
-            if period_start.month == 12
-            else date(period_start.year, period_start.month + 1, 1)
-        )
-        is_full_month = (
-            start <= period_start
-            and end >= next_period_start - timedelta(days=1)
-        )
         is_legacy_workbook_month = row["period"] in legacy_workbook_months
-        sm3_override = (
-            row.get("sm3_override")
-            if is_full_month and not is_legacy_workbook_month
-            else None
-        )
-        mmbtu_override = (
-            row.get("mmbtu_override")
-            if is_full_month and not is_legacy_workbook_month
-            else None
-        )
-        total_usd_override = (
-            row.get("total_usd_override")
-            if is_full_month and not is_legacy_workbook_month
-            else None
-        )
-        rupiah_override = (
-            row.get("rupiah_override")
-            if is_full_month and not is_legacy_workbook_month
-            else None
-        )
-        sm3 = float(sm3_override) if sm3_override is not None else actual_sm3
+        sm3_override = None
+        mmbtu_override = None
+        total_usd_override = None
+        rupiah_override = None
+        sm3 = actual_sm3
         factor = float(row["sm3_per_mmbtu"] or 0)
         price_unit = row.get("price_unit") or "USD_MMBTU"
         price = float(row["price_usd_per_mmbtu"] or 0)
@@ -5867,6 +5858,13 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             if is_legacy_workbook_month
             else bool(row.get("include_in_summary", True))
         )
+        region_key = norm(row.get("region") or "")
+        customer_name_key = norm(row["customer_name"])
+        if (
+            (period_start.month >= 9 and region_key == "jawatimur")
+            or (period_start.month == 6 and customer_name_key == "ksnranca")
+        ):
+            include_in_summary = False
         if is_valid_price and include_in_summary:
             totals["sm3"] += sm3
             totals["mmbtu"] += mmbtu
@@ -5977,6 +5975,11 @@ async def save_monthly_average_price(request: Request):
                 or price_rp < 0
             ):
                 raise ValueError
+            if norm(customer_key) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Pentawira tidak termasuk dalam Average Price.",
+                )
             if customer_key in submitted_customer_keys:
                 raise HTTPException(
                     status_code=400,

@@ -7,7 +7,11 @@ import { api } from '../api';
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 const operators = ['SETU', 'KHT', 'BLORA', 'WUNUT'];
+const excludedAveragePriceCustomerKeys = new Set(['pentawira', 'pentawiraren']);
 const regions = ['JAWA BARAT', 'JAWA TENGAH', 'JAWA TIMUR', 'JAWA TENGAH DAN TIMUR'];
+const isExcludedAveragePriceCustomer = (value) => (
+    normalizeCustomerOrder(value).startsWith('pentawira')
+);
 const pdfCustomerNames = [
     'PT Cipta Lestari Idea Nusa', 'PT Mitra Kaya Galvanize', 'PT Optima Adhi Jaya',
     'SHB', 'GTL', 'TWK', 'BEM', 'TOMIMOTO', 'NIAGA GARAM', 'PCI MENGGER',
@@ -19,7 +23,7 @@ const pdfCustomerNames = [
     'PUJ - Lubricant', 'Tong Tji / GAS', 'INDONEPTUNE /AAE', 'Calbee/ACE', 'CV PA',
     'GF KULIT', 'RB', 'GF ATOM', 'HSK / GAS', 'Surya Pamenang (Global)',
     'Surya Pamenang (JES)', 'Jiuqi Tecnology Konjac', 'Djarum', 'Green Pulse',
-    'Concord Industry', 'Pentawira (KSO REN)',
+    'Concord Industry',
 ];
 const comparisonAreas = [
     { key: 'JAWA BARAT', label: 'Jawa Barat', regions: ['JAWA BARAT'] },
@@ -44,7 +48,7 @@ const templateCustomerOrder = [
     'Torabika Cikupa/Ekajaya', 'Calbee/ACE',
     'CV PA', 'GF KULIT', 'RPI', 'RB', 'GF ATOM', 'HSK / GAS',
     'Surya Pamenang (JES)', 'JIUQI', 'Surya Pamenang (Global)',
-    'Djarum', 'Surya Pamenang (Global)', 'Pentawira / REN',
+    'Djarum', 'Surya Pamenang (Global)',
 ];
 const customerOrderAliases = {
     ptciptalestariideanusa: 'CLIN',
@@ -78,7 +82,6 @@ const customerOrderAliases = {
     kimiafarmaksoineko: 'Kimia Farma / IMA',
     ksn: 'KSN Maja',
     oaj: 'OPTIMA',
-    pentawiraksoren: 'pentawira / ren',
     fjiksosalmah: 'FJI / SBI',
     tongjiksogas: 'Tong Tji / GAS',
     winglokksoebm: 'winglok / ebm',
@@ -167,7 +170,7 @@ const workbookCustomerGroups = [
         regions: {
             'JAWA BARAT': ['Torabika Cikupa/Ekajaya', 'Calbee/ACE', 'Surya Pamenang (JES)'],
             'JAWA TENGAH': ['Surya Pamenang (JES)'],
-            'JAWA TIMUR': ['Pentawira / REN'],
+            'JAWA TIMUR': [],
         },
     },
 ];
@@ -348,7 +351,11 @@ export default function WeeklyAveragePricePage() {
                 ))) {
                     throw new Error('Format daftar customer dari server tidak valid.');
                 }
-                if (active) setCustomerCatalog(data);
+                if (active) {
+                    setCustomerCatalog(data.filter((customer) => (
+                        !isExcludedAveragePriceCustomer(customer.customer_key)
+                    )));
+                }
             })
             .catch((requestError) => {
                 if (active) setError(requestError.message);
@@ -581,6 +588,10 @@ export default function WeeklyAveragePricePage() {
             setError('Nama customer wajib diisi.');
             return;
         }
+        if (isExcludedAveragePriceCustomer(customerName)) {
+            setError('Pentawira tidak termasuk dalam Average Price.');
+            return;
+        }
         if (!selectedCustomerKey && !customerEntry.operator) {
             setError('Pilih operator untuk customer baru.');
             return;
@@ -704,7 +715,9 @@ export default function WeeklyAveragePricePage() {
             )));
             if (customerMappings.length > 0) {
                 const refreshedCustomers = await api('/api/customers');
-                setCustomerCatalog(refreshedCustomers);
+                setCustomerCatalog(refreshedCustomers.filter((customer) => (
+                    !isExcludedAveragePriceCustomer(customer.customer_key)
+                )));
             }
             const refreshedReport = await api(
                 `/api/monthly-average-price?month=${encodeURIComponent(syncMonth)}`,
@@ -971,7 +984,7 @@ export default function WeeklyAveragePricePage() {
 
             <section className="average-kpi-grid">
                 <article className="average-kpi average-kpi-blue"><span className="average-kpi-icon">▤</span><div><small>TOTAL SM³</small><strong>{formatInteger(totals.sm3)}</strong><span>Volume sumber perhitungan</span></div></article>
-                <article className="average-kpi average-kpi-green"><span className="average-kpi-icon">◆</span><div><small>TOTAL MMBTU</small><strong>{formatDecimal(totals.mmbtu, 3)}</strong><span>Sm³ ÷ faktor operator</span></div></article>
+                <article className="average-kpi average-kpi-green"><span className="average-kpi-icon">◆</span><div><small>TOTAL MMBTU</small><strong>{formatInteger(totals.mmbtu)}</strong><span>Sm³ ÷ faktor operator</span></div></article>
                 <article className="average-kpi average-kpi-teal"><span className="average-kpi-icon">AVG</span><div><small>AVERAGE Rp/Sm³</small><strong>{formatDecimal(averagePriceRpSm3, 2)}</strong><span>Total Rupiah ÷ volume sumber</span></div></article>
             </section>
 
@@ -1038,7 +1051,7 @@ export default function WeeklyAveragePricePage() {
                                                                 {row.customer}{row.include_in_summary === false ? ' *' : ''}
                                                             </td>
                                                             <td>{formatInteger(row.sm3)}</td>
-                                                            <td>{formatDecimal(row.volume_mmbtu, 3)}</td>
+                                                            <td>{formatInteger(row.volume_mmbtu)}</td>
                                                             <td>{row.has_valid_price
                                                                 ? <>
                                                                     {row.price_unit === 'IDR_SM3' ? 'Rp ' : '$ '}
@@ -1055,7 +1068,7 @@ export default function WeeklyAveragePricePage() {
                                                 <tr className="average-workbook-subtotal">
                                                     <th colSpan="2">{isUnmappedGroup ? 'JUMLAH BELUM DIPETAKAN' : 'JUMLAH'}</th>
                                                     <th>{formatInteger(groupTotals.sm3)}</th>
-                                                    <th>{formatDecimal(groupTotals.mmbtu, 3)}</th>
+                                                    <th>{formatInteger(groupTotals.mmbtu)}</th>
                                                     <th>—</th>
                                                     <th>$ {formatDecimal(groupTotals.usd, 2)}</th>
                                                     <th>Rp {formatDecimal(groupTotals.rupiah, 2)}</th>
@@ -1081,7 +1094,7 @@ export default function WeeklyAveragePricePage() {
                                                         <tr className="average-regional-total-row">
                                                             <th colSpan="2">TOTAL {areaTotals.region}{standaloneAreas.has(group.area) ? ' · DI LUAR KONSOLIDASI' : ''}</th>
                                                             <th>{formatInteger(areaTotals.sm3)}</th>
-                                                            <th>{formatDecimal(areaTotals.mmbtu, 3)}</th>
+                                                            <th>{formatInteger(areaTotals.mmbtu)}</th>
                                                             <th>—</th>
                                                             <th>$ {formatDecimal(areaTotals.usd, 2)}</th>
                                                             <th>Rp {formatDecimal(areaTotals.rupiah, 2)}</th>
@@ -1103,7 +1116,7 @@ export default function WeeklyAveragePricePage() {
                                 <tr>
                                     <th colSpan="2">TOTAL KESELURUHAN</th>
                                     <th>{formatInteger(totals.sm3)}</th>
-                                    <th>{formatDecimal(totals.mmbtu, 3)}</th>
+                                    <th>{formatInteger(totals.mmbtu)}</th>
                                     <th>—</th>
                                     <th>$ {formatDecimal(totals.usd, 2)}</th>
                                     <th>Rp {formatDecimal(totals.rupiah, 2)}</th>
@@ -1295,12 +1308,13 @@ export default function WeeklyAveragePricePage() {
                                 <td>{index + 1}</td>
                                 <td>{operator}</td>
                                 <td>{canEdit
-                                    ? <input aria-label={`Faktor konversi ${operator}`} type="number" min="0" step="0.0001" value={report.operator_factors[operator] || ''} onChange={(event) => updateFactor(operator, event.target.value)} />
+                                    ? <input aria-label={`Faktor konversi ${operator}`} type="number" min="0" step="any" inputMode="decimal" value={report.operator_factors[operator] || ''} onChange={(event) => updateFactor(operator, event.target.value)} />
                                     : report.operator_factors[operator] || '—'}</td>
                                 <td>MMBTU = Sm³ ÷ faktor</td>
                             </tr>)}</tbody>
                         </table>
                     </div>
+                    {canEdit && <small className="average-conversion-note">Gunakan semua angka desimal faktor dari Excel, lalu klik Simpan Data Bulan Ini.</small>}
                 </div>
                     </div>
 

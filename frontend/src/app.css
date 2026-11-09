@@ -1288,6 +1288,7 @@ footer span { float: right; }
 .average-conversion-table th:nth-child(3) { width: 35%; }
 .average-conversion-table th:nth-child(4) { width: 41%; }
 .average-conversion-table input { min-width: 0; height: 22px; padding: 0 4px; font-size: 8px; }
+.average-conversion-note { display: block; margin-top: 4px; color: #557765; font-size: 9px; }
 .average-comparison-heading { margin-top: 8px; padding-top: 6px; border-top: 1px solid #e1ece5; }
 .average-comparison-chart { position: relative; height: 250px; margin: 4px auto 12px; }
 .average-comparison-table { min-width: 540px; }

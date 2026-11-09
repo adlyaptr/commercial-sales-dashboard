@@ -302,7 +302,7 @@ export default function HomePage() {
                                 <Message loading={loading} error={errors.price} empty={validPriceCount === 0 ? 'Data harga/kurs belum cukup untuk menghitung Average Price.' : ''}>
                                     <div className="home-year-summary home-price-summary">
                                         <div><small>Average Rp/Sm³</small><strong>{formatAveragePrice(priceReport?.totals?.average_price_rp_sm3)}</strong></div>
-                                        <div><small>Total MMBTU</small><strong>{formatNumber(priceReport?.totals?.mmbtu, 3)}</strong></div>
+                                        <div><small>Total MMBTU</small><strong>{formatNumber(priceReport?.totals?.mmbtu)}</strong></div>
                                     </div>
                                 </Message>
                             </article>
