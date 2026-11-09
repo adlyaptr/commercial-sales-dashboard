@@ -163,6 +163,12 @@ const januaryCustomerAliases = {
     tongjiksogas: 'Tong Tji / GAS',
 };
 const normalizeCustomerOrder = (value) => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const averagePriceCustomerIdentity = (value, month) => {
+    const key = normalizeCustomerOrder(value);
+    const alias = (month === '2026-01' && januaryCustomerAliases[key])
+        || customerOrderAliases[key];
+    return normalizeCustomerOrder(alias || value);
+};
 const customerOrderIndex = new Map();
 templateCustomerOrder.forEach((customer, index) => {
     const key = normalizeCustomerOrder(customer);
@@ -503,12 +509,19 @@ export default function WeeklyAveragePricePage() {
     }
 
     function updateCustomerName(value) {
-        const normalizedName = normalizeCustomerOrder(value.trim());
-        const matchingRow = report.rows.find(
-            (row) => normalizeCustomerOrder(row.customer) === normalizedName,
-        );
-        const matchingCustomer = matchingRow || customerCatalog.find(
-            (customer) => normalizeCustomerOrder(customer.customer_name) === normalizedName,
+        const identity = averagePriceCustomerIdentity(value.trim(), selectedMonth);
+        const matchingRows = report.rows
+            .filter((row) => averagePriceCustomerIdentity(row.customer, selectedMonth) === identity)
+            .sort((left, right) => (
+                Number(right.sm3 > 0) - Number(left.sm3 > 0)
+                || Number(right.has_valid_price) - Number(left.has_valid_price)
+            ));
+        if (matchingRows.length > 0) {
+            selectCustomer(matchingRows[0].customer_key);
+            return;
+        }
+        const matchingCustomer = customerCatalog.find(
+            (customer) => averagePriceCustomerIdentity(customer.customer_name, selectedMonth) === identity,
         );
         if (matchingCustomer) {
             selectCustomer(matchingCustomer.customer_key);
@@ -638,7 +651,6 @@ export default function WeeklyAveragePricePage() {
         event.preventDefault();
         const customerName = customerEntry.customer.trim();
         const price = Number(customerEntry.price);
-        const row = report.rows.find((item) => item.customer_key === selectedCustomerKey);
         if (!customerName) {
             setError('Nama customer wajib diisi.');
             return;
@@ -647,11 +659,30 @@ export default function WeeklyAveragePricePage() {
             setError('Pentawira tidak termasuk dalam Average Price.');
             return;
         }
-        if (!selectedCustomerKey && !customerEntry.operator) {
+        const identity = averagePriceCustomerIdentity(customerName, selectedMonth);
+        const selectedRow = report.rows.find((item) => item.customer_key === selectedCustomerKey);
+        const matchingRows = report.rows
+            .filter((item) => (
+                averagePriceCustomerIdentity(item.customer, selectedMonth) === identity
+                && (!selectedRow || item.operator === selectedRow.operator)
+            ))
+            .sort((left, right) => (
+                Number(right.sm3 > 0) - Number(left.sm3 > 0)
+                || Number(right.has_valid_price) - Number(left.has_valid_price)
+            ));
+        const row = selectedRow || matchingRows[0];
+        const matchingMasterCustomer = customerCatalog.find((customer) => (
+            averagePriceCustomerIdentity(customer.customer_name, selectedMonth) === identity
+            && (!row || customer.operator === row.operator)
+        ));
+        const existingCustomer = row || matchingMasterCustomer;
+        const hasWorkbookData = selectedCustomerHasWorkbookData
+            || (Number(row?.sm3_override) > 0 && !row?.region);
+        if (!existingCustomer && !customerEntry.operator) {
             setError('Pilih operator untuk customer baru.');
             return;
         }
-        if (!selectedCustomerHasWorkbookData && !customerEntry.region) {
+        if (!hasWorkbookData && !customerEntry.region) {
             setError('Pilih wilayah untuk customer ini.');
             return;
         }
@@ -663,8 +694,8 @@ export default function WeeklyAveragePricePage() {
         setError('');
         setSaving(true);
         try {
-            let customerKey = selectedCustomerKey;
-            let operator = row?.operator || customerEntry.operator;
+            let customerKey = existingCustomer?.customer_key || '';
+            const operator = row?.operator || matchingMasterCustomer?.operator || customerEntry.operator;
             if (!customerKey) {
                 const createdCustomer = await api('/api/customer-mapping', {
                     method: 'POST',
@@ -687,7 +718,7 @@ export default function WeeklyAveragePricePage() {
 
             const existingRow = row || {
                 customer_key: customerKey,
-                customer: customerName,
+                customer: matchingMasterCustomer?.customer_name || customerName,
                 operator,
                 region: customerEntry.region,
                 so_sm3: 0,
@@ -710,15 +741,35 @@ export default function WeeklyAveragePricePage() {
                     : Number(existingRow.price_usd_per_mmbtu || 0) !== price);
             const updatedRow = {
                 ...existingRow,
-                region: customerEntry.region,
+                region: customerEntry.region || existingRow.region || '',
                 price_unit: customerEntry.price_unit,
                 price_usd_per_mmbtu: customerEntry.price_unit === 'USD_MMBTU' ? price : 0,
                 price_rp_per_sm3: customerEntry.price_unit === 'IDR_SM3' ? price : 0,
                 total_usd_override: priceChanged ? null : existingRow.total_usd_override,
                 rupiah_override: priceChanged ? null : existingRow.rupiah_override,
             };
-            const nextRows = row
-                ? report.rows.map((item) => item.customer_key === customerKey ? updatedRow : item)
+            const keysToUpdate = new Set(
+                matchingRows
+                    .filter((item) => item.operator === operator)
+                    .map((item) => item.customer_key),
+            );
+            if (row) keysToUpdate.add(row.customer_key);
+            const nextRows = report.rows.some((item) => keysToUpdate.has(item.customer_key))
+                ? report.rows.map((item) => (
+                    keysToUpdate.has(item.customer_key)
+                        ? {
+                            ...item,
+                            region: item.customer_key === row?.customer_key
+                                ? customerEntry.region || item.region || ''
+                                : item.region || '',
+                            price_unit: updatedRow.price_unit,
+                            price_usd_per_mmbtu: updatedRow.price_usd_per_mmbtu,
+                            price_rp_per_sm3: updatedRow.price_rp_per_sm3,
+                            total_usd_override: null,
+                            rupiah_override: null,
+                        }
+                        : item
+                ))
                 : [...report.rows, updatedRow];
             const nextReport = { ...report, rows: nextRows };
             setSelectedCustomerKey(customerKey);
@@ -1264,6 +1315,9 @@ export default function WeeklyAveragePricePage() {
                                 <option key={normalizeCustomerOrder(customerName)} value={customerName} />
                             ))}
                         </datalist>
+                        <small className="average-conversion-note">
+                            Pilih customer yang sudah ada untuk memperbarui harganya tanpa menambah baris customer baru.
+                        </small>
                     </label>
                     <label>
                         Operator
@@ -1327,7 +1381,7 @@ export default function WeeklyAveragePricePage() {
                     </label>
                     <div className="average-entry-actions">
                         <button className="primary" type="submit" disabled={saving || loading || customersLoading || !selectedMonth}>
-                            {saving ? 'Menyimpan...' : 'Simpan Harga'}
+                            {saving ? 'Menyimpan...' : selectedCustomerKey ? 'Perbarui Harga' : 'Simpan Harga'}
                         </button>
                     </div>
                 </form>
