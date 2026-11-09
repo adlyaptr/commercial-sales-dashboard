@@ -222,7 +222,7 @@ export default function HomePage() {
             ? Number(row.price_rp_per_sm3) > 0
             : Number(row.price_usd_per_mmbtu) > 0
                 && Number(row.sm3_per_mmbtu) > 0
-                && Number(row.exchange_rate) > 0) ?? [];
+                && (Number(row.exchange_rate) > 0 || Number(row.rupiah_multiplier) > 0)) ?? [];
     const validPriceCount = priceReport?.valid_price_count ?? validPriceRows.length;
     const volumeComparison = useMemo(() => {
         const operatorTotals = summary?.month_summary?.operators ?? {};
