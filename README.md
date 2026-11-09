@@ -49,7 +49,7 @@ Halaman Admin menyinkronkan harga dari spreadsheet saat dibuka atau bulan digant
 
 Wilayah customer pada input Average Price dapat dipilih atau diubah oleh pengguna untuk setiap bulan. Wilayah tersebut digunakan untuk pengelompokan subtotal dan perbandingan wilayah.
 
-Baris Average Price dengan nama customer yang sama setelah normalisasi dan operator yang sama ditampilkan sebagai satu baris agregat. Alias OAJ dan PT Optima Adhi Jaya ditampilkan sebagai OPTIMA. Menyimpan customer yang sudah ada memperbarui record terkait, termasuk menyamakan wilayah, tanpa membuat customer baru; seluruh transaksi tetap dipertahankan. Daftar input tidak menampilkan record manual FOB dari master sebagai pilihan terpisah; customer aktif tetap tersedia dari data bulan berjalan.
+Di tabel Hasil Perhitungan Average Price, nama customer yang sama setelah alias dan normalisasi digabung menjadi satu baris; volume dan nilai perhitungannya dijumlahkan tanpa menghapus transaksi atau mengubah master customer. Harga tampil sebagai harga efektif berbobot sesuai hasil perhitungan baris-baris yang digabung. Alias OAJ dan PT Optima Adhi Jaya ditampilkan sebagai OPTIMA. Menyimpan customer yang sudah ada memperbarui record terkait, termasuk menyamakan wilayah, tanpa membuat customer baru; seluruh transaksi tetap dipertahankan. Daftar input tidak menampilkan record manual FOB dari master sebagai pilihan terpisah; customer aktif tetap tersedia dari data bulan berjalan.
 
 Impor workbook lama dan override volume/hasil hitung legacy tidak lagi menjadi sumber perhitungan. Sinkronisasi spreadsheet membersihkan override legacy tersebut; Average Price menghitung ulang hasil dari volume Actual impor, harga customer, faktor, dan kurs.
 

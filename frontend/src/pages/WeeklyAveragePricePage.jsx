@@ -12,6 +12,61 @@ const regions = ['JAWA BARAT', 'JAWA TENGAH', 'JAWA TIMUR', 'JAWA TENGAH DAN TIM
 const isExcludedAveragePriceCustomer = (value) => (
     normalizeCustomerOrder(value).startsWith('pentawira')
 );
+const aggregateDuplicateCustomers = (rows) => {
+    const groups = new Map();
+    rows.forEach((row) => {
+        const key = normalizeCustomerOrder(row.customer);
+        const group = groups.get(key);
+        if (group) {
+            group.rows.push(row);
+        } else {
+            groups.set(key, { rows: [row] });
+        }
+    });
+    return Array.from(groups.values(), ({ rows: customerRows }) => {
+        const primaryRow = [...customerRows].sort((left, right) => (
+            Number(right.sm3 > 0) - Number(left.sm3 > 0)
+            || Number(right.has_valid_price) - Number(left.has_valid_price)
+        ))[0];
+        const sm3 = customerRows.reduce((total, row) => total + row.sm3, 0);
+        const mmbtu = customerRows.reduce((total, row) => total + row.volume_mmbtu, 0);
+        const usd = customerRows.reduce((total, row) => total + row.total_usd, 0);
+        const rupiah = customerRows.reduce((total, row) => total + row.rupiah, 0);
+        const pricedRows = customerRows.filter((row) => row.has_valid_price);
+        const pricedSm3 = pricedRows.reduce((total, row) => total + row.sm3, 0);
+        const pricedMmbtu = pricedRows.reduce((total, row) => total + row.volume_mmbtu, 0);
+        const pricedUsd = pricedRows.reduce((total, row) => total + row.total_usd, 0);
+        const pricedRupiah = pricedRows.reduce((total, row) => total + row.rupiah, 0);
+        const samePriceUnit = customerRows.every(
+            (row) => row.price_unit === primaryRow.price_unit,
+        );
+        const price = primaryRow.price_unit === 'IDR_SM3'
+            ? (pricedSm3 > 0
+                ? pricedRupiah / pricedSm3
+                : Number(primaryRow.price_rp_per_sm3 || 0))
+            : (pricedMmbtu > 0
+                ? pricedUsd / pricedMmbtu
+                : Number(primaryRow.price_usd_per_mmbtu || 0));
+        return {
+            ...primaryRow,
+            sm3,
+            volume_mmbtu: mmbtu,
+            total_usd: usd,
+            rupiah,
+            has_valid_price: pricedRows.length > 0,
+            price_usd_per_mmbtu: samePriceUnit && primaryRow.price_unit === 'USD_MMBTU'
+                ? price
+                : primaryRow.price_usd_per_mmbtu,
+            price_rp_per_sm3: samePriceUnit && primaryRow.price_unit === 'IDR_SM3'
+                ? price
+                : primaryRow.price_rp_per_sm3,
+            include_in_summary: customerRows.every(
+                (row) => row.include_in_summary !== false,
+            ),
+            source_rows: customerRows,
+        };
+    });
+};
 const pdfCustomerNames = [
     'PT Cipta Lestari Idea Nusa', 'PT Mitra Kaya Galvanize', 'PT Optima Adhi Jaya',
     'SHB', 'GTL', 'TWK', 'BEM', 'TOMIMOTO', 'NIAGA GARAM', 'PCI MENGGER',
@@ -821,13 +876,14 @@ export default function WeeklyAveragePricePage() {
         row.workbook_group.index < workbookCustomerGroups.length
         || sheetCustomerKeySet.has(normalizeCustomerOrder(row.customer_key)),
     );
-    const displayRows = calculationRows.filter((row) =>
+    const sourceDisplayRows = calculationRows.filter((row) =>
         row.sm3 > 0
         || Number(row.price_usd_per_mmbtu) > 0
         || Number(row.price_rp_per_sm3) > 0
         || Number(row.total_usd_override) > 0
         || Number(row.rupiah_override) > 0,
     );
+    const displayRows = aggregateDuplicateCustomers(sourceDisplayRows);
     const displayGroups = displayRows.reduce((groups, row) => {
         const currentGroup = groups[groups.length - 1];
         if (
@@ -844,7 +900,7 @@ export default function WeeklyAveragePricePage() {
     const displayRowNumbers = new Map();
     displayGroups.forEach((group) => {
         group.rows.forEach((row, index) => {
-            displayRowNumbers.set(row.customer_key, index + 1);
+            displayRowNumbers.set(normalizeCustomerOrder(row.customer), index + 1);
         });
     });
     const calculatedTotals = calculationRows.filter((row) =>
@@ -1014,6 +1070,7 @@ export default function WeeklyAveragePricePage() {
                                     )
                                     : displayGroups.map((group, groupIndex) => {
                                         const groupTotals = group.rows
+                                            .flatMap((row) => row.source_rows)
                                             .filter((row) => row.has_valid_price
                                                 && (row.include_in_summary !== false
                                                     || standaloneAreas.has(group.area)))
@@ -1046,7 +1103,7 @@ export default function WeeklyAveragePricePage() {
                                                         </tr>
                                                         {group.rows.map((row) => {
                                                             return <tr key={row.customer_key}>
-                                                            <td>{displayRowNumbers.get(row.customer_key)}</td>
+                                                            <td>{displayRowNumbers.get(normalizeCustomerOrder(row.customer))}</td>
                                                             <td>
                                                                 {row.customer}{row.include_in_summary === false ? ' *' : ''}
                                                             </td>
