@@ -348,7 +348,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         with patch.object(
             main,
             "db",
-            return_value=MemoryMonthlyAveragePrice(customer_key="pentawira"),
+            return_value=MemoryMonthlyAveragePrice(customer_key="pentawiraksoren"),
         ):
             report = main.monthly_average_price(FakeRequest(), "2026-10")
 
@@ -361,7 +361,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             "operator_factors": {},
             "exchange_rate": 17895,
             "entries": [{
-                "customer_key": "pentawira",
+                "customer_key": "pentawiraksoren",
                 "region": "JAWA TIMUR",
                 "price_unit": "USD_MMBTU",
                 "price_usd_per_mmbtu": 10,

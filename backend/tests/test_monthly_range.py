@@ -154,7 +154,7 @@ class MonthlyRangeTests(unittest.TestCase):
         with patch.object(
             main,
             "db",
-            return_value=MemoryAveragePriceRange(customer_key="pentawira"),
+            return_value=MemoryAveragePriceRange(customer_key="pentawiraksoren"),
         ):
             result = main.monthly_average_price_range(
                 FakeRequest(),

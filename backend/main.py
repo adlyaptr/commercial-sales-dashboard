@@ -5607,7 +5607,7 @@ def monthly_average_price(request: Request, month: str):
     rows = []
     totals = {"sm3": 0.0, "mmbtu": 0.0, "usd": 0.0, "rupiah": 0.0}
     for row in sales_rows:
-        if norm(row["customer_key"]) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
+        if canonical_average_price_customer_key(row["customer_key"]) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
             continue
         so_sm3 = float(row["so_sm3"] or 0)
         actual_sm3 = float(row["actual_sm3"] or 0)
@@ -5789,7 +5789,7 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
     rows_by_period_customer = {
         (row["period"], row["customer_key"]): row
         for row in sales_rows
-        if norm(row["customer_key"]) not in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS
+        if canonical_average_price_customer_key(row["customer_key"]) not in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS
     }
     legacy_workbook_months = {
         row["period"]
@@ -5797,7 +5797,7 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
         if row.get("workbook_summary_sm3") is not None
     }
     for row in input_rows:
-        if norm(row["customer_key"]) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
+        if canonical_average_price_customer_key(row["customer_key"]) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
             continue
         period_start = date.fromisoformat(f"{row['period']}-01")
         next_period_start = (
@@ -5975,7 +5975,7 @@ async def save_monthly_average_price(request: Request):
                 or price_rp < 0
             ):
                 raise ValueError
-            if norm(customer_key) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
+            if canonical_average_price_customer_key(customer_key) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
                 raise HTTPException(
                     status_code=400,
                     detail="Pentawira tidak termasuk dalam Average Price.",
