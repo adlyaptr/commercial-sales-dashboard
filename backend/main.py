@@ -5350,32 +5350,6 @@ async def sync_monthly_average_price_sheet(request: Request):
     if month_start.strftime("%Y-%m") != month or not isinstance(mappings, list):
         raise HTTPException(status_code=400, detail="Bulan atau pemetaan customer tidak valid.")
 
-    with db() as con:
-        workbook_import = con.execute(
-            "SELECT filename,customer_keys_json FROM monthly_average_price_workbook_imports "
-            "WHERE month_start=%s",
-            (month_start.isoformat(),),
-        ).fetchone()
-    if workbook_import:
-        workbook_customer_keys = json.loads(workbook_import["customer_keys_json"])
-        if not isinstance(workbook_customer_keys, list) or any(
-            not isinstance(key, str) for key in workbook_customer_keys
-        ):
-            raise HTTPException(
-                status_code=500,
-                detail="Daftar customer pada impor workbook tersimpan dalam format tidak valid.",
-            )
-        return {
-            "month": month,
-            "source": workbook_import["filename"],
-            "imported": 0,
-            "deactivated": 0,
-            "created_customers": [],
-            "unmatched_customers": [],
-            "sheet_customer_keys": workbook_customer_keys,
-            "workbook_locked": True,
-        }
-
     imported = import_monthly_average_price_sheet(request, month)
     entries = imported["entries"]
     sheet_customers = {
@@ -5511,6 +5485,22 @@ async def sync_monthly_average_price_sheet(request: Request):
             imported_count += 1
             deactivated_count += int(not entry["active"])
 
+        legacy_workbook = con.execute(
+            "SELECT month_start FROM monthly_average_price_workbook_imports WHERE month_start=%s",
+            (month_start.isoformat(),),
+        ).fetchone()
+        if legacy_workbook:
+            con.execute(
+                "UPDATE monthly_average_price_inputs SET sm3_override=NULL,"
+                "mmbtu_override=NULL,total_usd_override=NULL,rupiah_override=NULL,"
+                "include_in_summary=1 WHERE month_start=%s",
+                (month_start.isoformat(),),
+            )
+            con.execute(
+                "DELETE FROM monthly_average_price_workbook_imports WHERE month_start=%s",
+                (month_start.isoformat(),),
+            )
+
     return {
         "month": month,
         "source": imported["source"],
@@ -5593,34 +5583,35 @@ def monthly_average_price(request: Request, month: str):
             (month_start.isoformat(),),
         ).fetchall()
         workbook_import = con.execute(
-            "SELECT filename,imported_at,customer_keys_json,summary_sm3,"
-            "summary_rupiah,summary_average_price "
-            "FROM monthly_average_price_workbook_imports WHERE month_start=%s",
+            "SELECT customer_keys_json FROM monthly_average_price_workbook_imports "
+            "WHERE month_start=%s",
             (month_start.isoformat(),),
         ).fetchone()
     exchange_rate = float(exchange["exchange_rate"] or 0) if exchange else 0.0
 
-    workbook_customer_keys = []
+    legacy_workbook_customer_keys = set()
     if workbook_import:
-        workbook_customer_keys = json.loads(workbook_import["customer_keys_json"])
-        if not isinstance(workbook_customer_keys, list) or any(
-            not isinstance(key, str) for key in workbook_customer_keys
+        imported_customer_keys = json.loads(workbook_import["customer_keys_json"])
+        if not isinstance(imported_customer_keys, list) or any(
+            not isinstance(key, str) for key in imported_customer_keys
         ):
             raise HTTPException(
                 status_code=500,
                 detail="Daftar customer pada impor workbook tersimpan dalam format tidak valid.",
             )
+        legacy_workbook_customer_keys = set(imported_customer_keys)
 
     rows = []
     totals = {"sm3": 0.0, "mmbtu": 0.0, "usd": 0.0, "rupiah": 0.0}
     for row in sales_rows:
         so_sm3 = float(row["so_sm3"] or 0)
         actual_sm3 = float(row["actual_sm3"] or 0)
-        sm3 = (
-            float(row["sm3_override"])
-            if row.get("sm3_override") is not None
-            else actual_sm3
-        )
+        is_legacy_workbook_row = row["customer_key"] in legacy_workbook_customer_keys
+        sm3_override = None if is_legacy_workbook_row else row.get("sm3_override")
+        mmbtu_override = None if is_legacy_workbook_row else row.get("mmbtu_override")
+        total_usd_override = None if is_legacy_workbook_row else row.get("total_usd_override")
+        rupiah_override = None if is_legacy_workbook_row else row.get("rupiah_override")
+        sm3 = float(sm3_override) if sm3_override is not None else actual_sm3
         factor = float(row["sm3_per_mmbtu"] or 0)
         price_unit = row.get("price_unit") or "USD_MMBTU"
         price = float(row["price_usd_per_mmbtu"] or 0)
@@ -5631,9 +5622,9 @@ def monthly_average_price(request: Request, month: str):
             price_rp,
             factor,
             exchange_rate,
-            row.get("mmbtu_override"),
-            row.get("total_usd_override"),
-            row.get("rupiah_override"),
+            mmbtu_override,
+            total_usd_override,
+            rupiah_override,
         )
         mmbtu, total_usd, rupiah = calculate_average_price(
             sm3,
@@ -5642,11 +5633,13 @@ def monthly_average_price(request: Request, month: str):
             price,
             price_rp,
             exchange_rate,
-            row.get("mmbtu_override"),
-            row.get("total_usd_override"),
-            row.get("rupiah_override"),
+            mmbtu_override,
+            total_usd_override,
+            rupiah_override,
         )
-        include_in_summary = bool(row.get("include_in_summary", True))
+        include_in_summary = (
+            True if is_legacy_workbook_row else bool(row.get("include_in_summary", True))
+        )
         if is_valid_price and include_in_summary:
             totals["sm3"] += sm3
             totals["mmbtu"] += mmbtu
@@ -5665,10 +5658,10 @@ def monthly_average_price(request: Request, month: str):
             "volume_mmbtu": mmbtu,
             "price_usd_per_mmbtu": price,
             "price_rp_per_sm3": price_rp,
-            "sm3_override": row.get("sm3_override"),
-            "mmbtu_override": row.get("mmbtu_override"),
-            "total_usd_override": row.get("total_usd_override"),
-            "rupiah_override": row.get("rupiah_override"),
+            "sm3_override": sm3_override,
+            "mmbtu_override": mmbtu_override,
+            "total_usd_override": total_usd_override,
+            "rupiah_override": rupiah_override,
             "total_usd": total_usd,
             "exchange_rate": exchange_rate,
             "has_valid_price": is_valid_price,
@@ -5678,24 +5671,12 @@ def monthly_average_price(request: Request, month: str):
     totals["average_price_rp_sm3"] = (
         totals["rupiah"] / totals["sm3"] if totals["sm3"] else 0.0
     )
-    if workbook_import:
-        totals["sm3"] = float(workbook_import["summary_sm3"])
-        totals["rupiah"] = float(workbook_import["summary_rupiah"])
-        totals["average_price_rp_sm3"] = float(
-            workbook_import["summary_average_price"]
-        )
     return {
         "month": month,
         "exchange_rate": exchange_rate,
-        "source": "workbook" if workbook_import else "system",
-        "workbook_import": ({
-            "filename": workbook_import["filename"],
-            "imported_at": workbook_import["imported_at"],
-            "summary_sm3": float(workbook_import["summary_sm3"]),
-            "summary_rupiah": float(workbook_import["summary_rupiah"]),
-            "summary_average_price": float(workbook_import["summary_average_price"]),
-        } if workbook_import else None),
-        "workbook_customer_keys": workbook_customer_keys,
+        "source": "system",
+        "workbook_import": None,
+        "workbook_customer_keys": [],
         "operator_factors": {
             row["operator"]: float(row["sm3_per_mmbtu"] or 0)
             for row in factor_rows
@@ -5792,18 +5773,16 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
         ).fetchall()
 
     totals = {"sm3": 0.0, "mmbtu": 0.0, "usd": 0.0, "rupiah": 0.0}
-    totals_by_month = {}
-    workbook_summaries = {}
     rows = []
     rows_by_period_customer = {
         (row["period"], row["customer_key"]): row for row in sales_rows
     }
+    legacy_workbook_months = {
+        row["period"]
+        for row in input_rows
+        if row.get("workbook_summary_sm3") is not None
+    }
     for row in input_rows:
-        if row.get("workbook_summary_sm3") is not None:
-            workbook_summaries[row["period"]] = {
-                "sm3": float(row["workbook_summary_sm3"]),
-                "rupiah": float(row["workbook_summary_rupiah"]),
-            }
         period_start = date.fromisoformat(f"{row['period']}-01")
         next_period_start = (
             date(period_start.year + 1, 1, 1)
@@ -5835,10 +5814,27 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             start <= period_start
             and end >= next_period_start - timedelta(days=1)
         )
-        sm3_override = row.get("sm3_override") if is_full_month else None
-        mmbtu_override = row.get("mmbtu_override") if is_full_month else None
-        total_usd_override = row.get("total_usd_override") if is_full_month else None
-        rupiah_override = row.get("rupiah_override") if is_full_month else None
+        is_legacy_workbook_month = row["period"] in legacy_workbook_months
+        sm3_override = (
+            row.get("sm3_override")
+            if is_full_month and not is_legacy_workbook_month
+            else None
+        )
+        mmbtu_override = (
+            row.get("mmbtu_override")
+            if is_full_month and not is_legacy_workbook_month
+            else None
+        )
+        total_usd_override = (
+            row.get("total_usd_override")
+            if is_full_month and not is_legacy_workbook_month
+            else None
+        )
+        rupiah_override = (
+            row.get("rupiah_override")
+            if is_full_month and not is_legacy_workbook_month
+            else None
+        )
         sm3 = float(sm3_override) if sm3_override is not None else actual_sm3
         factor = float(row["sm3_per_mmbtu"] or 0)
         price_unit = row.get("price_unit") or "USD_MMBTU"
@@ -5866,18 +5862,16 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             total_usd_override,
             rupiah_override,
         )
-        include_in_summary = bool(row.get("include_in_summary", True))
+        include_in_summary = (
+            True
+            if is_legacy_workbook_month
+            else bool(row.get("include_in_summary", True))
+        )
         if is_valid_price and include_in_summary:
             totals["sm3"] += sm3
             totals["mmbtu"] += mmbtu
             totals["usd"] += total_usd
             totals["rupiah"] += rupiah
-            monthly_totals = totals_by_month.setdefault(
-                row["period"],
-                {"sm3": 0.0, "rupiah": 0.0},
-            )
-            monthly_totals["sm3"] += sm3
-            monthly_totals["rupiah"] += rupiah
         rows.append({
             "month": row["period"],
             "customer_key": row["customer_key"],
@@ -5892,28 +5886,16 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             "volume_mmbtu": mmbtu,
             "price_usd_per_mmbtu": price,
             "price_rp_per_sm3": price_rp,
-            "sm3_override": row.get("sm3_override"),
-            "mmbtu_override": row.get("mmbtu_override"),
-            "total_usd_override": row.get("total_usd_override"),
-            "rupiah_override": row.get("rupiah_override"),
+            "sm3_override": sm3_override,
+            "mmbtu_override": mmbtu_override,
+            "total_usd_override": total_usd_override,
+            "rupiah_override": rupiah_override,
             "total_usd": total_usd,
             "exchange_rate": exchange_rate,
             "has_valid_price": is_valid_price,
             "include_in_summary": include_in_summary,
             "rupiah": rupiah,
         })
-    for period, summary in workbook_summaries.items():
-        period_start = date.fromisoformat(f"{period}-01")
-        next_month_start = (
-            date(period_start.year + 1, 1, 1)
-            if period_start.month == 12
-            else date(period_start.year, period_start.month + 1, 1)
-        )
-        if start > period_start or end < next_month_start - timedelta(days=1):
-            continue
-        calculated_month = totals_by_month.get(period, {"sm3": 0.0, "rupiah": 0.0})
-        totals["sm3"] += summary["sm3"] - calculated_month["sm3"]
-        totals["rupiah"] += summary["rupiah"] - calculated_month["rupiah"]
     totals["average_price_rp_sm3"] = (
         totals["rupiah"] / totals["sm3"] if totals["sm3"] else 0.0
     )

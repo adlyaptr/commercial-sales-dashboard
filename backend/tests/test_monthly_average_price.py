@@ -68,7 +68,7 @@ class MemoryMonthlyAveragePrice:
             return SimpleNamespace(fetchall=lambda: [
                 {"region": "JAWA BARAT", "target_price_rp_sm3": 8250},
             ])
-        if statement.startswith("SELECT filename,imported_at,customer_keys_json"):
+        if statement.startswith("SELECT customer_keys_json"):
             return SimpleNamespace(fetchone=lambda: None)
         raise AssertionError(f"Unexpected SQL in monthly Average Price test: {statement}")
 
@@ -129,6 +129,8 @@ class MemoryAveragePriceSheetSync:
             {"customer_key": "clin", "customer_name": "CLIN", "operator": "SETU"},
         ]
         self.price_inputs = []
+        self.legacy_workbook = False
+        self.legacy_cleanup = []
 
     def __enter__(self):
         return self
@@ -139,14 +141,22 @@ class MemoryAveragePriceSheetSync:
     def execute(self, statement, parameters=None):
         if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
             return SimpleNamespace(fetchall=lambda: list(self.customers))
-        if statement.startswith("SELECT filename,customer_keys_json"):
-            return SimpleNamespace(fetchone=lambda: None)
         if statement.startswith("SELECT customer_key,operator FROM customers WHERE customer_key"):
             customer = next(
                 (item for item in self.customers if item["customer_key"] == parameters[0]),
                 None,
             )
             return SimpleNamespace(fetchone=lambda: customer)
+        if statement.startswith("SELECT month_start FROM monthly_average_price_workbook_imports"):
+            return SimpleNamespace(
+                fetchone=lambda: {"month_start": parameters[0]} if self.legacy_workbook else None
+            )
+        if statement.startswith("UPDATE monthly_average_price_inputs SET sm3_override=NULL"):
+            self.legacy_cleanup.append(("clear", parameters))
+            return SimpleNamespace(rowcount=1)
+        if statement.startswith("DELETE FROM monthly_average_price_workbook_imports"):
+            self.legacy_cleanup.append(("delete", parameters))
+            return SimpleNamespace(rowcount=1)
         if statement.startswith("INSERT INTO customers"):
             key, name, operator = parameters
             customer = {"customer_key": key, "customer_name": name, "operator": operator}
@@ -309,10 +319,10 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertEqual(report["totals"]["usd"], 500)
         self.assertEqual(report["totals"]["rupiah"], 8400000)
 
-    def test_uses_imported_workbook_summary_as_monthly_totals(self):
+    def test_ignores_legacy_workbook_summary_and_calculates_from_live_data(self):
         class ImportedWorkbookAveragePrice(MemoryMonthlyAveragePrice):
             def execute(self, statement, parameters=None):
-                if statement.startswith("SELECT filename,imported_at,customer_keys_json"):
+                if statement.startswith("SELECT customer_keys_json"):
                     return SimpleNamespace(fetchone=lambda: {
                         "filename": "Average Selling Price 2026.xlsx",
                         "imported_at": "2026-11-09T12:00:00",
@@ -321,16 +331,30 @@ class MonthlyAveragePriceTests(unittest.TestCase):
                         "summary_rupiah": 9000000,
                         "summary_average_price": 7500,
                     })
+                if "LEFT JOIN sales s" in statement:
+                    self.assert_month_range(parameters)
+                    row = super().execute(statement, parameters).fetchall()[0]
+                    row.update({
+                        "sm3_override": 1200,
+                        "mmbtu_override": 42,
+                        "total_usd_override": 500,
+                        "rupiah_override": 9000000,
+                        "include_in_summary": False,
+                    })
+                    return SimpleNamespace(fetchall=lambda: [row])
                 return super().execute(statement, parameters)
 
         with patch.object(main, "db", return_value=ImportedWorkbookAveragePrice()):
             report = main.monthly_average_price(FakeRequest(), "2026-10")
 
-        self.assertEqual(report["source"], "workbook")
-        self.assertEqual(report["workbook_customer_keys"], ["customer-1"])
-        self.assertEqual(report["totals"]["sm3"], 1200)
-        self.assertEqual(report["totals"]["rupiah"], 9000000)
-        self.assertEqual(report["totals"]["average_price_rp_sm3"], 7500)
+        self.assertEqual(report["source"], "system")
+        self.assertIsNone(report["workbook_import"])
+        self.assertEqual(report["workbook_customer_keys"], [])
+        self.assertEqual(report["rows"][0]["sm3"], 28095)
+        self.assertIsNone(report["rows"][0]["sm3_override"])
+        self.assertTrue(report["rows"][0]["include_in_summary"])
+        self.assertEqual(report["totals"]["sm3"], 28095)
+        self.assertEqual(report["totals"]["rupiah"], report["rows"][0]["rupiah"])
 
     def test_parses_monthly_average_price_workbook_cached_values(self):
         workbook = main.Workbook()
@@ -365,7 +389,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertEqual(parsed["months"][0]["summary_sm3"], 100)
         self.assertEqual(parsed["months"][0]["summary_rupiah"], 200000)
 
-    def test_imports_workbook_rows_and_locks_google_sync_for_imported_month(self):
+    def test_imports_legacy_workbook_rows_for_compatibility(self):
         database = MemoryMonthlyAveragePriceWorkbookImport()
         parsed = {
             "filename": "Average Selling Price 2026.xlsx",
@@ -407,32 +431,28 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertEqual(input_write[1][1:5], ("clin", "JAWA BARAT", "USD_MMBTU", 20))
         self.assertEqual(input_write[1][6:10], (50000, 1800, 36000, 450000000))
 
-    def test_google_sheet_sync_does_not_override_workbook_import(self):
+    def test_google_sheet_sync_clears_legacy_workbook_overrides(self):
         database = MemoryAveragePriceSheetSync()
-        database.execute = lambda statement, parameters=None: (
-            SimpleNamespace(fetchone=lambda: {
-                "filename": "Average Selling Price 2026.xlsx",
-                "customer_keys_json": '["clin"]',
-            })
-            if (
-                statement.startswith("SELECT filename,customer_keys_json")
-                and parameters == ("2026-01-01",)
-            )
-            else (_ for _ in ()).throw(AssertionError(f"Unexpected SQL: {statement}"))
-        )
+        database.legacy_workbook = True
         request = FakeRequest({"month": "2026-01", "customer_mappings": []})
+        imported = {"source": "Harga Customer 2026", "entries": []}
         with (
             patch.object(main, "db", return_value=database),
             patch.object(
-                main,
-                "import_monthly_average_price_sheet",
-                side_effect=AssertionError("Google Sheet must not be fetched"),
+                main, "import_monthly_average_price_sheet", return_value=imported,
             ),
         ):
             result = asyncio.run(main.sync_monthly_average_price_sheet(request))
 
-        self.assertTrue(result["workbook_locked"])
-        self.assertEqual(result["sheet_customer_keys"], ["clin"])
+        self.assertNotIn("workbook_locked", result)
+        self.assertEqual(result["source"], "Harga Customer 2026")
+        self.assertEqual(
+            database.legacy_cleanup,
+            [
+                ("clear", ("2026-01-01",)),
+                ("delete", ("2026-01-01",)),
+            ],
+        )
 
     def test_saves_monthly_factors_exchange_rate_and_customer_price(self):
         database = MemoryMonthlyAveragePriceWrites()
