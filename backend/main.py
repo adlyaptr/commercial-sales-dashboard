@@ -5408,13 +5408,26 @@ async def sync_monthly_average_price_sheet(request: Request):
             if source_key in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
                 continue
             matching_customers = customers_by_canonical_key.get(source_key, [])
-            exact_customers = [
-                customer
-                for customer in matching_customers
-                if norm(customer["customer_key"]) == source_key
-            ]
-            if exact_customers:
-                matching_customers = exact_customers
+            if entry["price_unit"] == "IDR_USD_MULTIPLIER":
+                priced_customers = []
+                for candidate in matching_customers:
+                    candidate_input = con.execute(
+                        "SELECT price_usd_per_mmbtu FROM monthly_average_price_inputs "
+                        "WHERE month_start=%s AND customer_key=%s",
+                        (month_start.isoformat(), candidate["customer_key"]),
+                    ).fetchone()
+                    if candidate_input and float(candidate_input["price_usd_per_mmbtu"] or 0) > 0:
+                        priced_customers.append(candidate)
+                if priced_customers:
+                    matching_customers = priced_customers
+            else:
+                exact_customers = [
+                    customer
+                    for customer in matching_customers
+                    if norm(customer["customer_key"]) == source_key
+                ]
+                if exact_customers:
+                    matching_customers = exact_customers
             if len(matching_customers) > 1:
                 raise HTTPException(
                     status_code=409,
