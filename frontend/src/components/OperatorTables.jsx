@@ -114,8 +114,8 @@ function OperatorCard({
                                 </tr>
                                 {group.rows.map((row, index) => (
                                     <tr key={`${group.key}-${row.customer}-${index}`}>
-                                        <td title={row.customer}>
-                                            {row.customer}
+                                        <td title={row.customer === 'KSN' ? 'KSNI-M' : row.customer}>
+                                            {row.customer === 'KSN' ? 'KSNI-M' : row.customer}
                                             {row.manual_fob && (onEditManualFob || onDeleteManualFob) && <span className="manual-fob-row-actions">
                                                 {onEditManualFob && <button type="button" onClick={() => onEditManualFob(row, operator)}>Edit</button>}
                                                 {onDeleteManualFob && <button type="button" onClick={() => onDeleteManualFob(row)}>Hapus</button>}
