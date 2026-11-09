@@ -953,6 +953,45 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             "USD_MMBTU", 13.68, 0, 8225,
         ))
 
+    def test_sheet_sync_uses_exact_customer_key_when_aliases_have_no_usd_price(self):
+        database = MemoryAveragePriceSheetSync()
+        database.customers.extend([
+            {"customer_key": "kgm", "customer_name": "KGM", "operator": "SETU"},
+            {
+                "customer_key": "kgmksorrs",
+                "customer_name": "KGM (KSO RRS)",
+                "operator": "SETU",
+            },
+            {
+                "customer_key": "kgmrrs",
+                "customer_name": "KGM / RRS",
+                "operator": "SETU",
+            },
+        ])
+        imported = {
+            "source": "Harga Customer 2026",
+            "entries": [{
+                "customer": "KGM / RRS",
+                "price_unit": "IDR_USD_MULTIPLIER",
+                "price": 9450,
+                "active": True,
+            }],
+        }
+        request = FakeRequest({"month": "2026-10", "customer_mappings": []})
+        with (
+            patch.object(main, "import_monthly_average_price_sheet", return_value=imported),
+            patch.object(main, "db", return_value=database),
+        ):
+            result = asyncio.run(main.sync_monthly_average_price_sheet(request))
+
+        self.assertEqual(result["imported"], 1)
+        self.assertEqual(len(database.price_inputs), 1)
+        parameters = database.price_inputs[0][1]
+        self.assertEqual(parameters[1], "kgmrrs")
+        self.assertEqual(parameters[3:7], (
+            "USD_MMBTU", 0, 0, 9450,
+        ))
+
     def test_sheet_sync_returns_unmapped_customer_for_admin_prompt(self):
         database = MemoryAveragePriceSheetSync()
         imported = {

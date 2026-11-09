@@ -5420,6 +5420,14 @@ async def sync_monthly_average_price_sheet(request: Request):
                         priced_customers.append(candidate)
                 if priced_customers:
                     matching_customers = priced_customers
+                else:
+                    exact_customers = [
+                        customer
+                        for customer in matching_customers
+                        if norm(customer["customer_key"]) == source_key
+                    ]
+                    if exact_customers:
+                        matching_customers = exact_customers
             else:
                 exact_customers = [
                     customer
