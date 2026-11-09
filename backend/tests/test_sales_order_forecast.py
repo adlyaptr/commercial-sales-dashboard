@@ -176,6 +176,5 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertFalse(by_customer_date[("kf", "2026-11-03")]["actual_is_forecast"])
         self.assertEqual(unmapped, ["Missing Customer"])
 
-
 if __name__ == "__main__":
     unittest.main()
