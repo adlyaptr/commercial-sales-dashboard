@@ -453,22 +453,6 @@ def uses_average_price_rupiah_multiplier(value):
     return canonical_average_price_customer_key(value) in AVERAGE_PRICE_RUPIAH_MULTIPLIER_CUSTOMERS
 
 
-def is_average_price_forced_off(customer_key, month):
-    return (
-        month == "2026-07"
-        and canonical_average_price_customer_key(customer_key) == "bisurcharge"
-    )
-
-
-def apply_monthly_average_price_overrides(entries, month):
-    return [
-        {**entry, "price": 0.0, "active": False}
-        if is_average_price_forced_off(entry["customer"], month)
-        else entry
-        for entry in entries
-    ]
-
-
 def parse_average_price_cell(value, unit_hint=""):
     text = str(value or "").strip()
     normalized_text = text.lower()
@@ -5364,10 +5348,7 @@ def import_monthly_average_price_sheet(request: Request, month: str):
                 detail="Google Sheets API mengembalikan respons JSON yang tidak valid.",
             ) from exc
 
-    entries = apply_monthly_average_price_overrides(
-        parse_average_price_sheet_values(values, month),
-        month,
-    )
+    entries = parse_average_price_sheet_values(values, month)
     return {"month": month, "entries": entries, "source": source_title}
 
 
@@ -5392,7 +5373,7 @@ async def sync_monthly_average_price_sheet(request: Request):
     )
 
     imported = import_monthly_average_price_sheet(request, month)
-    entries = apply_monthly_average_price_overrides(imported["entries"], month)
+    entries = imported["entries"]
     sheet_customers = {
         canonical_average_price_customer_key(entry["customer"])
         for entry in entries
@@ -5742,10 +5723,7 @@ def monthly_average_price(request: Request, month: str):
             continue
         so_sm3 = float(row["so_sm3"] or 0)
         actual_sm3 = float(row["actual_sm3"] or 0)
-        price_active = (
-            bool(row.get("price_active", True))
-            and not is_average_price_forced_off(row["customer_key"], month)
-        )
+        price_active = bool(row.get("price_active", True))
         is_legacy_workbook_row = row["customer_key"] in legacy_workbook_customer_keys
         sm3_override = None
         mmbtu_override = None
@@ -5762,10 +5740,6 @@ def monthly_average_price(request: Request, month: str):
             and row.get("rupiah_multiplier") is not None
             else None
         )
-        if is_average_price_forced_off(row["customer_key"], month):
-            price = 0.0
-            price_rp = 0.0
-            rupiah_multiplier = None
         is_valid_price = price_active and has_valid_average_price(
             price_unit,
             price,
@@ -5980,10 +5954,7 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
         total_usd_override = None
         rupiah_override = None
         sm3 = actual_sm3
-        price_active = (
-            bool(row.get("price_active", True))
-            and not is_average_price_forced_off(row["customer_key"], row["period"])
-        )
+        price_active = bool(row.get("price_active", True))
         if not price_active:
             sm3 = 0.0
         factor = float(row["sm3_per_mmbtu"] or 0)
@@ -5996,10 +5967,6 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
             and row.get("rupiah_multiplier") is not None
             else None
         )
-        if is_average_price_forced_off(row["customer_key"], row["period"]):
-            price = 0.0
-            price_rp = 0.0
-            rupiah_multiplier = None
         exchange_rate = float(row["exchange_rate"] or 0)
         is_valid_price = price_active and has_valid_average_price(
             price_unit,
@@ -6147,11 +6114,6 @@ async def save_monthly_average_price(request: Request):
                 if not uses_average_price_rupiah_multiplier(customer_key):
                     rupiah_multiplier = None
             price_active = entry.get("price_active", True)
-            if is_average_price_forced_off(customer_key, month):
-                price_active = False
-                price_usd = 0.0
-                price_rp = 0.0
-                rupiah_multiplier = None
             if (
                 not customer_key
                 or not isinstance(price_active, bool)

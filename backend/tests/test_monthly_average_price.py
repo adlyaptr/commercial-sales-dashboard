@@ -346,12 +346,12 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertAlmostEqual(row["rupiah"], expected_rupiah)
         self.assertAlmostEqual(row["total_usd"], expected_rupiah / 17895)
 
-    def test_inactive_sheet_price_suppresses_monthly_calculated_volumes_and_totals(self):
+    def test_july_bi_surcharge_uses_active_spreadsheet_price(self):
         with patch.object(
             main,
             "db",
             return_value=MemoryMonthlyAveragePrice(
-                price_active=False,
+                price_active=True,
                 price_usd=15.5,
                 customer_key="bisurcharge",
                 customer_name="BI Surcharge",
@@ -362,17 +362,14 @@ class MonthlyAveragePriceTests(unittest.TestCase):
 
         row = report["rows"][0]
         self.assertEqual(row["actual_sm3"], 28095)
-        self.assertEqual(row["sm3"], 0)
-        self.assertEqual(row["volume_mmbtu"], 0)
-        self.assertEqual(row["total_usd"], 0)
-        self.assertEqual(row["rupiah"], 0)
-        self.assertFalse(row["price_active"])
-        self.assertFalse(row["has_valid_price"])
-        self.assertEqual(row["price_usd_per_mmbtu"], 0)
-        self.assertEqual(report["totals"]["sm3"], 0)
-        self.assertEqual(report["totals"]["rupiah"], 0)
+        self.assertEqual(row["sm3"], 28095)
+        self.assertEqual(row["price_usd_per_mmbtu"], 15.5)
+        self.assertTrue(row["price_active"])
+        self.assertTrue(row["has_valid_price"])
+        self.assertAlmostEqual(row["volume_mmbtu"], 28095 / 29.3078)
+        self.assertAlmostEqual(row["total_usd"], (28095 / 29.3078) * 15.5)
 
-    def test_sheet_sync_marks_bi_surcharge_inactive_when_july_cell_is_off(self):
+    def test_sheet_sync_imports_july_bi_surcharge_price_as_active(self):
         database = MemoryAveragePriceSheetSync()
         database.customers.append({
             "customer_key": "bisurcharge",
@@ -396,28 +393,55 @@ class MonthlyAveragePriceTests(unittest.TestCase):
                 FakeRequest({"month": "2026-07", "customer_mappings": []})
             ))
 
+        self.assertEqual(result["deactivated"], 0)
+        parameters = database.price_inputs[0][1]
+        self.assertEqual(parameters[1], "bisurcharge")
+        self.assertEqual(parameters[3:6], ("USD_MMBTU", 15.5, 0))
+        self.assertTrue(parameters[7])
+
+    def test_sheet_sync_turns_bi_surcharge_off_from_september(self):
+        database = MemoryAveragePriceSheetSync()
+        database.customers.append({
+            "customer_key": "bisurcharge",
+            "customer_name": "BI Surcharge",
+            "operator": "SETU",
+        })
+        imported = {
+            "source": "Harga Customer 2026",
+            "entries": [{
+                "customer": "BI Surcharge",
+                "price_unit": "USD_MMBTU",
+                "price": 0,
+                "active": False,
+            }],
+        }
+        with (
+            patch.object(main, "import_monthly_average_price_sheet", return_value=imported),
+            patch.object(main, "db", return_value=database),
+        ):
+            result = asyncio.run(main.sync_monthly_average_price_sheet(
+                FakeRequest({"month": "2026-09", "customer_mappings": []})
+            ))
+
         self.assertEqual(result["deactivated"], 1)
         parameters = database.price_inputs[0][1]
         self.assertEqual(parameters[1], "bisurcharge")
         self.assertEqual(parameters[3:6], ("USD_MMBTU", 0, 0))
         self.assertFalse(parameters[7])
 
-    def test_july_bi_surcharge_sheet_import_is_forced_off(self):
-        entry = {
-            "customer": "BI Surcharge",
-            "price_unit": "USD_MMBTU",
-            "price": 15.5,
-            "active": True,
-        }
+    def test_bi_surcharge_sheet_price_is_active_through_august_and_off_in_september(self):
+        values = [
+            ["No", "Nama Customer", "USD / Rp", "Jul", "Agu", "Sep"],
+            ["1", "BI Surcharge", "$ 15,50", "$ 15,50", "$ 15,50", "off"],
+        ]
 
-        self.assertEqual(
-            main.apply_monthly_average_price_overrides([entry], "2026-07"),
-            [{**entry, "price": 0.0, "active": False}],
-        )
-        self.assertEqual(
-            main.apply_monthly_average_price_overrides([entry], "2026-08"),
-            [entry],
-        )
+        july = main.parse_average_price_sheet_values(values, "2026-07")[0]
+        august = main.parse_average_price_sheet_values(values, "2026-08")[0]
+        september = main.parse_average_price_sheet_values(values, "2026-09")[0]
+
+        self.assertEqual((july["price"], july["active"]), (15.5, True))
+        self.assertEqual((august["price"], august["active"]), (15.5, True))
+        self.assertEqual((september["price"], september["active"]), (0.0, False))
 
     def test_kgm_rrs_uses_normal_rupiah_per_sm3_calculation_even_with_old_multiplier(self):
         with patch.object(
@@ -808,7 +832,7 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         )
         self.assertTrue(price_insert[7])
 
-    def test_july_bi_surcharge_cannot_be_reactivated_by_manual_save(self):
+    def test_july_bi_surcharge_can_be_saved_with_active_spreadsheet_price(self):
         database = MemoryMonthlyAveragePriceWrites()
         payload = {
             "month": "2026-07",
@@ -829,8 +853,8 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             parameters for statement, parameters in database.statements
             if statement.startswith("INSERT INTO monthly_average_price_inputs")
         )
-        self.assertEqual(price_insert[4], 0)
-        self.assertFalse(price_insert[7])
+        self.assertEqual(price_insert[4], 15.5)
+        self.assertTrue(price_insert[7])
 
     def test_saves_rupiah_multiplier_only_for_winglok_ebm(self):
         database = MemoryMonthlyAveragePriceWrites()

@@ -88,6 +88,7 @@ class MemoryAveragePriceRange:
             raise AssertionError(f"Unexpected SQL in Average Price range test: {statement}")
         expected_dates = {
             "2026-07": ("2026-07-01", "2026-07-31"),
+            "2026-09": ("2026-09-01", "2026-09-30"),
             "2026-10": ("2026-10-01", "2026-10-31"),
         }[self.month]
         if parameters != expected_dates:
@@ -185,19 +186,20 @@ class MonthlyRangeTests(unittest.TestCase):
         self.assertAlmostEqual(row["rupiah"], row["total_usd"] * 8225)
         self.assertAlmostEqual(result["totals"]["rupiah"], row["rupiah"])
 
-    def test_inactive_sheet_price_suppresses_date_range_calculated_values(self):
+    def test_september_bi_surcharge_off_from_sheet_suppresses_range_calculations(self):
         with patch.object(
             main,
             "db",
             return_value=MemoryAveragePriceRange(
                 customer_key="bisurcharge",
-                month="2026-07",
+                price_active=False,
+                month="2026-09",
             ),
         ):
             result = main.monthly_average_price_range(
                 FakeRequest(),
-                "2026-07-01",
-                "2026-07-31",
+                "2026-09-01",
+                "2026-09-30",
             )
 
         row = result["rows"][0]
