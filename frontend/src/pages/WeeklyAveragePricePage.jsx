@@ -1435,8 +1435,10 @@ export default function WeeklyAveragePricePage() {
                                 <td>{index + 1}</td>
                                 <td>{operator}</td>
                                 <td>{canEdit
-                                    ? <input aria-label={`Faktor konversi ${operator}`} type="number" min="0" step="any" inputMode="decimal" value={report.operator_factors[operator] || ''} onChange={(event) => updateFactor(operator, event.target.value)} />
-                                    : report.operator_factors[operator] || '—'}</td>
+                                    ? <input aria-label={`Faktor konversi ${operator}`} type="number" min="0" step="any" inputMode="decimal" value={report.operator_factors[operator] ? Number(report.operator_factors[operator]).toFixed(2) : ''} onChange={(event) => updateFactor(operator, event.target.value)} />
+                                    : report.operator_factors[operator]
+                                        ? formatDecimal(report.operator_factors[operator], 2)
+                                        : '—'}</td>
                                 <td>MMBTU = Sm³ ÷ faktor</td>
                             </tr>)}</tbody>
                         </table>
