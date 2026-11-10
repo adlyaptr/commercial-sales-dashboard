@@ -32,6 +32,44 @@ def operator_sheet_workbook():
 
 
 class OperatorSheetImportTests(unittest.TestCase):
+    def test_selects_populated_duplicate_actual_column_and_skips_total_labels(self):
+        workbook = operator_sheet_workbook()
+        sheet = workbook["BLORA"]
+        sheet.cell(12, 10, "FOB SETU - KPU")
+        sheet.cell(13, 11, "ACTUAL")
+        sheet.cell(12, 12, "FOB SETU - KPU")
+        sheet.cell(13, 13, "ACTUAL")
+        sheet.cell(12, 14, "TOTAL NON FOB")
+        sheet.cell(13, 15, "ACTUAL")
+        sheet.cell(14, 11, 0)
+        sheet.cell(14, 13, 123.45)
+        sheet.cell(14, 15, 999)
+
+        try:
+            records = main.operator_sheet_daily_sales_records(workbook)
+        finally:
+            workbook.close()
+
+        kpu_records = [record for record in records if record["customer"] == "FOB SETU - KPU"]
+        self.assertEqual([record["actual"] for record in kpu_records], [123.45, 0])
+        self.assertNotIn("TOTAL NON FOB", {record["customer"] for record in records})
+
+    def test_rejects_multiple_populated_duplicate_actual_columns(self):
+        workbook = operator_sheet_workbook()
+        sheet = workbook["BLORA"]
+        sheet.cell(12, 10, "FOB SETU - KPU")
+        sheet.cell(13, 11, "ACTUAL")
+        sheet.cell(12, 12, "FOB SETU - KPU")
+        sheet.cell(13, 13, "ACTUAL")
+        sheet.cell(14, 11, 100)
+        sheet.cell(14, 13, 200)
+
+        try:
+            with self.assertRaisesRegex(ValueError, "lebih dari satu kolom Actual"):
+                main.operator_sheet_daily_sales_records(workbook)
+        finally:
+            workbook.close()
+
     def test_extracts_actuals_from_month_suffixed_and_ms_lain_sheets(self):
         workbook = operator_sheet_workbook()
         workbook["BLORA"].title = "KHT JUNI26"

@@ -979,7 +979,10 @@ def _cell_text(value) -> str:
 
 
 def _is_total_label(value) -> bool:
-    return norm(value) in {"total", "grandtotal", "subtotal", "subtot", "subtotals"}
+    label = norm(value)
+    return label in {"total", "grandtotal", "subtotal", "subtot", "subtotals"} or label.startswith(
+        ("total", "grandtotal", "subtotal", "subtot")
+    )
 
 
 def operator_for_daily_sales_sheet(sheet_title: str):
@@ -1184,6 +1187,43 @@ def _parse_import_actual(value, customer, report_date):
     return _parse_import_number(value, customer, report_date, "Actual")
 
 
+def _deduplicate_operator_actual_columns(ws, header_row, date_column, actual_columns):
+    grouped_columns = {}
+    for customer, column in actual_columns:
+        grouped_columns.setdefault(norm(customer), []).append((customer, column))
+
+    selected_columns = []
+    for columns in grouped_columns.values():
+        if len(columns) == 1:
+            selected_columns.extend(columns)
+            continue
+
+        populated_columns = []
+        for customer, column in columns:
+            for row_number in range(header_row + 2, ws.max_row + 1):
+                report_date = parse_date(ws.cell(row_number, date_column).value)
+                if not report_date:
+                    continue
+                actual = _parse_import_actual(
+                    ws.cell(row_number, column).value,
+                    customer,
+                    report_date,
+                )
+                if actual != 0:
+                    populated_columns.append((customer, column))
+                    break
+
+        if len(populated_columns) > 1:
+            customer = columns[0][0]
+            raise ValueError(
+                f"Customer {customer} memiliki lebih dari satu kolom Actual berisi nilai. "
+                "Periksa file sebelum mengimpor."
+            )
+        selected_columns.extend(populated_columns or columns[:1])
+
+    return selected_columns
+
+
 def operator_sheet_daily_sales_records(wb):
     records = []
     seen = set()
@@ -1197,6 +1237,12 @@ def operator_sheet_daily_sales_records(wb):
             continue
         detected_layout = True
         header_row, date_column, actual_columns, so_columns = layout
+        actual_columns = _deduplicate_operator_actual_columns(
+            ws,
+            header_row,
+            date_column,
+            actual_columns,
+        )
         for row_number in range(header_row + 2, ws.max_row + 1):
             report_date = parse_date(ws.cell(row_number, date_column).value)
             if not report_date:
