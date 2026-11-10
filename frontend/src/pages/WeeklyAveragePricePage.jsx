@@ -940,14 +940,19 @@ export default function WeeklyAveragePricePage() {
         })
         .map(({ row }) => row);
     const sheetCustomerKeySet = new Set(sheetCustomerKeys.map(normalizeCustomerOrder));
+    const workbookCustomerKeySet = new Set(
+        (report.workbook_customer_keys || []).map(normalizeCustomerOrder),
+    );
     const inSheetUnmappedCustomers = calculatedRows.filter((row) =>
         row.workbook_group.index >= workbookCustomerGroups.length
         && sheetCustomerKeySet.has(normalizeCustomerOrder(row.customer_key)),
     );
-    const calculationRows = calculatedRows.filter((row) =>
-        row.workbook_group.index < workbookCustomerGroups.length
-        || sheetCustomerKeySet.has(normalizeCustomerOrder(row.customer_key)),
-    );
+    const calculationRows = calculatedRows.filter((row) => (
+        report.source === 'workbook'
+            ? workbookCustomerKeySet.has(normalizeCustomerOrder(row.customer_key))
+            : row.workbook_group.index < workbookCustomerGroups.length
+                || sheetCustomerKeySet.has(normalizeCustomerOrder(row.customer_key))
+    ));
     const sourceDisplayRows = calculationRows.filter((row) =>
         row.sm3 > 0
         || Number(row.price_usd_per_mmbtu) > 0
