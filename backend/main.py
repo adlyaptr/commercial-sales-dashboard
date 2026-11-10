@@ -982,6 +982,32 @@ def _is_total_label(value) -> bool:
     return norm(value) in {"total", "grandtotal", "subtotal", "subtot", "subtotals"}
 
 
+def operator_for_daily_sales_sheet(sheet_title: str):
+    title = norm(sheet_title)
+    if title == "mslain":
+        return "WUNUT"
+
+    month_names = {
+        "jan", "januari", "feb", "februari", "mar", "maret", "apr", "april",
+        "mei", "may", "jun", "juni", "jul", "juli", "agu", "agustus", "sep",
+        "september", "okt", "oktober", "nov", "november", "des", "desember",
+    }
+    for operator in OPERATORS:
+        operator_key = norm(operator)
+        if title == operator_key:
+            return operator
+        if title.startswith(operator_key):
+            suffix = re.sub(r"\d{2,4}$", "", title[len(operator_key):])
+            if suffix in month_names:
+                return operator
+
+    if title.startswith("mslain"):
+        suffix = re.sub(r"\d{2,4}$", "", title[len("mslain"):])
+        if suffix in month_names:
+            return "WUNUT"
+    return None
+
+
 def _operator_mappings_from_sheets(wb):
     """Read customer->operator mappings from worksheets named after operators."""
     mappings = {}
@@ -989,8 +1015,8 @@ def _operator_mappings_from_sheets(wb):
                 "salesorder", "actual", "target", "diff", "selisih", "total", "subtotal", "subtot",
                 "persentase", "percentage", "operator", "no", "nomor", "day", "hari"}
     for ws in wb.worksheets:
-        op = ws.title.strip().upper()
-        if op not in OPERATORS:
+        op = operator_for_daily_sales_sheet(ws.title)
+        if op is None:
             continue
         header_row = None
         customer_col = None
@@ -1163,8 +1189,8 @@ def operator_sheet_daily_sales_records(wb):
     seen = set()
     detected_layout = False
     for ws in wb.worksheets:
-        operator = ws.title.strip().upper()
-        if operator not in OPERATORS:
+        operator = operator_for_daily_sales_sheet(ws.title)
+        if operator is None:
             continue
         layout = operator_sheet_daily_sales_columns(ws)
         if layout is None:
@@ -2390,7 +2416,7 @@ async def preview_import(request: Request, file: UploadFile = File(...)):
     if len(content) > 30 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Ukuran file maksimal 30 MB.")
 
-    workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
+    workbook = load_workbook(BytesIO(content), data_only=True, read_only=False)
     customers_by_key = {}
     operator_conflicts = []
     import_format = "vertical"

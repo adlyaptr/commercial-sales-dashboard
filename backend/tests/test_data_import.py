@@ -32,6 +32,32 @@ def operator_sheet_workbook():
 
 
 class OperatorSheetImportTests(unittest.TestCase):
+    def test_extracts_actuals_from_month_suffixed_and_ms_lain_sheets(self):
+        workbook = operator_sheet_workbook()
+        workbook["BLORA"].title = "KHT JUNI26"
+        other_sheet = workbook.create_sheet("MS LAIN JUL26")
+        other_sheet.cell(4, 2, "DATE")
+        other_sheet.cell(4, 7, "PENTAWIRA (KSO REN)")
+        other_sheet.cell(5, 8, "ACTUAL")
+        other_sheet.cell(6, 2, datetime(2026, 7, 1))
+        other_sheet.cell(6, 8, 123.45)
+
+        try:
+            records = main.operator_sheet_daily_sales_records(workbook)
+        finally:
+            workbook.close()
+
+        self.assertEqual(len(records), 3)
+        self.assertEqual(records[0]["operator"], "KHT")
+        self.assertEqual(records[0]["customer"], "HSK (KSO GAS)")
+        self.assertEqual(records[2], {
+            "report_date": "2026-07-01",
+            "customer": "PENTAWIRA (KSO REN)",
+            "operator": "WUNUT",
+            "actual": 123.45,
+            "so": None,
+        })
+
     def test_extracts_actuals_and_treats_blank_as_zero(self):
         workbook = operator_sheet_workbook()
         try:
@@ -159,11 +185,13 @@ class ImportPreviewTests(unittest.TestCase):
         with (
             patch.object(main, "require_admin"),
             patch.object(main, "db", return_value=database),
+            patch.object(main, "load_workbook", wraps=main.load_workbook) as load_workbook,
         ):
             preview = asyncio.run(
                 main.preview_import(PreviewRequest(), PreviewUpload(content.getvalue()))
             )
 
+        self.assertFalse(load_workbook.call_args.kwargs["read_only"])
         self.assertEqual(preview["import_format"], "operator sheets")
         self.assertEqual(preview["rows_read"], 2)
         self.assertEqual(preview["start_date"], "2026-02-23")
