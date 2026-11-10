@@ -35,6 +35,8 @@ Total Actual pada Beranda hanya memakai Actual dari data harian yang sudah diimp
 
 Pada halaman Harian tersedia tombol **Export Excel Bulanan**. File mengikuti workbook template di `backend/templates/monthly_sales_template.xlsx`, termasuk seluruh sheet dan header; data penjualan diisi untuk bulan pada tanggal laporan yang dipilih.
 
+Impor Harian mendukung workbook dengan sheet `Daily Sales` horizontal maupun workbook dengan tabel harian pada sheet bernama operator (`SETU`, `KHT`, `BLORA`, `WUNUT`). Pratinjau impor menampilkan format dan rentang tanggal yang terdeteksi serta memberi peringatan jika operator pada sheet berbeda dari master customer; penempatan data mengikuti master sistem. Pada format sheet operator, sel Actual kosong untuk tanggal yang tercantum diperlakukan sebagai 0 agar nilai impor sebelumnya tidak tertinggal. Baris customer/tanggal duplikat dan nilai Actual non-numerik ditolak sebelum disimpan.
+
 ## Budget Monitoring
 
 Halaman Budget (`/budget`) membaca target bulanan dari sheet dengan GID `737662524` dan realisasi kategori dari tab `Summary Finance` pada spreadsheet yang sama dengan halaman Issue. Service account read-only yang digunakan untuk Issue harus memiliki izin Viewer pada spreadsheet. Jika service account belum dikonfigurasi, halaman mencoba membaca sheet yang dipublikasikan melalui Google Sheets. Data dimuat otomatis saat halaman dibuka dan disegarkan setiap lima menit.

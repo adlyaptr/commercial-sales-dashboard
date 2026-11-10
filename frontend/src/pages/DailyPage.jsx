@@ -40,6 +40,7 @@ export default function DailyPage() {
     const [customerMappings, setCustomerMappings] = useState([]);
     const [fobForm, setFobForm] = useState({ date: selectedDate ?? '', customer: '', operator: 'SETU', so: '', actual: '' });
     const [monthlySummary, setMonthlySummary] = useState(null);
+    const [importPreview, setImportPreview] = useState(null);
     const [summaryError, setSummaryError] = useState('');
     const [summaryLoading, setSummaryLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
@@ -176,6 +177,7 @@ export default function DailyPage() {
     async function selectFile(selectedFile) {
         setFile(selectedFile);
         setCustomerMappings([]);
+        setImportPreview(null);
         setNotice(null);
         if (!selectedFile) return;
 
@@ -184,11 +186,13 @@ export default function DailyPage() {
         body.append('file', selectedFile);
         try {
             const preview = await api('/api/import/preview', { method: 'POST', body });
+            setImportPreview(preview);
             setCustomerMappings(preview.customers.map((item) => ({
                 ...item,
                 requiresMapping: !item.operator,
             })));
         } catch (error) {
+            setImportPreview(null);
             setNotice({ bad: true, text: error.message });
         } finally {
             setPreviewBusy(false);
@@ -228,6 +232,7 @@ export default function DailyPage() {
             setNotice({ bad: false, text: `${result.message} Baris terbaca: ${result.rows_read}; baris disimpan/diperbarui: ${result.rows_saved}.` });
             setFile(null);
             setCustomerMappings([]);
+            setImportPreview(null);
             setFileInputKey((key) => key + 1);
             await refreshDashboard();
         } catch (error) {
@@ -435,6 +440,18 @@ export default function DailyPage() {
                     <b>Pemetaan Customer</b>
                     <span>{autoMappedCount} otomatis · {manualMappedCount} manual · {unmappedCount} belum dipetakan</span>
                 </div>
+                {importPreview && <p className="mapping-complete">
+                    Format {importPreview.import_format}; {importPreview.rows_read} baris data
+                    {importPreview.start_date && importPreview.end_date
+                        ? ` · ${importPreview.start_date} s.d. ${importPreview.end_date}`
+                        : ''}
+                </p>}
+                {importPreview?.operator_conflicts?.length > 0 && <p className="mapping-complete">
+                    Peringatan: operator di sheet berbeda dari master sistem untuk{' '}
+                    {importPreview.operator_conflicts.map((item) =>
+                        `${item.customer} (${item.source_operator} → ${item.system_operator})`,
+                    ).join(', ')}. Impor mengikuti operator master sistem.
+                </p>}
                 {unmappedCount > 0 ? (
                     <>
                         <p className="mapping-complete">Pilih operator atau tandai OFF untuk customer yang tidak aktif. Pemetaan akan disimpan untuk impor berikutnya.</p>

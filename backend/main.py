@@ -1067,6 +1067,155 @@ def daily_sales_customer_columns(ws):
     return actual_columns, sub_values
 
 
+def operator_sheet_daily_sales_columns(ws):
+    header_row = None
+    date_column = None
+    for row in range(1, min(ws.max_row, 40) + 1):
+        for column in range(1, min(ws.max_column, 40) + 1):
+            if norm(ws.cell(row, column).value) in {"date", "tanggal", "tgl"}:
+                header_row, date_column = row, column
+                break
+        if header_row is not None:
+            break
+    if header_row is None or header_row >= ws.max_row:
+        return None
+
+    sub_values = [
+        norm(ws.cell(header_row + 1, column).value)
+        for column in range(1, ws.max_column + 1)
+    ]
+    actual_columns = []
+    so_columns = {}
+    for column, value in enumerate(sub_values, start=1):
+        if value not in {"actual", "realisasi", "penjualan", "actualsales"} and value not in {
+            "so", "salesorder", "target", "targetso", "volumeso", "qtyso",
+        }:
+            continue
+        customer = ""
+        for heading_column in range(column, 0, -1):
+            customer = _cell_text(ws.cell(header_row, heading_column).value)
+            if customer:
+                break
+        if not customer or _is_total_label(customer):
+            continue
+        if value in {"actual", "realisasi", "penjualan", "actualsales"}:
+            actual_columns.append((customer, column))
+        else:
+            so_columns[norm(customer)] = column
+    if not actual_columns:
+        return None
+    return header_row, date_column, actual_columns, so_columns
+
+
+def _parse_import_number(value, customer, report_date, field_name):
+    if value is None or isinstance(value, str) and not value.strip():
+        return 0.0
+    if isinstance(value, bool):
+        raise ValueError(
+            f"Nilai {field_name} customer {customer} pada {report_date} bukan angka."
+        )
+    if isinstance(value, (int, float)):
+        parsed = float(value)
+    else:
+        text = str(value).strip().replace(" ", "")
+        if text in {"-", "—"}:
+            return 0.0
+        if not re.fullmatch(r"[+-]?\d[\d.,]*", text):
+            raise ValueError(
+                f"Nilai {field_name} customer {customer} pada {report_date} bukan angka: {value}"
+            )
+        if "," in text and "." in text:
+            normalized = (
+                text.replace(".", "").replace(",", ".")
+                if text.rfind(",") > text.rfind(".")
+                else text.replace(",", "")
+            )
+        elif "," in text:
+            parts = text.split(",")
+            normalized = (
+                "".join(parts)
+                if len(parts) > 1 and len(parts[-1]) == 3
+                else ".".join(parts)
+            )
+        elif text.count(".") > 1:
+            normalized = text.replace(".", "")
+        else:
+            normalized = text
+        try:
+            parsed = float(normalized)
+        except ValueError as exc:
+            raise ValueError(
+                f"Nilai {field_name} customer {customer} pada {report_date} bukan angka: {value}"
+            ) from exc
+    if not math.isfinite(parsed):
+        raise ValueError(
+            f"Nilai {field_name} customer {customer} pada {report_date} tidak valid."
+        )
+    return parsed
+
+
+def _parse_import_actual(value, customer, report_date):
+    return _parse_import_number(value, customer, report_date, "Actual")
+
+
+def operator_sheet_daily_sales_records(wb):
+    records = []
+    seen = set()
+    detected_layout = False
+    for ws in wb.worksheets:
+        operator = ws.title.strip().upper()
+        if operator not in OPERATORS:
+            continue
+        layout = operator_sheet_daily_sales_columns(ws)
+        if layout is None:
+            continue
+        detected_layout = True
+        header_row, date_column, actual_columns, so_columns = layout
+        for row_number in range(header_row + 2, ws.max_row + 1):
+            report_date = parse_date(ws.cell(row_number, date_column).value)
+            if not report_date:
+                continue
+            for customer, actual_column in actual_columns:
+                key = norm(customer)
+                record_key = (report_date, key)
+                if record_key in seen:
+                    raise ValueError(
+                        f"Customer {customer} pada {report_date} muncul lebih dari satu kali "
+                        "di sheet operator. Periksa file sebelum mengimpor."
+                    )
+                seen.add(record_key)
+                # This format is a complete daily matrix, so blank cells clear stale values.
+                actual = _parse_import_actual(
+                    ws.cell(row_number, actual_column).value,
+                    customer,
+                    report_date,
+                )
+                so_column = so_columns.get(key)
+                so_value = (
+                    _parse_import_number(
+                        ws.cell(row_number, so_column).value,
+                        customer,
+                        report_date,
+                        "SO",
+                    )
+                    if so_column
+                    and ws.cell(row_number, so_column).value not in (None, "")
+                    else None
+                )
+                records.append({
+                    "report_date": report_date,
+                    "customer": customer,
+                    "operator": operator,
+                    "actual": actual,
+                    "so": so_value,
+                })
+    if detected_layout and not records:
+        raise ValueError(
+            "Tabel sheet operator ditemukan, tetapi tidak ada baris tanggal/Actual yang dapat diimpor."
+        )
+    return records
+
+
 def import_excel(path: Path, original_filename: str):
     # data_only=True is important: Daily Sales is formula-based, and Excel's saved
     # cached results are the actual reported figures we want to import.
@@ -1074,6 +1223,7 @@ def import_excel(path: Path, original_filename: str):
     now = datetime.now().isoformat(timespec="seconds")
     unmapped_customers = []
     mapping_saved = 0
+    imported_dates = set()
     wb = None
     try:
         wb = load_workbook(path, data_only=True, read_only=False)
@@ -1081,6 +1231,11 @@ def import_excel(path: Path, original_filename: str):
         with db() as con:
             # If the uploaded workbook contains operator sheets, use them as a mapping source.
             mapping_saved = _mapping_from_operator_sheets(wb, con)
+            operator_records = (
+                operator_sheet_daily_sales_records(wb)
+                if daily is None
+                else []
+            )
             if daily is not None:
                 ws = daily
                 # Horizontal layout used by the October 2026 master template:
@@ -1143,17 +1298,53 @@ def import_excel(path: Path, original_filename: str):
                         if tc:
                             candidate_so = ws.cell(r, tc).value
                             if candidate_so is not None and str(candidate_so).strip() != "":
-                                so_value = parse_number(candidate_so)
+                                so_value = _parse_import_number(
+                                    candidate_so,
+                                    customer,
+                                    report_date,
+                                    "SO",
+                                )
                         # SO is sourced from the template if available; if this upload is
                         # a later actual-only file and template SO is absent, preserve DB SO.
                         if so_value is None:
                             so_value = float(existing["so"]) if existing else 0.0
-                        actual = parse_number(actual_value)
+                        actual = _parse_import_actual(actual_value, customer, report_date)
                         con.execute("INSERT INTO sales(report_date,customer_key,so,actual,source_file,imported_at) "
                                     "VALUES(%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
                                     "so=VALUES(so),actual=VALUES(actual),source_file=VALUES(source_file),imported_at=VALUES(imported_at)",
                                     (report_date, key, so_value, actual, original_filename, now))
+                        imported_dates.add(report_date)
                         rows_saved += 1
+            elif operator_records:
+                for record in operator_records:
+                    customer = record["customer"]
+                    report_date = record["report_date"]
+                    key = norm(customer)
+                    rows_read += 1
+                    op = find_operator(con, customer) or record["operator"]
+                    if op not in CUSTOMER_ASSIGNMENTS:
+                        unmapped_customers.append(customer)
+                        continue
+                    con.execute(
+                        "INSERT IGNORE INTO customers(customer_key,customer_name,operator) "
+                        "VALUES(%s,%s,%s)",
+                        (key, customer, op),
+                    )
+                    existing = con.execute(
+                        "SELECT so FROM sales WHERE report_date=%s AND customer_key=%s",
+                        (report_date, key),
+                    ).fetchone()
+                    so_value = record["so"]
+                    if so_value is None:
+                        so_value = float(existing["so"]) if existing else 0.0
+                    con.execute(
+                        "INSERT INTO sales(report_date,customer_key,so,actual,source_file,imported_at) "
+                        "VALUES(%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                        "so=VALUES(so),actual=VALUES(actual),source_file=VALUES(source_file),imported_at=VALUES(imported_at)",
+                        (report_date, key, so_value, record["actual"], original_filename, now),
+                    )
+                    imported_dates.add(report_date)
+                    rows_saved += 1
             else:
                 # Retain compatibility with conventional vertical source tables.
                 for ws in wb.worksheets:
@@ -1181,12 +1372,22 @@ def import_excel(path: Path, original_filename: str):
                         con.execute("INSERT INTO customers(customer_key,customer_name,operator) VALUES(%s,%s,%s) "
                                     "ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),operator=VALUES(operator)",
                                     (key, customer, op))
-                        so = parse_number(val("so"))
-                        actual = parse_number(val("actual"))
+                        so = _parse_import_number(
+                            val("so"),
+                            customer,
+                            report_date,
+                            "SO",
+                        )
+                        actual = _parse_import_actual(
+                            val("actual"),
+                            customer,
+                            report_date,
+                        )
                         con.execute("INSERT INTO sales(report_date,customer_key,so,actual,source_file,imported_at) "
                                     "VALUES(%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
                                     "so=VALUES(so),actual=VALUES(actual),source_file=VALUES(source_file),imported_at=VALUES(imported_at)",
                                     (report_date, key, so, actual, original_filename, now))
+                        imported_dates.add(report_date)
                         rows_saved += 1
 
             if unmapped_customers:
@@ -1205,9 +1406,25 @@ def import_excel(path: Path, original_filename: str):
                             (original_filename, now, 0, mapping_saved, "BERHASIL", msg))
                 return {"rows_read": 0, "rows_saved": mapping_saved, "message": msg, "mapping_only": True}
             if rows_saved == 0:
-                msg = "Tidak ada data yang berhasil diimpor. Pastikan sheet Daily Sales memiliki tanggal di kolom B, nama customer di baris 3, dan ACTUAL di baris 4; pastikan mapping operator sudah diimpor."
+                msg = "Tidak ada data yang berhasil diimpor. Pastikan file memiliki sheet Daily Sales, sheet operator dengan tabel tanggal/Actual, atau tabel Excel berformat vertikal."
                 raise ValueError(msg)
-            msg = f"Impor selesai: {rows_saved} baris diperbarui." + (f" Mapping operator terbaca {mapping_saved} baris." if mapping_saved else "")
+            import_format = (
+                "Daily Sales"
+                if daily is not None
+                else "sheet operator"
+                if operator_records
+                else "tabel vertikal"
+            )
+            date_range = (
+                f" Periode {min(imported_dates)} s.d. {max(imported_dates)}."
+                if imported_dates
+                else ""
+            )
+            msg = (
+                f"Impor selesai: {rows_saved} baris diperbarui dari {import_format}."
+                f"{date_range}"
+                + (f" Mapping operator terbaca {mapping_saved} baris." if mapping_saved else "")
+            )
             con.execute("INSERT INTO import_history(filename,imported_at,rows_read,rows_saved,status,message) VALUES(%s,%s,%s,%s,%s,%s)",
                         (original_filename, now, rows_read, rows_saved, "BERHASIL", msg))
         return {"rows_read": rows_read, "rows_saved": rows_saved, "message": msg}
@@ -2175,10 +2392,14 @@ async def preview_import(request: Request, file: UploadFile = File(...)):
 
     workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
     customers_by_key = {}
+    operator_conflicts = []
+    import_format = "vertical"
+    preview_records = []
     try:
         daily = next((ws for ws in workbook.worksheets if norm(ws.title) == "dailysales"), None)
         sheet_mappings = _operator_mappings_from_sheets(workbook)
         if daily is not None:
+            import_format = "Daily Sales"
             actual_columns, _ = daily_sales_customer_columns(daily)
             for customer, _ in actual_columns:
                 key = norm(customer)
@@ -2186,28 +2407,77 @@ async def preview_import(request: Request, file: UploadFile = File(...)):
                 customers_by_key.setdefault(key, {
                     "customer": customer,
                     "operator": mapped["operator"] if mapped else "",
+                    "source_operator": mapped["operator"] if mapped else "",
                 })
+            for row in range(5, daily.max_row + 1):
+                report_date = parse_date(daily.cell(row, 2).value)
+                if report_date:
+                    for customer, column in actual_columns:
+                        value = daily.cell(row, column).value
+                        if value is not None and not (
+                            isinstance(value, str) and not value.strip()
+                        ):
+                            _parse_import_actual(
+                                value,
+                                customer,
+                                report_date,
+                            )
+                            preview_records.append(report_date)
         else:
-            for ws in workbook.worksheets:
-                header_row, columns = detect_header(ws)
-                if not header_row:
-                    continue
-                for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
-                    customer_index = columns.get("customer")
-                    customer = _cell_text(row[customer_index - 1]) if customer_index and customer_index <= len(row) else ""
-                    if not customer or _is_total_label(customer):
+            operator_records = operator_sheet_daily_sales_records(workbook)
+            if operator_records:
+                import_format = "operator sheets"
+                for record in operator_records:
+                    key = norm(record["customer"])
+                    customer = customers_by_key.setdefault(key, {
+                        "customer": record["customer"],
+                        "operator": record["operator"],
+                        "source_operator": record["operator"],
+                    })
+                    if customer["source_operator"] != record["operator"]:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"Customer {record['customer']} muncul di lebih dari satu "
+                                "sheet operator. Periksa file sebelum mengimpor."
+                            ),
+                        )
+                    preview_records.append(record["report_date"])
+            else:
+                for ws in workbook.worksheets:
+                    header_row, columns = detect_header(ws)
+                    if not header_row:
                         continue
-                    operator_index = columns.get("operator")
-                    operator = str(row[operator_index - 1] or "").strip().upper() if operator_index and operator_index <= len(row) else ""
-                    if operator not in CUSTOMER_ASSIGNMENTS:
-                        operator = ""
-                    key = norm(customer)
-                    sheet_mapping = sheet_mappings.get(key)
-                    if not operator and sheet_mapping:
-                        operator = sheet_mapping["operator"]
-                    customers_by_key.setdefault(key, {"customer": customer, "operator": operator})
-                    if operator:
-                        customers_by_key[key]["operator"] = operator
+                    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+                        customer_index = columns.get("customer")
+                        customer = _cell_text(row[customer_index - 1]) if customer_index and customer_index <= len(row) else ""
+                        if not customer or _is_total_label(customer):
+                            continue
+                        operator_index = columns.get("operator")
+                        operator = str(row[operator_index - 1] or "").strip().upper() if operator_index and operator_index <= len(row) else ""
+                        if operator not in CUSTOMER_ASSIGNMENTS:
+                            operator = ""
+                        key = norm(customer)
+                        sheet_mapping = sheet_mappings.get(key)
+                        if not operator and sheet_mapping:
+                            operator = sheet_mapping["operator"]
+                        customers_by_key.setdefault(key, {"customer": customer, "operator": operator})
+                        if operator:
+                            customers_by_key[key]["operator"] = operator
+                        date_index = columns.get("date")
+                        if date_index and date_index <= len(row):
+                            parsed_date = parse_date(row[date_index - 1])
+                            if parsed_date:
+                                actual_index = columns.get("actual")
+                                if actual_index and actual_index <= len(row):
+                                    _parse_import_actual(
+                                        row[actual_index - 1],
+                                        customer,
+                                        parsed_date,
+                                    )
+                                preview_records.append(parsed_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
         workbook.close()
 
@@ -2218,17 +2488,32 @@ async def preview_import(request: Request, file: UploadFile = File(...)):
     placeholders = ",".join(["%s"] * len(keys))
     with db() as con:
         mappings = con.execute(
-            f"SELECT customer_key,operator FROM customers WHERE customer_key IN ({placeholders})",
+            f"SELECT customer_key,customer_name,operator FROM customers WHERE customer_key IN ({placeholders})",
             tuple(keys),
         ).fetchall()
     for mapping in mappings:
         customer = customers_by_key[mapping["customer_key"]]
-        if not customer["operator"]:
-            customer["operator"] = mapping["operator"]
+        customer["operator"] = mapping["operator"]
+        source_operator = customer.get("source_operator")
+        if source_operator and source_operator != mapping["operator"]:
+            operator_conflicts.append({
+                "customer": customer["customer"],
+                "source_operator": source_operator,
+                "system_operator": mapping["operator"],
+            })
 
     customers = list(customers_by_key.values())
     mapped_count = sum(bool(customer["operator"]) for customer in customers)
-    return {"filename": filename, "customers": customers, "mapped_count": mapped_count}
+    return {
+        "filename": filename,
+        "customers": customers,
+        "mapped_count": mapped_count,
+        "import_format": import_format,
+        "rows_read": len(preview_records),
+        "start_date": min(preview_records) if preview_records else None,
+        "end_date": max(preview_records) if preview_records else None,
+        "operator_conflicts": operator_conflicts,
+    }
 
 
 @app.post("/api/import")
