@@ -796,6 +796,25 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             ],
         )
 
+    def test_google_sheet_sync_cannot_replace_november_workbook_import(self):
+        database = MemoryAveragePriceSheetSync()
+        database.legacy_workbook = True
+        request = FakeRequest({"month": "2026-11", "customer_mappings": []})
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(
+                main,
+                "import_monthly_average_price_sheet",
+                side_effect=AssertionError("Workbook-sourced month must not sync."),
+            ),
+        ):
+            with self.assertRaises(main.HTTPException) as error:
+                asyncio.run(main.sync_monthly_average_price_sheet(request))
+
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertIn("menggunakan data workbook", error.exception.detail)
+        self.assertEqual(database.legacy_cleanup, [])
+
     def test_saves_monthly_factors_exchange_rate_and_customer_price(self):
         database = MemoryMonthlyAveragePriceWrites()
         payload = {

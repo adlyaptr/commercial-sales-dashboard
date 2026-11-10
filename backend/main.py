@@ -5366,6 +5366,22 @@ async def sync_monthly_average_price_sheet(request: Request):
         raise HTTPException(status_code=400, detail="Format bulan harus YYYY-MM.") from exc
     if month_start.strftime("%Y-%m") != month or not isinstance(mappings, list):
         raise HTTPException(status_code=400, detail="Bulan atau pemetaan customer tidak valid.")
+    if month == "2026-11":
+        with db() as con:
+            workbook_import = con.execute(
+                "SELECT month_start FROM monthly_average_price_workbook_imports "
+                "WHERE month_start=%s",
+                (month_start.isoformat(),),
+            ).fetchone()
+        if workbook_import:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "November 2026 menggunakan data workbook. Sinkronisasi harga "
+                    "Google tidak dapat mengganti data tersebut; impor workbook "
+                    "November untuk memperbaruinya."
+                ),
+            )
     next_month_start = (
         date(month_start.year + 1, 1, 1)
         if month_start.month == 12
