@@ -485,6 +485,7 @@ export default function WeeklyAveragePricePage() {
         if (
             !selectedMonth
             || !canEdit
+            || selectedMonth === '2026-11'
             || loading
             || customersLoading
             || report.source === 'workbook'
@@ -1257,7 +1258,7 @@ export default function WeeklyAveragePricePage() {
                     <div className="average-panel-heading">
                         <b>Input Average Price Customer</b>
                     </div>
-                    <div className="average-toolbar average-source-actions">
+                    {selectedMonth !== '2026-11' && <div className="average-toolbar average-source-actions">
                         <button
                             type="button"
                             onClick={() => syncPricesFromSheet([], true)}
@@ -1265,7 +1266,7 @@ export default function WeeklyAveragePricePage() {
                         >
                             {importingSheet ? 'Menyinkronkan...' : 'Sinkronkan Harga Google'}
                         </button>
-                    </div>
+                    </div>}
                 </div>
                 {pendingSheetCustomers.length > 0 && (
                     <section className="average-new-customer-panel" aria-label="Pemetaan customer baru dari spreadsheet">
