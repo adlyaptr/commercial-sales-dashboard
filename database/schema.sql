@@ -33,6 +33,20 @@ CREATE TABLE IF NOT EXISTS import_history (
     message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS email_daily_sales_imports (
+    message_hash CHAR(64) PRIMARY KEY,
+    message_id VARCHAR(512) NOT NULL,
+    subject VARCHAR(500) NOT NULL,
+    filename VARCHAR(255),
+    status VARCHAR(20) NOT NULL,
+    rows_read BIGINT NOT NULL DEFAULT 0,
+    rows_saved BIGINT NOT NULL DEFAULT 0,
+    message TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS weekly_average_price_inputs (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     week_start DATE NOT NULL,

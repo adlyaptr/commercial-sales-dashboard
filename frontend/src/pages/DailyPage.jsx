@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
 import OperatorTables from '../components/OperatorTables';
@@ -44,10 +44,12 @@ export default function DailyPage() {
     const [summaryError, setSummaryError] = useState('');
     const [summaryLoading, setSummaryLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
+    const [emailSyncStatus, setEmailSyncStatus] = useState(null);
     const [periodRows, setPeriodRows] = useState([]);
     const [periodSalesOrderUnmapped, setPeriodSalesOrderUnmapped] = useState([]);
     const [periodError, setPeriodError] = useState('');
     const [periodLoading, setPeriodLoading] = useState(false);
+    const refreshDashboardRef = useRef(refreshDashboard);
     const isDateRange = Boolean(rangeStartDate && rangeEndDate && rangeStartDate !== rangeEndDate);
     const unmappedCount = customerMappings.filter((item) => !item.operator).length;
     const autoMappedCount = customerMappings.filter((item) => !item.requiresMapping).length;
@@ -62,6 +64,57 @@ export default function DailyPage() {
             setFobForm((current) => ({ ...current, date: selectedDate }));
         }
     }, [selectedDate]);
+
+    useEffect(() => {
+        refreshDashboardRef.current = refreshDashboard;
+    }, [refreshDashboard]);
+
+    useEffect(() => {
+        if (!canEdit) return undefined;
+
+        let active = true;
+        setEmailSyncStatus({ loading: true, text: 'Memeriksa email Daily Report Planner...' });
+        api('/api/email/daily-sales/sync', {
+            method: 'POST',
+            signal: AbortSignal.timeout(90_000),
+        })
+            .then((result) => {
+                if (!active) return;
+                const importedDetails = (result.imported ?? [])
+                    .map((item) => `${item.start_date} s.d. ${item.end_date}: ${item.rows_saved} baris`)
+                    .join('; ');
+                const failedDetails = (result.failed ?? [])
+                    .map((item) => item.message)
+                    .join(' ');
+                setEmailSyncStatus({
+                    bad: (result.failed ?? []).length > 0,
+                    text: [result.message, importedDetails, failedDetails]
+                        .filter(Boolean)
+                        .join(' '),
+                });
+                if ((result.imported ?? []).length > 0) {
+                    refreshDashboardRef.current().catch((error) => {
+                        if (active) {
+                            setEmailSyncStatus((current) => ({
+                                ...current,
+                                bad: true,
+                                text: `${current?.text ?? ''} Data sudah diimpor, tetapi tampilan gagal diperbarui: ${error.message}`,
+                            }));
+                        }
+                    });
+                }
+            })
+            .catch((error) => {
+                if (active) {
+                    setEmailSyncStatus({
+                        bad: true,
+                        text: error.message || 'Sinkronisasi email Planner gagal.',
+                    });
+                }
+            });
+
+        return () => { active = false; };
+    }, [canEdit]);
 
     useEffect(() => {
         const reportDate = dashboard?.report_date;
@@ -370,6 +423,11 @@ export default function DailyPage() {
 
     return (
         <>
+            {emailSyncStatus && (
+                <div className={`notice${emailSyncStatus.bad ? ' bad' : ''}`} role="status">
+                    {emailSyncStatus.text}
+                </div>
+            )}
             {isDateRange && periodLoading && (
                 <div className="notice" role="status">Memuat data periode...</div>
             )}

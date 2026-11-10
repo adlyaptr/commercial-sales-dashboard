@@ -3,6 +3,7 @@ import calendar
 import hashlib
 import hmac
 import json
+import logging
 import math
 import os
 import re
@@ -43,9 +44,11 @@ from reportlab.pdfbase.ttfonts import TTFont
 try:
     from .db import initialize_database
     from .monthly_template_export import build_monthly_template_export
+    from .yahoo_imap import fetch_daily_sales_emails
 except ImportError:
     from db import initialize_database
     from monthly_template_export import build_monthly_template_export
+    from yahoo_imap import fetch_daily_sales_emails
     
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIST = BASE_DIR / "static" / "react"
@@ -61,6 +64,7 @@ pdfmetrics.registerFontFamily(
     italic="SphSans-Italic",
     boldItalic="SphSans-BoldItalic",
 )
+load_dotenv(BASE_DIR.parent / ".env")
 load_dotenv(BASE_DIR / ".env")
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -77,7 +81,9 @@ SESSION_COOKIE_SECURE = os.getenv(
     "SESSION_COOKIE_SECURE",
     "true" if APP_ENV == "production" else "false",
 ).strip().lower() == "true"
+YAHOO_SYNC_ENABLED = os.getenv("YAHOO_SYNC_ENABLED", "false").strip().lower() == "true"
 PASSWORD_HASH_ITERATIONS = 310_000
+logger = logging.getLogger(__name__)
 ISSUE_SHEET_ID = os.getenv(
     "ISSUE_SHEET_ID",
     "19vQxh81PDViOVTKMcIdd8qmG3gHrk374PV_ofVe6kdQ",
@@ -2604,6 +2610,206 @@ async def upload_excel(request: Request, file: UploadFile = File(...)):
         return {"ok": True, **result, "filename": filename}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+def validate_email_daily_sales_workbook(content):
+    try:
+        workbook = load_workbook(BytesIO(content), data_only=True, read_only=False)
+    except (InvalidFileException, BadZipFile, OSError) as exc:
+        raise ValueError("Lampiran email bukan file Excel yang valid.") from exc
+
+    try:
+        daily = next(
+            (ws for ws in workbook.worksheets if norm(ws.title) == "dailysales"),
+            None,
+        )
+        dates = set()
+        rows_read = 0
+        if daily is not None:
+            actual_columns, _ = daily_sales_customer_columns(daily)
+            if not actual_columns:
+                raise ValueError(
+                    "Sheet Daily Sales tidak memiliki kolom ACTUAL yang dikenali."
+                )
+            for row_number in range(5, daily.max_row + 1):
+                report_date = parse_date(daily.cell(row_number, 2).value)
+                if not report_date:
+                    continue
+                for customer, column in actual_columns:
+                    value = daily.cell(row_number, column).value
+                    if value is None or isinstance(value, str) and not value.strip():
+                        continue
+                    _parse_import_actual(value, customer, report_date)
+                    dates.add(report_date)
+                    rows_read += 1
+        else:
+            records = operator_sheet_daily_sales_records(workbook)
+            if not records:
+                raise ValueError(
+                    "Lampiran tidak berisi sheet Daily Sales atau tabel sheet operator "
+                    "yang didukung."
+                )
+            for record in records:
+                dates.add(record["report_date"])
+            rows_read = len(records)
+
+        if not rows_read or not dates:
+            raise ValueError("Lampiran tidak berisi baris Daily Sales yang dapat diimpor.")
+        return {
+            "rows_read": rows_read,
+            "start_date": min(dates),
+            "end_date": max(dates),
+        }
+    finally:
+        workbook.close()
+
+
+def _claim_email_import(message_id, subject):
+    message_hash = hashlib.sha256(message_id.encode("utf-8")).hexdigest()
+    with db() as con:
+        inserted = con.execute(
+            "INSERT IGNORE INTO email_daily_sales_imports "
+            "(message_hash,message_id,subject,status,message) "
+            "VALUES(%s,%s,%s,'PROCESSING','Sinkronisasi sedang berjalan.')",
+            (message_hash, message_id[:512], subject[:500]),
+        )
+        if inserted.rowcount:
+            return message_hash
+        reclaimed = con.execute(
+            "UPDATE email_daily_sales_imports SET status='PROCESSING',"
+            "message='Sinkronisasi sedang berjalan.' "
+            "WHERE message_hash=%s AND (status='FAILED' OR "
+            "(status='PROCESSING' AND updated_at < "
+            "DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 15 MINUTE)))",
+            (message_hash,),
+        )
+        return message_hash if reclaimed.rowcount else None
+
+
+def _finish_email_import(message_hash, status, filename="", rows_read=0,
+                         rows_saved=0, message=""):
+    with db() as con:
+        con.execute(
+            "UPDATE email_daily_sales_imports SET status=%s,filename=%s,"
+            "rows_read=%s,rows_saved=%s,message=%s WHERE message_hash=%s",
+            (status, filename[:255] or None, rows_read, rows_saved,
+             message[:2000] or None, message_hash),
+        )
+
+
+@app.post("/api/email/daily-sales/sync")
+def sync_daily_sales_email(request: Request):
+    require_admin(request)
+    if not YAHOO_SYNC_ENABLED:
+        return {
+            "enabled": False,
+            "imported": [],
+            "failed": [],
+            "message": "Sinkronisasi email Planner belum diaktifkan di konfigurasi server.",
+        }
+
+    try:
+        with db() as con:
+            processed_message_ids = {
+                row["message_id"]
+                for row in con.execute(
+                    "SELECT message_id FROM email_daily_sales_imports "
+                    "WHERE status='IMPORTED' ORDER BY updated_at DESC LIMIT 1000"
+                ).fetchall()
+            }
+        emails = fetch_daily_sales_emails(processed_message_ids)
+    except RuntimeError as exc:
+        logger.exception("Gagal membaca email Daily Sales dari IMAP.")
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    imported = []
+    failed = []
+    for email_item in emails:
+        message_id = email_item.get("message_id", "").strip()
+        subject = email_item.get("subject", "")
+        if not message_id:
+            failed.append({
+                "subject": subject,
+                "message": "Email Planner tidak memiliki Message-ID; impor dilewati.",
+            })
+            continue
+
+        message_hash = _claim_email_import(message_id, subject)
+        if message_hash is None:
+            continue
+
+        filename = ""
+        try:
+            if email_item.get("error"):
+                raise ValueError(email_item["error"])
+            attachments = email_item.get("attachments", [])
+            if len(attachments) != 1:
+                raise ValueError(
+                    "Email harus memiliki tepat satu lampiran Excel Daily Sales."
+                )
+
+            attachment = attachments[0]
+            content = attachment["content"]
+            validated = validate_email_daily_sales_workbook(content)
+            original_name = Path(attachment["filename"]).name
+            safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", original_name)[:150]
+            content_hash = hashlib.sha256(content).hexdigest()[:12]
+            filename = f"Planner_{content_hash}_{safe_name}"
+            destination = INPUT_DIR / filename
+            destination.write_bytes(content)
+            result = import_excel(destination, filename)
+            if result.get("mapping_only") or not result.get("rows_saved"):
+                raise ValueError("Tidak ada baris penjualan yang berhasil disimpan.")
+
+            status_message = (
+                f"{result['message']} Periode {validated['start_date']} s.d. "
+                f"{validated['end_date']}."
+            )
+            _finish_email_import(
+                message_hash,
+                "IMPORTED",
+                filename,
+                result["rows_read"],
+                result["rows_saved"],
+                status_message,
+            )
+            imported.append({
+                "filename": filename,
+                "subject": subject,
+                "rows_read": result["rows_read"],
+                "rows_saved": result["rows_saved"],
+                "start_date": validated["start_date"],
+                "end_date": validated["end_date"],
+                "message": status_message,
+            })
+        except Exception as exc:
+            logger.exception(
+                "Sinkronisasi email Daily Sales gagal untuk email hash %s.",
+                message_hash,
+            )
+            failure_message = str(exc) or "Lampiran email gagal divalidasi atau diimpor."
+            _finish_email_import(
+                message_hash,
+                "FAILED",
+                filename,
+                message=failure_message,
+            )
+            failed.append({"subject": subject, "message": failure_message})
+
+    if imported:
+        message = f"{len(imported)} email Planner berhasil diimpor."
+    elif failed:
+        message = "Email Planner ditemukan, tetapi ada lampiran yang gagal diimpor."
+    elif emails:
+        message = "Tidak ada email baru; email yang ditemukan sudah pernah diproses."
+    else:
+        message = "Belum ada email Daily Report Planner baru yang dapat diproses."
+    return {
+        "enabled": True,
+        "imported": imported,
+        "failed": failed,
+        "message": message,
+    }
 
 
 @app.get("/api/dates")

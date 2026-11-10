@@ -33,6 +33,13 @@ services:
       APP_PASSWORD: ${APP_PASSWORD:?isi APP_PASSWORD di .env}
       SESSION_SECRET: ${SESSION_SECRET:?isi SESSION_SECRET di .env}
       ISSUE_GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/issue-google-service-account.json
+      YAHOO_SYNC_ENABLED: ${YAHOO_SYNC_ENABLED:-false}
+      YAHOO_IMAP_HOST: ${YAHOO_IMAP_HOST:-imap.mail.yahoo.com}
+      YAHOO_IMAP_PORT: ${YAHOO_IMAP_PORT:-993}
+      YAHOO_EMAIL: ${YAHOO_EMAIL:-}
+      YAHOO_APP_PASSWORD: ${YAHOO_APP_PASSWORD:-}
+      YAHOO_ALLOWED_SENDER: ${YAHOO_ALLOWED_SENDER:-reethuplanner@gmail.com}
+      YAHOO_IMAP_FOLDER: ${YAHOO_IMAP_FOLDER:-INBOX}
     volumes:
       - imports:/app/database/imports
       - ./secrets:/run/secrets:ro
