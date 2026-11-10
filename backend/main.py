@@ -5520,6 +5520,14 @@ async def sync_monthly_average_price_sheet(request: Request):
                 if exact_customers:
                     matching_customers = exact_customers
             if len(matching_customers) > 1:
+                exact_customers = [
+                    customer
+                    for customer in matching_customers
+                    if norm(customer["customer_key"]) == source_key
+                ]
+                if exact_customers:
+                    matching_customers = exact_customers
+            if len(matching_customers) > 1:
                 raise HTTPException(
                     status_code=409,
                     detail=f"Nama customer {entry['customer']} cocok dengan lebih dari satu customer master.",

@@ -1258,6 +1258,48 @@ class MonthlyAveragePriceTests(unittest.TestCase):
             "USD_MMBTU", 13.68, 0, 8225,
         ))
 
+    def test_sheet_sync_prefers_canonical_winglok_customer_when_both_aliases_have_usd_prices(self):
+        database = MemoryAveragePriceSheetSync()
+        database.customers.extend([
+            {
+                "customer_key": "winglokebm",
+                "customer_name": "Winglok / EBM",
+                "operator": "SETU",
+            },
+            {
+                "customer_key": "winglokksoebm",
+                "customer_name": "WINGLOK (KSO EBM)",
+                "operator": "SETU",
+            },
+        ])
+        database.existing_price_inputs.update({
+            "winglokebm": {"price_usd_per_mmbtu": 13.68},
+            "winglokksoebm": {"price_usd_per_mmbtu": 13.68},
+        })
+        imported = {
+            "source": "Harga Customer 2026",
+            "entries": [{
+                "customer": "Winglok / EBM",
+                "price_unit": "IDR_SM3",
+                "price": 8225,
+                "active": True,
+            }],
+        }
+        with (
+            patch.object(main, "import_monthly_average_price_sheet", return_value=imported),
+            patch.object(main, "db", return_value=database),
+        ):
+            result = asyncio.run(main.sync_monthly_average_price_sheet(
+                FakeRequest({"month": "2026-10", "customer_mappings": []})
+            ))
+
+        self.assertEqual(result["imported"], 1)
+        parameters = database.price_inputs[0][1]
+        self.assertEqual(parameters[1], "winglokebm")
+        self.assertEqual(parameters[3:7], (
+            "USD_MMBTU", 13.68, 0, 8225,
+        ))
+
     def test_sheet_sync_returns_unmapped_customer_for_admin_prompt(self):
         database = MemoryAveragePriceSheetSync()
         imported = {
