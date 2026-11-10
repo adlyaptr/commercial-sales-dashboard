@@ -5714,7 +5714,8 @@ def monthly_average_price(request: Request, month: str):
                 status_code=500,
                 detail="Daftar customer pada impor workbook tersimpan dalam format tidak valid.",
             )
-        legacy_workbook_customer_keys = set(imported_customer_keys)
+        legacy_workbook_customer_keys = {norm(key) for key in imported_customer_keys}
+    use_november_workbook_values = month == "2026-11" and workbook_import is not None
 
     rows = []
     totals = {"sm3": 0.0, "mmbtu": 0.0, "usd": 0.0, "rupiah": 0.0}
@@ -5724,12 +5725,23 @@ def monthly_average_price(request: Request, month: str):
         so_sm3 = float(row["so_sm3"] or 0)
         actual_sm3 = float(row["actual_sm3"] or 0)
         price_active = bool(row.get("price_active", True))
-        is_legacy_workbook_row = row["customer_key"] in legacy_workbook_customer_keys
-        sm3_override = None
-        mmbtu_override = None
-        total_usd_override = None
-        rupiah_override = None
-        sm3 = actual_sm3 if price_active else 0.0
+        is_legacy_workbook_row = (
+            norm(row["customer_key"]) in legacy_workbook_customer_keys
+        )
+        use_workbook_values = (
+            use_november_workbook_values and is_legacy_workbook_row
+        )
+        sm3_override = row.get("sm3_override") if use_workbook_values else None
+        mmbtu_override = row.get("mmbtu_override") if use_workbook_values else None
+        total_usd_override = (
+            row.get("total_usd_override") if use_workbook_values else None
+        )
+        rupiah_override = row.get("rupiah_override") if use_workbook_values else None
+        sm3 = (
+            float(sm3_override)
+            if price_active and sm3_override is not None
+            else actual_sm3 if price_active else 0.0
+        )
         factor = float(row["sm3_per_mmbtu"] or 0)
         price_unit = row.get("price_unit") or "USD_MMBTU"
         price = float(row["price_usd_per_mmbtu"] or 0)
@@ -5809,9 +5821,17 @@ def monthly_average_price(request: Request, month: str):
     return {
         "month": month,
         "exchange_rate": exchange_rate,
-        "source": "system",
-        "workbook_import": None,
-        "workbook_customer_keys": [],
+        "source": "workbook" if use_november_workbook_values else "system",
+        "workbook_import": (
+            {"customer_keys": sorted(legacy_workbook_customer_keys)}
+            if use_november_workbook_values
+            else None
+        ),
+        "workbook_customer_keys": (
+            sorted(legacy_workbook_customer_keys)
+            if use_november_workbook_values
+            else []
+        ),
         "operator_factors": {
             row["operator"]: float(row["sm3_per_mmbtu"] or 0)
             for row in factor_rows

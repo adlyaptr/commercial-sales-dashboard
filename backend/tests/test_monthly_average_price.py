@@ -588,6 +588,48 @@ class MonthlyAveragePriceTests(unittest.TestCase):
         self.assertEqual(report["totals"]["sm3"], 50000)
         self.assertAlmostEqual(report["totals"]["rupiah"], expected_mmbtu * 17895)
 
+    def test_uses_workbook_values_for_imported_november_rows(self):
+        class NovemberWorkbookAveragePrice(MemoryMonthlyAveragePrice):
+            def execute(self, statement, parameters=None):
+                if statement.startswith("SELECT customer_keys_json"):
+                    return SimpleNamespace(fetchone=lambda: {
+                        "customer_keys_json": '["customer1"]',
+                    })
+                result = super().execute(statement, parameters)
+                if "LEFT JOIN sales s" not in statement:
+                    return result
+                row = result.fetchall()[0]
+                row.update({
+                    "actual_sm3": 50000,
+                    "sm3_override": 1200,
+                    "mmbtu_override": 42,
+                    "total_usd_override": 500,
+                    "rupiah_override": 8400000,
+                })
+                return SimpleNamespace(fetchall=lambda: [row])
+
+        with patch.object(
+            main,
+            "db",
+            return_value=NovemberWorkbookAveragePrice(month="2026-11"),
+        ):
+            report = main.monthly_average_price(FakeRequest(), "2026-11")
+
+        row = report["rows"][0]
+        self.assertEqual(report["source"], "workbook")
+        self.assertEqual(report["workbook_import"]["customer_keys"], ["customer1"])
+        self.assertEqual(row["actual_sm3"], 50000)
+        self.assertEqual(row["sm3"], 1200)
+        self.assertEqual(row["sm3_override"], 1200)
+        self.assertEqual(row["volume_mmbtu"], 42)
+        self.assertEqual(row["total_usd"], 500)
+        self.assertEqual(row["rupiah"], 8400000)
+        self.assertTrue(row["has_valid_price"])
+        self.assertEqual(report["totals"]["sm3"], 1200)
+        self.assertEqual(report["totals"]["mmbtu"], 42)
+        self.assertEqual(report["totals"]["usd"], 500)
+        self.assertEqual(report["totals"]["rupiah"], 8400000)
+
     def test_does_not_use_workbook_overrides_without_required_conversions(self):
         class WorkbookTotalsWithoutConversions(MemoryMonthlyAveragePrice):
             def execute(self, statement, parameters=None):
