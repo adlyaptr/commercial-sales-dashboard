@@ -4143,6 +4143,34 @@ textarea:focus-visible, a:focus-visible {
   .home-period-metrics .kpi-icon svg { width: 16px; height: 16px; }
 }
 
+@media (min-width: 761px) and (min-height: 560px) {
+  .home-page {
+    gap: 6px;
+    padding: 0 5px 2px;
+  }
+  .home-page > .home-section:not(.home-kpi-section) { padding: 8px; }
+  .home-period-metrics { gap: 7px; }
+  .home-page .home-period-metrics .kpi { min-height: 68px; padding: 7px 9px; }
+  .home-page .home-period-metrics .kpi-icon {
+    flex-basis: 30px;
+    width: 30px;
+    height: 30px;
+  }
+  .home-weekly-details { gap: 7px; }
+  .home-page .home-subpanel { padding: 8px; }
+  .home-insights-stack { gap: 6px; }
+  .home-volume-comparison-body { gap: 6px; padding-top: 10px; }
+  .home-average-panel .home-price-summary > div { min-height: 56px; padding: 6px; }
+  .home-complaint-panel .home-complaint-donut {
+    flex-basis: clamp(96px, 8vw, 108px);
+    width: clamp(96px, 8vw, 108px);
+    height: clamp(96px, 8vw, 108px);
+  }
+  .home-complaint-panel .home-complaint-legend { gap: 6px; }
+  .home-complaint-panel .home-complaint-legend > div { padding: 4px 6px; }
+  .home-complaint-panel .home-complaint-status { gap: 4px; padding-top: 5px; }
+}
+
 /* Keep KPI cards across reporting pages consistent with the homepage. */
 .average-kpi,
 .complain-kpi,
