@@ -1333,9 +1333,6 @@ export default function WeeklyAveragePricePage() {
                                 <option key={normalizeCustomerOrder(customerName)} value={customerName} />
                             ))}
                         </datalist>
-                        <small className="average-conversion-note">
-                            Pilih customer yang sudah ada untuk memperbarui harganya tanpa menambah baris customer baru.
-                        </small>
                     </label>
                     <label>
                         Operator
