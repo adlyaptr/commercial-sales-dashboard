@@ -82,6 +82,38 @@ class FakeMailbox:
         return "BYE", []
 
 
+class FakeMailboxWithMessages(FakeMailbox):
+    def __init__(self, messages):
+        self.messages = messages
+        self.full_fetch_count = 0
+
+    def search(self, charset, *criteria):
+        self.search_charset = charset
+        self.search_criteria = criteria
+        return "OK", [" ".join(str(sequence) for sequence in self.messages).encode()]
+
+    def fetch(self, message_set, query):
+        if "HEADER" in query:
+            response = []
+            for sequence in map(int, message_set.split(",")):
+                raw_message = self.messages[sequence]
+                header = raw_message.split(b"\r\n\r\n", 1)[0] + b"\r\n\r\n"
+                item_header = (
+                    f"{sequence} (BODY[HEADER] {{{len(header)}}} RFC822.SIZE "
+                    f"{len(raw_message)})"
+                ).encode()
+                response.extend([(item_header, header), b")"])
+            return "OK", response
+
+        sequence = int(message_set)
+        raw_message = self.messages[sequence]
+        self.full_fetch_count += 1
+        response = (
+            f"{sequence} (BODY[] {{{len(raw_message)}}})".encode()
+        )
+        return "OK", [(response, raw_message), b")"]
+
+
 class YahooImapEmailParsingTests(unittest.TestCase):
     def test_extracts_daily_sales_excel_from_planner_email(self):
         parsed = yahoo_imap.parse_daily_sales_email(
@@ -172,6 +204,36 @@ class YahooImapEmailParsingTests(unittest.TestCase):
             })
 
         self.assertEqual(emails, [])
+        self.assertEqual(mailbox.full_fetch_count, 1)
+
+    def test_scans_past_latest_processed_email_for_unprocessed_message(self):
+        older_message = build_message(
+            message_id="<older-daily-report@example.com>",
+        )
+        latest_message = build_message(
+            message_id="<latest-daily-report@example.com>",
+            subject="Daily Report Tanggal 10 November 2026",
+        )
+        mailbox = FakeMailboxWithMessages({
+            1: older_message,
+            2: latest_message,
+        })
+        with (
+            patch.dict("os.environ", {
+                "YAHOO_EMAIL": "dashboard@example.com",
+                "YAHOO_APP_PASSWORD": "test-app-password",
+                "YAHOO_ALLOWED_SENDER": "reethauplanner@gmail.com",
+            }),
+            patch.object(yahoo_imap.imaplib, "IMAP4_SSL", return_value=mailbox),
+        ):
+            emails = yahoo_imap.fetch_daily_sales_emails({
+                "<latest-daily-report@example.com>"
+            })
+
+        self.assertEqual(
+            [email["message_id"] for email in emails],
+            ["<older-daily-report@example.com>"],
+        )
         self.assertEqual(mailbox.full_fetch_count, 1)
 
 

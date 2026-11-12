@@ -8,7 +8,7 @@ from email.utils import parseaddr
 
 MAX_ATTACHMENT_BYTES = 30 * 1024 * 1024
 MAX_EMAIL_BYTES = 35 * 1024 * 1024
-MAX_MESSAGES_TO_SCAN = 1
+MAX_MESSAGES_TO_SCAN = 20
 
 
 def decode_value(value):
@@ -201,11 +201,11 @@ def fetch_daily_sales_emails(processed_message_ids=None):
                     "error": "Ukuran email melebihi batas pemrosesan.",
                 })
                 continue
-            candidates.append((message_id.group(1), header_message_id))
+            candidates.append((int(message_id.group(1)), header_message_id))
 
-        for sequence_number, _ in candidates:
+        for sequence_number, _ in sorted(candidates, reverse=True):
             status, full_response = mailbox.fetch(
-                sequence_number.decode("ascii"),
+                str(sequence_number),
                 "(BODY.PEEK[])",
             )
             if status != "OK":
@@ -216,6 +216,7 @@ def fetch_daily_sales_emails(processed_message_ids=None):
             parsed = parse_daily_sales_email(raw_message, allowed_sender)
             if parsed:
                 emails.append(parsed)
+                break
     except imaplib.IMAP4.error as exc:
         raise RuntimeError("Operasi pencarian email IMAP gagal.") from exc
     except OSError as exc:
