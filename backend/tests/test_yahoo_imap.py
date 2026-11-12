@@ -190,6 +190,10 @@ class YahooImapEmailParsingTests(unittest.TestCase):
         self.assertEqual(len(emails), 1)
         self.assertEqual(len(emails[0]["attachments"]), 1)
         self.assertEqual(mailbox.full_fetch_count, 1)
+        self.assertEqual(
+            mailbox.search_criteria,
+            ("FROM", '"reethauplanner@gmail.com"'),
+        )
 
         with (
             patch.dict("os.environ", {

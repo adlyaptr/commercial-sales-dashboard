@@ -153,8 +153,6 @@ def fetch_daily_sales_emails(processed_message_ids=None):
             None,
             "FROM",
             f'"{allowed_sender}"',
-            "SUBJECT",
-            '"Daily Report Tanggal"',
         )
         if status != "OK":
             raise RuntimeError("Pencarian email Planner gagal.")
