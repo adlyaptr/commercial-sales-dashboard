@@ -84,8 +84,7 @@ function blankProposal() {
     return {
         proposalNumber: '',
         customerName: '',
-        addressLine1: '',
-        addressLine2: '',
+        address: '',
         proposalDate: new Date().toISOString().slice(0, 10),
         volumeMin: '',
         volumeMax: '',
@@ -114,8 +113,7 @@ function formFromProposal(proposal) {
     return {
         proposalNumber: proposal.number || '',
         customerName: proposal.customerName || '',
-        addressLine1: proposal.addressLine1 || '',
-        addressLine2: proposal.addressLine2 || '',
+        address: [proposal.addressLine1, proposal.addressLine2].filter(Boolean).join('\n'),
         proposalDate: proposal.proposalDate || '',
         volumeMin: proposal.volumeMin,
         volumeMax: proposal.volumeMax,
@@ -337,6 +335,8 @@ export default function SphPage({ user, onLogout }) {
         setNotice('');
         const payload = {
             ...form,
+            addressLine1: form.address.split(/\r?\n/, 2)[0].trim(),
+            addressLine2: form.address.split(/\r?\n/).slice(1).join('\n').trim(),
             volumeMin: Number(form.volumeMin),
             volumeMax: Number(form.volumeMax),
             priceUsd: Number(form.priceUsd),
@@ -465,11 +465,6 @@ export default function SphPage({ user, onLogout }) {
                     ))}
                 </nav>
 
-                {user.role === 'admin' && activeTab !== 'access' && (
-                    <div className="sph-notice">
-                        Mode Admin: akses lihat saja. Atur role proses melalui tab Akses pengguna.
-                    </div>
-                )}
                 {error && <div className="sph-alert error" role="alert">{error}</div>}
                 {notice && <div className="sph-alert success" role="status">{notice}</div>}
 
@@ -607,8 +602,17 @@ export default function SphPage({ user, onLogout }) {
                                         <TextField label="Nomor surat *" name="proposalNumber" value={form.proposalNumber} onChange={updateField} required maxLength={80} placeholder="Contoh: SPH-2026-11-MKT-000" />
                                         <TextField label="Nama pelanggan *" name="customerName" value={form.customerName} onChange={updateField} required maxLength={255} />
                                         <TextField label="Tanggal penawaran *" name="proposalDate" type="date" value={form.proposalDate} onChange={updateField} required />
-                                        <TextField label="Alamat (baris 1)" name="addressLine1" value={form.addressLine1} onChange={updateField} maxLength={2000} placeholder="Jalan ..., Gandasari," />
-                                        <TextField label="Alamat (baris 2)" name="addressLine2" value={form.addressLine2} onChange={updateField} maxLength={2000} placeholder="Kecamatan ..., Kabupaten ..., Jawa Barat ..." />
+                                        <label className="sph-field sph-field-address">
+                                            <span>Alamat</span>
+                                            <textarea
+                                                name="address"
+                                                value={form.address}
+                                                onChange={updateField}
+                                                maxLength={4000}
+                                                rows={3}
+                                                placeholder={'Jalan Akses Tol Cibitung No.82, Gandasari,\nKecamatan Cikarang Barat, Kabupaten Bekasi, Jawa Barat 17530'}
+                                            />
+                                        </label>
                                     </div>
                                 </div>
                                 <div className="sph-form-section">

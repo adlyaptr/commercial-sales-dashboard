@@ -151,6 +151,7 @@
 .sph-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 15px; }
 .sph-form-grid-single { margin-top: 13px; }
 .sph-field { display: grid; min-width: 0; gap: 6px; color: #63776a; font-size: 10px; font-weight: 650; }
+.sph-field-address { grid-column: 1 / -1; }
 .sph-field input,
 .sph-field select,
 .sph-field textarea {
