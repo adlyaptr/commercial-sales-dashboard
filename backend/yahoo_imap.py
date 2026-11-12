@@ -201,7 +201,7 @@ def fetch_daily_sales_emails(processed_message_ids=None):
                 continue
             candidates.append((int(message_id.group(1)), header_message_id))
 
-        for sequence_number, _ in sorted(candidates, reverse=True):
+        for sequence_number, _ in sorted(candidates):
             status, full_response = mailbox.fetch(
                 str(sequence_number),
                 "(BODY.PEEK[])",

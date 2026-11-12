@@ -82,7 +82,7 @@ SESSION_COOKIE_SECURE = os.getenv(
     "true" if APP_ENV == "production" else "false",
 ).strip().lower() == "true"
 YAHOO_SYNC_ENABLED = os.getenv("YAHOO_SYNC_ENABLED", "false").strip().lower() == "true"
-EMAIL_IMPORT_DATE_FILTER_MARKER = "Daily report date-limited import:"
+EMAIL_IMPORT_DATE_FILTER_MARKER = "Daily report two-day import:"
 PASSWORD_HASH_ITERATIONS = 310_000
 logger = logging.getLogger(__name__)
 ISSUE_SHEET_ID = os.getenv(
@@ -1298,7 +1298,7 @@ def operator_sheet_daily_sales_records(wb):
 def import_excel(
     path: Path,
     original_filename: str,
-    report_date_filter: Optional[date] = None,
+    report_dates_filter: Optional[set[date]] = None,
 ):
     # data_only=True is important: Daily Sales is formula-based, and Excel's saved
     # cached results are the actual reported figures we want to import.
@@ -1307,9 +1307,9 @@ def import_excel(
     unmapped_customers = []
     mapping_saved = 0
     imported_dates = set()
-    report_date_filter_value = (
-        report_date_filter.isoformat() if report_date_filter else None
-    )
+    report_date_filter_values = {
+        report_date.isoformat() for report_date in report_dates_filter
+    } if report_dates_filter else None
     wb = None
     try:
         wb = load_workbook(path, data_only=True, read_only=False)
@@ -1366,7 +1366,7 @@ def import_excel(
                     report_date = parse_date(date_value)
                     if not report_date:
                         continue
-                    if report_date_filter_value and report_date != report_date_filter_value:
+                    if report_date_filter_values and report_date not in report_date_filter_values:
                         continue
                     for customer, actual_col in actual_cols:
                         actual_value = ws.cell(r, actual_col).value
@@ -1407,7 +1407,7 @@ def import_excel(
                 for record in operator_records:
                     customer = record["customer"]
                     report_date = parse_date(record["report_date"])
-                    if report_date_filter_value and report_date != report_date_filter_value:
+                    if report_date_filter_values and report_date not in report_date_filter_values:
                         continue
                     key = norm(customer)
                     rows_read += 1
@@ -1451,7 +1451,7 @@ def import_excel(
                         report_date = parse_date(val("date"))
                         if not report_date:
                             continue
-                        if report_date_filter_value and report_date != report_date_filter_value:
+                        if report_date_filter_values and report_date not in report_date_filter_values:
                             continue
                         rows_read += 1
                         op = str(val("operator") or "").strip().upper()
@@ -2739,6 +2739,14 @@ def daily_report_date_from_subject(subject):
         ) from exc
 
 
+def daily_report_import_dates(report_date, start_date, end_date):
+    dates = {report_date}
+    previous_date = report_date - timedelta(days=1)
+    if start_date <= previous_date.isoformat() <= end_date:
+        dates.add(previous_date)
+    return dates
+
+
 @app.post("/api/email/daily-sales/sync")
 def sync_daily_sales_email(request: Request):
     require_admin(request)
@@ -2800,6 +2808,11 @@ def sync_daily_sales_email(request: Request):
                 raise ValueError(
                     "Tanggal laporan pada subjek email tidak ada dalam rentang tanggal lampiran."
                 )
+            report_dates = daily_report_import_dates(
+                report_date,
+                validated["start_date"],
+                validated["end_date"],
+            )
             original_name = Path(attachment["filename"]).name
             safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", original_name)[:150]
             content_hash = hashlib.sha256(content).hexdigest()[:12]
@@ -2809,13 +2822,17 @@ def sync_daily_sales_email(request: Request):
             result = import_excel(
                 destination,
                 filename,
-                report_date_filter=report_date,
+                report_dates_filter=report_dates,
             )
             if result.get("mapping_only") or not result.get("rows_saved"):
                 raise ValueError("Tidak ada baris penjualan yang berhasil disimpan.")
 
+            imported_report_dates = sorted(
+                imported_date.isoformat() for imported_date in report_dates
+            )
             status_message = (
-                f"{EMAIL_IMPORT_DATE_FILTER_MARKER} {report_date.isoformat()}. "
+                f"{EMAIL_IMPORT_DATE_FILTER_MARKER} "
+                f"{', '.join(imported_report_dates)}. "
                 f"{result['message']} Periode {validated['start_date']} s.d. "
                 f"{validated['end_date']}."
             )
@@ -2833,6 +2850,7 @@ def sync_daily_sales_email(request: Request):
                 "rows_read": result["rows_read"],
                 "rows_saved": result["rows_saved"],
                 "report_date": report_date.isoformat(),
+                "report_dates": imported_report_dates,
                 "start_date": validated["start_date"],
                 "end_date": validated["end_date"],
                 "message": status_message,

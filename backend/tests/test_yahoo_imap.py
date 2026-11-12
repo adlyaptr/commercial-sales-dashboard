@@ -260,18 +260,32 @@ class YahooImapEmailParsingTests(unittest.TestCase):
 
         self.assertEqual(
             [email["message_id"] for email in emails],
-            ["<report-two@example.com>", "<report-one@example.com>"],
+            ["<report-one@example.com>", "<report-two@example.com>"],
         )
         self.assertEqual(mailbox.full_fetch_count, 2)
 
 
 class YahooDailySalesSyncTests(unittest.TestCase):
     def test_extracts_report_date_from_daily_report_subject(self):
+        report_date = main.daily_report_date_from_subject(
+            "Daily Report Tanggal 11 November 2026"
+        )
+        self.assertEqual(report_date, main.date(2026, 11, 11))
         self.assertEqual(
-            main.daily_report_date_from_subject(
-                "Daily Report Tanggal 11 November 2026"
+            main.daily_report_import_dates(
+                report_date,
+                "2026-11-01",
+                "2026-11-30",
             ),
-            main.date(2026, 11, 11),
+            {main.date(2026, 11, 10), main.date(2026, 11, 11)},
+        )
+        self.assertEqual(
+            main.daily_report_import_dates(
+                main.date(2026, 11, 1),
+                "2026-11-01",
+                "2026-11-30",
+            ),
+            {main.date(2026, 11, 1)},
         )
 
         with self.assertRaisesRegex(ValueError, "tidak dapat dibaca"):
