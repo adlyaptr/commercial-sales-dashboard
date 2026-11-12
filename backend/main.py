@@ -82,6 +82,7 @@ SESSION_COOKIE_SECURE = os.getenv(
     "true" if APP_ENV == "production" else "false",
 ).strip().lower() == "true"
 YAHOO_SYNC_ENABLED = os.getenv("YAHOO_SYNC_ENABLED", "false").strip().lower() == "true"
+EMAIL_IMPORT_DATE_FILTER_MARKER = "Daily report date-limited import:"
 PASSWORD_HASH_ITERATIONS = 310_000
 logger = logging.getLogger(__name__)
 ISSUE_SHEET_ID = os.getenv(
@@ -2692,9 +2693,10 @@ def _claim_email_import(message_id, subject):
             "UPDATE email_daily_sales_imports SET status='PROCESSING',"
             "message='Sinkronisasi sedang berjalan.' "
             "WHERE message_hash=%s AND (status='FAILED' OR "
+            "(status='IMPORTED' AND COALESCE(message,'') NOT LIKE %s) OR "
             "(status='PROCESSING' AND updated_at < "
             "DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 15 MINUTE)))",
-            (message_hash,),
+            (message_hash, f"{EMAIL_IMPORT_DATE_FILTER_MARKER}%"),
         )
         return message_hash if reclaimed.rowcount else None
 
@@ -2754,7 +2756,9 @@ def sync_daily_sales_email(request: Request):
                 row["message_id"]
                 for row in con.execute(
                     "SELECT message_id FROM email_daily_sales_imports "
-                    "WHERE status='IMPORTED' ORDER BY updated_at DESC LIMIT 1000"
+                    "WHERE status='IMPORTED' AND message LIKE %s "
+                    "ORDER BY updated_at DESC LIMIT 1000",
+                    (f"{EMAIL_IMPORT_DATE_FILTER_MARKER}%",),
                 ).fetchall()
             }
         emails = fetch_daily_sales_emails(processed_message_ids)
@@ -2811,6 +2815,7 @@ def sync_daily_sales_email(request: Request):
                 raise ValueError("Tidak ada baris penjualan yang berhasil disimpan.")
 
             status_message = (
+                f"{EMAIL_IMPORT_DATE_FILTER_MARKER} {report_date.isoformat()}. "
                 f"{result['message']} Periode {validated['start_date']} s.d. "
                 f"{validated['end_date']}."
             )

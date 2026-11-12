@@ -214,7 +214,6 @@ def fetch_daily_sales_emails(processed_message_ids=None):
             parsed = parse_daily_sales_email(raw_message, allowed_sender)
             if parsed:
                 emails.append(parsed)
-                break
     except imaplib.IMAP4.error as exc:
         raise RuntimeError("Operasi pencarian email IMAP gagal.") from exc
     except OSError as exc:

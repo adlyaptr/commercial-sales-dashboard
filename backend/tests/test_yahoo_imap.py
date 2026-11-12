@@ -240,6 +240,30 @@ class YahooImapEmailParsingTests(unittest.TestCase):
         )
         self.assertEqual(mailbox.full_fetch_count, 1)
 
+    def test_fetches_all_unprocessed_daily_report_messages_in_scan_window(self):
+        mailbox = FakeMailboxWithMessages({
+            1: build_message(message_id="<report-one@example.com>"),
+            2: build_message(
+                subject="Daily Report Tanggal 10 November 2026",
+                message_id="<report-two@example.com>",
+            ),
+        })
+        with (
+            patch.dict("os.environ", {
+                "YAHOO_EMAIL": "dashboard@example.com",
+                "YAHOO_APP_PASSWORD": "test-app-password",
+                "YAHOO_ALLOWED_SENDER": "reethauplanner@gmail.com",
+            }),
+            patch.object(yahoo_imap.imaplib, "IMAP4_SSL", return_value=mailbox),
+        ):
+            emails = yahoo_imap.fetch_daily_sales_emails()
+
+        self.assertEqual(
+            [email["message_id"] for email in emails],
+            ["<report-two@example.com>", "<report-one@example.com>"],
+        )
+        self.assertEqual(mailbox.full_fetch_count, 2)
+
 
 class YahooDailySalesSyncTests(unittest.TestCase):
     def test_extracts_report_date_from_daily_report_subject(self):
@@ -284,6 +308,36 @@ class YahooDailySalesSyncTests(unittest.TestCase):
         self.assertIsNotNone(first)
         self.assertIsNone(second)
         self.assertEqual(len(stored_hashes), 1)
+
+    def test_legacy_imported_email_is_reclaimed_for_date_filtered_backfill(self):
+        class FakeCursor:
+            rowcount = 1
+
+        class FakeConnection:
+            def __init__(self):
+                self.update = None
+
+            def execute(self, statement, parameters):
+                if statement.startswith("INSERT IGNORE"):
+                    return type("InsertResult", (), {"rowcount": 0})()
+                self.update = (statement, parameters)
+                return FakeCursor()
+
+        connection = FakeConnection()
+        with patch.object(main, "db", side_effect=lambda: nullcontext(connection)):
+            claimed = main._claim_email_import(
+                "<legacy-daily-report@example.com>",
+                "Daily Report Tanggal 10 November 2026",
+            )
+
+        self.assertIsNotNone(claimed)
+        statement, parameters = connection.update
+        self.assertIn("status='IMPORTED'", statement)
+        self.assertIn("NOT LIKE %s", statement)
+        self.assertEqual(
+            parameters[1],
+            f"{main.EMAIL_IMPORT_DATE_FILTER_MARKER}%",
+        )
 
     def test_disabled_sync_does_not_connect_to_mailbox(self):
         request = SimpleNamespace()
