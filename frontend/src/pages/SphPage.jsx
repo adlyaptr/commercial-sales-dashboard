@@ -82,6 +82,7 @@ function parseObligations(value, options) {
 
 function blankProposal() {
     return {
+        proposalNumber: '',
         customerName: '',
         addressLine1: '',
         addressLine2: '',
@@ -111,6 +112,7 @@ function blankProposal() {
 
 function formFromProposal(proposal) {
     return {
+        proposalNumber: proposal.number || '',
         customerName: proposal.customerName || '',
         addressLine1: proposal.addressLine1 || '',
         addressLine2: proposal.addressLine2 || '',
@@ -146,7 +148,7 @@ function nextAction(proposal) {
     if (proposal.status === 'sent') return { action: 'customer_approved', role: 'sales', label: 'Pelanggan menyetujui' };
     if (proposal.status === 'negotiation') return { action: 'revise', role: 'sales', label: 'Buat revisi' };
     if (proposal.status === 'customer_approved') return { action: 'handoff_legal', role: 'sales', label: 'Serahkan ke Legal' };
-    if (proposal.status === 'pjbg') return { action: 'activate', role: 'legal', label: 'Aktifkan pelanggan' };
+    if (proposal.status === 'pjbg') return { action: 'activate', role: 'admin', label: 'Aktifkan pelanggan (Admin)' };
     return null;
 }
 
@@ -243,8 +245,6 @@ export default function SphPage({ user, onLogout }) {
 
     const isSales = user.sphRole === 'sales';
     const isCommercialHead = user.sphRole === 'commercial_head';
-    const isLegal = user.sphRole === 'legal';
-
     async function loadProposals() {
         setError('');
         try {
@@ -419,7 +419,6 @@ export default function SphPage({ user, onLogout }) {
             <header className="sph-topbar">
                 <a className="sph-brand" href="/sph" aria-label="SPH CNG Reethau">
                     <img src={logoImage} alt="Reethau Clean Energy" />
-                    <span><strong>SPH CNG</strong><small>COMMERCIAL SYSTEMS</small></span>
                 </a>
                 <div className="sph-topbar-right">
                     <span className="sph-user-chip">
@@ -499,7 +498,7 @@ export default function SphPage({ user, onLogout }) {
                                                     <label className="sph-field">
                                                         <span className="sr-only">Role SPH untuk {sphUser.username}</span>
                                                         <select
-                                                            value={sphUser.sph_role || ''}
+                                                            value={['sales', 'commercial_head'].includes(sphUser.sph_role) ? sphUser.sph_role : ''}
                                                             disabled={busy}
                                                             aria-label={`Role SPH untuk ${sphUser.username}`}
                                                             onChange={(event) => updateSphRole(sphUser.username, event.target.value)}
@@ -507,7 +506,6 @@ export default function SphPage({ user, onLogout }) {
                                                             <option value="">Tidak ditugaskan</option>
                                                             <option value="sales">Sales</option>
                                                             <option value="commercial_head">Commercial Head</option>
-                                                            <option value="legal">Legal</option>
                                                         </select>
                                                     </label>
                                                 </td>
@@ -606,10 +604,11 @@ export default function SphPage({ user, onLogout }) {
                                 <div className="sph-form-section">
                                     <h3>Informasi pelanggan</h3>
                                     <div className="sph-form-grid">
+                                        <TextField label="Nomor surat *" name="proposalNumber" value={form.proposalNumber} onChange={updateField} required maxLength={80} placeholder="Contoh: SPH-2026-11-MKT-000" />
                                         <TextField label="Nama pelanggan *" name="customerName" value={form.customerName} onChange={updateField} required maxLength={255} />
                                         <TextField label="Tanggal penawaran *" name="proposalDate" type="date" value={form.proposalDate} onChange={updateField} required />
-                                        <TextField label="Alamat" name="addressLine1" value={form.addressLine1} onChange={updateField} maxLength={2000} />
-                                        <TextField label="Kota / provinsi" name="addressLine2" value={form.addressLine2} onChange={updateField} maxLength={2000} />
+                                        <TextField label="Alamat (baris 1)" name="addressLine1" value={form.addressLine1} onChange={updateField} maxLength={2000} placeholder="Jalan ..., Gandasari," />
+                                        <TextField label="Alamat (baris 2)" name="addressLine2" value={form.addressLine2} onChange={updateField} maxLength={2000} placeholder="Kecamatan ..., Kabupaten ..., Jawa Barat ..." />
                                     </div>
                                 </div>
                                 <div className="sph-form-section">
@@ -699,7 +698,10 @@ export default function SphPage({ user, onLogout }) {
                                     )}
                                     {action && (
                                         action.action !== 'approve' || canApprove
-                                    ) && user.sphRole === action.role && (
+                                    ) && (
+                                        (action.role === 'admin' && user.role === 'admin')
+                                        || user.sphRole === action.role
+                                    ) && (
                                         <button className="sph-primary" type="button" disabled={busy} onClick={() => performAction(action.action)}>
                                             {action.label}
                                         </button>

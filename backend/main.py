@@ -285,6 +285,7 @@ SPH_ROLES = {
     "director": "Direksi",
     "legal": "Legal",
 }
+SPH_ASSIGNABLE_ROLES = {"sales", "commercial_head"}
 
 
 def require_sph_access(request: Request):
@@ -1649,7 +1650,7 @@ async def update_sph_user_role(username: str, request: Request):
         raise HTTPException(status_code=400, detail="Format role SPH tidak valid.")
     sph_role = payload.get("sphRole")
     if sph_role is not None and (
-        not isinstance(sph_role, str) or sph_role not in SPH_ROLES
+        not isinstance(sph_role, str) or sph_role not in SPH_ASSIGNABLE_ROLES
     ):
         raise HTTPException(status_code=400, detail="Role SPH tidak dikenal.")
     with db() as con:
@@ -1776,6 +1777,7 @@ def _sph_text(value, label, maximum=10000, required=False):
 def _sph_validate_proposal(payload):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format SPH tidak valid.")
+    proposal_number = _sph_text(payload.get("proposalNumber"), "Nomor surat", 80, True)
     customer_name = _sph_text(payload.get("customerName"), "Nama pelanggan", 255, True)
     customer_key = norm(customer_name)
     if not customer_key or len(customer_key) > 191:
@@ -1827,6 +1829,7 @@ def _sph_validate_proposal(payload):
     if not isinstance(exchange_clause, bool):
         raise HTTPException(status_code=400, detail="Klausul tukar menukar tidak valid.")
     return {
+        "proposal_number": proposal_number,
         "customer_key": customer_key,
         "customer_name": customer_name,
         "address_line1": _sph_text(payload.get("addressLine1"), "Alamat pelanggan", 2000),
@@ -1957,8 +1960,12 @@ async def sph_create_proposal(request: Request):
     require_sph_role(request, "sales")
     proposal = _sph_validate_proposal(await request.json())
     now = _sph_now()
-    month_key = proposal["proposal_date"].strftime("%Y-%m")
     with db() as con:
+        if con.execute(
+            "SELECT id FROM sph_proposals WHERE proposal_number=%s",
+            (proposal["proposal_number"],),
+        ).fetchone():
+            raise HTTPException(status_code=409, detail="Nomor surat sudah digunakan.")
         con.execute(
             "INSERT INTO sph_customers(customer_key,customer_name,address_line1,"
             "address_line2,created_by,created_at) VALUES(%s,%s,%s,%s,%s,%s) "
@@ -1970,34 +1977,26 @@ async def sph_create_proposal(request: Request):
                 request.session["username"], now,
             ),
         )
-        con.execute(
-            "INSERT IGNORE INTO sph_sequences(month_key,next_value) VALUES(%s,0)",
-            (month_key,),
-        )
-        sequence = con.execute(
-            "SELECT next_value FROM sph_sequences WHERE month_key=%s FOR UPDATE",
-            (month_key,),
-        ).fetchone()["next_value"] + 1
-        con.execute(
-            "UPDATE sph_sequences SET next_value=%s WHERE month_key=%s",
-            (sequence, month_key),
-        )
-        number = f"SPH-{proposal['proposal_date']:%Y-%m}-MKT-{sequence:03d}"
-        cursor = con.execute(
-            "INSERT INTO sph_proposals(proposal_number,customer_key,proposal_date,"
-            "volume_min,volume_max,price_usd,status,version,top_percent,guarantee,"
-            "due_day,exchange_clause,contract_years,reethau_obligations,"
-            "customer_obligations,approvals,created_by,updated_at) "
-            "VALUES(%s,%s,%s,%s,%s,%s,'draft',0,%s,%s,%s,%s,%s,%s,%s,'[]',%s,%s)",
-            (
-                number, proposal["customer_key"], proposal["proposal_date"],
-                proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
-                proposal["top_percent"], proposal["guarantee"], proposal["due_day"],
-                proposal["exchange_clause"], proposal["contract_years"],
-                proposal["reethau_obligations"], proposal["customer_obligations"],
-                request.session["username"], now,
-            ),
-        )
+        try:
+            cursor = con.execute(
+                "INSERT INTO sph_proposals(proposal_number,customer_key,proposal_date,"
+                "volume_min,volume_max,price_usd,status,version,top_percent,guarantee,"
+                "due_day,exchange_clause,contract_years,reethau_obligations,"
+                "customer_obligations,approvals,created_by,updated_at) "
+                "VALUES(%s,%s,%s,%s,%s,%s,'draft',0,%s,%s,%s,%s,%s,%s,%s,'[]',%s,%s)",
+                (
+                    proposal["proposal_number"], proposal["customer_key"], proposal["proposal_date"],
+                    proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
+                    proposal["top_percent"], proposal["guarantee"], proposal["due_day"],
+                    proposal["exchange_clause"], proposal["contract_years"],
+                    proposal["reethau_obligations"], proposal["customer_obligations"],
+                    request.session["username"], now,
+                ),
+            )
+        except pymysql.err.IntegrityError as exc:
+            if exc.args and exc.args[0] == 1062:
+                raise HTTPException(status_code=409, detail="Nomor surat sudah digunakan.") from exc
+            raise
         proposal_id = cursor.lastrowid
         _sph_log(con, proposal_id, request, "Membuat draft SPH.")
     return _sph_get_proposal(proposal_id)
@@ -2025,22 +2024,32 @@ async def sph_update_proposal(proposal_id: int, request: Request):
                 request.session["username"], now,
             ),
         )
+        if con.execute(
+            "SELECT id FROM sph_proposals WHERE proposal_number=%s AND id<>%s",
+            (proposal["proposal_number"], proposal_id),
+        ).fetchone():
+            raise HTTPException(status_code=409, detail="Nomor surat sudah digunakan.")
         was_submitted = current["status"] != "draft"
-        update_result = con.execute(
-            "UPDATE sph_proposals SET customer_key=%s,proposal_date=%s,status='draft',"
-            "volume_min=%s,volume_max=%s,price_usd=%s,top_percent=%s,guarantee=%s,"
-            "due_day=%s,exchange_clause=%s,contract_years=%s,reethau_obligations=%s,"
-            "customer_obligations=%s,version=version+%s,approvals='[]',"
-            "approved_at=NULL,sent_date=NULL,updated_at=%s WHERE id=%s AND status <> 'active'",
-            (
-                proposal["customer_key"], proposal["proposal_date"],
-                proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
-                proposal["top_percent"], proposal["guarantee"], proposal["due_day"],
-                proposal["exchange_clause"], proposal["contract_years"],
-                proposal["reethau_obligations"], proposal["customer_obligations"],
-                int(was_submitted), now, proposal_id,
-            ),
-        )
+        try:
+            update_result = con.execute(
+                "UPDATE sph_proposals SET proposal_number=%s,customer_key=%s,proposal_date=%s,status='draft',"
+                "volume_min=%s,volume_max=%s,price_usd=%s,top_percent=%s,guarantee=%s,"
+                "due_day=%s,exchange_clause=%s,contract_years=%s,reethau_obligations=%s,"
+                "customer_obligations=%s,version=version+%s,approvals='[]',"
+                "approved_at=NULL,sent_date=NULL,updated_at=%s WHERE id=%s AND status <> 'active'",
+                (
+                    proposal["proposal_number"], proposal["customer_key"], proposal["proposal_date"],
+                    proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
+                    proposal["top_percent"], proposal["guarantee"], proposal["due_day"],
+                    proposal["exchange_clause"], proposal["contract_years"],
+                    proposal["reethau_obligations"], proposal["customer_obligations"],
+                    int(was_submitted), now, proposal_id,
+                ),
+            )
+        except pymysql.err.IntegrityError as exc:
+            if exc.args and exc.args[0] == 1062:
+                raise HTTPException(status_code=409, detail="Nomor surat sudah digunakan.") from exc
+            raise
         if update_result.rowcount != 1:
             latest = _sph_proposal_row(con, proposal_id)
             if not latest:
@@ -2058,7 +2067,7 @@ async def sph_update_proposal(proposal_id: int, request: Request):
 
 @app.post("/api/sph/proposals/{proposal_id}/actions")
 async def sph_proposal_action(proposal_id: int, request: Request):
-    require_sph_access(request)
+    actor = require_sph_access(request)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format tindakan tidak valid.")
@@ -2144,7 +2153,7 @@ async def sph_proposal_action(proposal_id: int, request: Request):
             )
             message = "Dokumen diserahkan ke Legal untuk proses PJBG."
         elif action == "activate" and status == "pjbg":
-            allowed_role, next_status = "legal", "active"
+            allowed_role, next_status = "admin", "active"
             update = (
                 "UPDATE sph_proposals SET status=%s,updated_at=%s WHERE id=%s",
                 (next_status, now, proposal_id),
@@ -2173,10 +2182,16 @@ async def sph_proposal_action(proposal_id: int, request: Request):
             message = f"Mencatat volume aktual {actual_volume:g} MMBTU."
         else:
             raise HTTPException(status_code=409, detail="Tindakan tidak sesuai dengan status SPH.")
-        if sph_role != allowed_role:
+        authorized = (
+            actor["role"] == "admin"
+            if allowed_role == "admin"
+            else sph_role == allowed_role
+        )
+        if not authorized:
+            required_role = "Admin" if allowed_role == "admin" else SPH_ROLES[allowed_role]
             raise HTTPException(
                 status_code=403,
-                detail=f"Tindakan ini hanya dapat dilakukan oleh {SPH_ROLES[allowed_role]}.",
+                detail=f"Tindakan ini hanya dapat dilakukan oleh {required_role}.",
             )
         con.execute(*update)
         _sph_log(con, proposal_id, request, message)
@@ -2195,6 +2210,8 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
+        from reportlab.lib.utils import ImageReader
+        from reportlab.pdfbase.pdfmetrics import stringWidth
         from reportlab.platypus import (
             PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
         )
@@ -2203,8 +2220,8 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
 
     output = BytesIO()
     document = SimpleDocTemplate(
-        output, pagesize=A4, rightMargin=28 * mm, leftMargin=28 * mm,
-        topMargin=35 * mm, bottomMargin=18 * mm,
+        output, pagesize=A4, rightMargin=28.34 * mm, leftMargin=28.34 * mm,
+        topMargin=34.8 * mm, bottomMargin=18 * mm,
         title=f"Surat Penawaran Harga {proposal['number']}",
         author="Reethau",
     )
@@ -2214,35 +2231,74 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(
         name="SphBody", parent=styles["BodyText"], fontName="Times-Roman",
-        fontSize=9, leading=10.2, alignment=TA_LEFT, spaceAfter=1,
+        fontSize=10, leading=11.5, alignment=TA_LEFT,
+        leftIndent=-6, spaceBefore=0, spaceAfter=0,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphMetadata", parent=styles["BodyText"], fontName="Times-Roman",
+        fontSize=10, leading=11.5, alignment=TA_LEFT,
+        spaceBefore=0, spaceAfter=0,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphSubject", parent=styles["BodyText"], fontName="Times-Bold",
+        fontSize=10, leading=11.5, alignment=TA_LEFT,
+        spaceBefore=0, spaceAfter=0,
     ))
     styles.add(ParagraphStyle(
         name="SphSection", parent=styles["BodyText"], fontName="Times-Bold",
         fontSize=10, leading=12, textColor=colors.black,
-        leftIndent=6 * mm,
+        leftIndent=4.2 * mm,
         spaceBefore=5, spaceAfter=3, keepWithNext=True,
     ))
     styles.add(ParagraphStyle(
         name="SphIndented", parent=styles["BodyText"], fontName="Times-Roman",
-        fontSize=9, leading=10.2, leftIndent=12 * mm, spaceAfter=1,
+        fontSize=10, leading=11.5, leftIndent=10.6 * mm,
+        spaceBefore=0, spaceAfter=0,
     ))
-    styles.add(ParagraphStyle(
-        name="SphList", parent=styles["BodyText"], fontName="Times-Roman",
-        fontSize=9, leading=10.2, leftIndent=12 * mm, spaceAfter=1,
-    ))
+    list_text_indent = 6 * mm
+    list_bullet_indents = {
+        section: 4.2 * mm + stringWidth(f"{section}. ", "Times-Bold", 10)
+        for section in ("B", "C", "D")
+    }
+    for section, bullet_indent in list_bullet_indents.items():
+        styles.add(ParagraphStyle(
+            name=f"SphList{section}", parent=styles["BodyText"],
+            fontName="Times-Roman", fontSize=10, leading=11.5,
+            leftIndent=bullet_indent + list_text_indent,
+            bulletIndent=bullet_indent,
+            bulletFontName="Times-Roman", bulletFontSize=10,
+            spaceBefore=0, spaceAfter=0,
+        ))
     styles.add(ParagraphStyle(
         name="SphTableHeader", parent=styles["BodyText"], fontName="Times-Bold",
-        fontSize=9, leading=10, alignment=TA_CENTER,
+        fontSize=10, leading=11.5, alignment=TA_CENTER,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphApprovalHeader", parent=styles["BodyText"],
+        fontName="Times-Bold", fontSize=10, leading=11.5,
+        alignment=TA_CENTER,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphApprovalText", parent=styles["BodyText"],
+        fontName="Times-Roman", fontSize=10, leading=11.5,
+        alignment=TA_CENTER,
     ))
     styles.add(ParagraphStyle(
         name="SphWatermark", parent=styles["BodyText"], fontName="Helvetica-Bold",
         fontSize=28, textColor=colors.HexColor("#b94a48"),
     ))
     safe = lambda value: str(value or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
-    def obligation_lines(value):
+    def numbered_item(number, value, section="B"):
+        return Paragraph(
+            safe(value),
+            styles[f"SphList{section}"],
+            bulletText=f"{number}.",
+        )
+
+    def obligation_lines(value, section):
         lines = [line.strip() for line in str(value or "").splitlines() if line.strip()]
         return [
-            Paragraph(f"{index}. {safe(line)}", styles["SphList"])
+            numbered_item(index, line, section)
             for index, line in enumerate(lines, start=1)
         ] or [Paragraph("-", styles["SphBody"])]
 
@@ -2256,11 +2312,11 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
         f"{weekdays[proposal_date.weekday()]}, {proposal_date.day} "
         f"{months[proposal_date.month - 1]} {proposal_date.year}"
     )
-    address = ", ".join(
-        part.strip().rstrip(",")
+    address_lines = [
+        part.strip()
         for part in (proposal["addressLine1"], proposal["addressLine2"])
         if part.strip()
-    )
+    ]
     contract_year_words = {
         1: "Satu", 2: "Dua", 3: "Tiga", 4: "Empat", 5: "Lima",
         6: "Enam", 7: "Tujuh", 8: "Delapan", 9: "Sembilan",
@@ -2277,13 +2333,18 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
     story = [
         Table(
             [
-                ["No", ":", Paragraph(f"<b>{safe(proposal['number'])}</b>", styles["SphBody"])],
-                ["Hari/Tanggal", ":", date_label],
+                [
+                    "No", ":", Paragraph(
+                        f"<b>{safe(proposal['number'])}</b>",
+                        styles["SphMetadata"],
+                    ),
+                ],
+                ["Hari/Tanggal", ":", Paragraph(date_label, styles["SphMetadata"])],
             ],
-            colWidths=[22 * mm, 4 * mm, document.width - 26 * mm],
+            colWidths=[25.4 * mm, 1.87 * mm, document.width - 27.27 * mm],
             style=TableStyle([
                 ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 2),
@@ -2291,25 +2352,28 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ]),
         ),
-        Spacer(1, 7 * mm),
+        Spacer(1, 7.75 * mm),
         Paragraph("Kepada Yth.", styles["SphBody"]),
         Paragraph(f"<b>{safe(proposal['customerName'])}</b>", styles["SphBody"]),
-        Paragraph(safe(address) or "-", styles["SphBody"]),
-        Spacer(1, 3 * mm),
+        Paragraph(
+            "<br/>".join(safe(part) for part in address_lines) or "-",
+            styles["SphBody"],
+        ),
+        Spacer(1, 4 * mm),
         Table(
             [[
                 "Perihal",
                 ":",
                 Paragraph(
-                    f"<b>Penawaran Harga Compressed Natural Gas (CNG) "
-                    f"{safe(proposal['customerName'])}</b>",
-                    styles["SphBody"],
+                    f"Penawaran Harga <i>Compressed Natural Gas</i> (CNG) "
+                    f"{safe(proposal['customerName'])}",
+                    styles["SphSubject"],
                 ),
             ]],
-            colWidths=[22 * mm, 4 * mm, document.width - 26 * mm],
+            colWidths=[19.05 * mm, 2.75 * mm, document.width - 21.8 * mm],
             style=TableStyle([
                 ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 2),
@@ -2365,80 +2429,114 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
         Spacer(1, 2 * mm),
         table,
         Paragraph("B. Detail Penawaran", styles["SphSection"]),
-        Paragraph(
-            f"1. Masa kontrak {proposal['contractYears']} "
+        numbered_item(
+            1,
+            f"Masa kontrak {proposal['contractYears']} "
             f"({contract_year_words[proposal['contractYears']]}) tahun.",
-            styles["SphIndented"],
         ),
-        Paragraph("2. Garansi supply atau garansi kelangsungan pasokan CNG.", styles["SphIndented"]),
-        Paragraph(
-            "3. Perhitungan pemakaian CNG menggunakan metering milik "
+        numbered_item(2, "Garansi supply atau garansi kelangsungan pasokan CNG."),
+        numbered_item(
+            3,
+            "Perhitungan pemakaian CNG menggunakan metering milik "
             "PT Reethau Cipta Energi.",
-            styles["SphIndented"],
         ),
-        Paragraph(
-            "4. Konversi sm3 menjadi MMBTU berdasarkan spesifikasi gas (nilai kalori) "
+        numbered_item(
+            4,
+            "Konversi sm3 menjadi MMBTU berdasarkan spesifikasi gas (nilai kalori) "
             "yang akan dikalkulasi setiap bulannya.",
-            styles["SphIndented"],
         ),
-        Paragraph(
-            f"5. Menggunakan jaminan pembayaran berupa {safe(proposal['guarantee'])}.",
-            styles["SphIndented"],
+        numbered_item(
+            5,
+            f"Menggunakan jaminan pembayaran berupa {proposal['guarantee']}.",
         ),
-        Paragraph(
-            f"6. Dikenakan TOP (Take or Pay) {proposal['topPercent']:g}% dari "
+        numbered_item(
+            6,
+            f"Dikenakan TOP (Take or Pay) {proposal['topPercent']:g}% dari "
             "pengambilan minimum pemakaian.",
-            styles["SphIndented"],
         ),
-        Paragraph(
-            f"7. Pembayaran dilakukan oleh Pihak Kedua paling lambat tanggal "
+        numbered_item(
+            7,
+            f"Pembayaran dilakukan oleh Pihak Kedua paling lambat tanggal "
             f"{proposal['dueDay']} setiap bulannya ke rekening Pihak Pertama, "
             "PT Reethau Cipta Energi, PT Bank Mandiri No. Rekening "
             "167-000701735-2 (IDR).",
-            styles["SphIndented"],
         ),
-        Paragraph(
-            "8. Sumber gas langsung dari PT Pertamina dan memiliki Izin Niaga Gas CNG.",
-            styles["SphIndented"],
+        numbered_item(
+            8,
+            "Sumber gas langsung dari PT Pertamina dan memiliki Izin Niaga Gas CNG.",
         ),
-        Paragraph(
-            "9. Harga gas dapat berubah berdasarkan eskalasi harga resmi dari "
+        numbered_item(
+            9,
+            "Harga gas dapat berubah berdasarkan eskalasi harga resmi dari "
             "pemerintah dan/atau sumber gas.",
-            styles["SphIndented"],
         ),
         Paragraph("C. Kewajiban PT Reethau Cipta Energi", styles["SphSection"]),
-        *obligation_lines(proposal["reethauObligations"]),
+        *obligation_lines(proposal["reethauObligations"], "C"),
         Paragraph("D. Kewajiban Customer", styles["SphSection"]),
-        *obligation_lines(proposal["customerObligations"]),
+        *obligation_lines(proposal["customerObligations"], "D"),
         Paragraph("E. Lain-lain", styles["SphSection"]),
         Paragraph("Draft Perjanjian Jual Beli Gas akan diberikan secara terpisah.", styles["SphIndented"]),
         PageBreak(),
+        Spacer(1, 16 * mm),
         Paragraph(
             "Demikian surat penawaran harga Compressed Natural Gas (CNG) ini yang "
             "dapat kami sampaikan. Atas perhatian dan kerja sama Anda, kami ucapkan "
             "terima kasih.",
             styles["SphBody"],
         ),
-        Spacer(1, 12 * mm),
+        Spacer(1, 8 * mm),
         Table(
-            [[Paragraph(
-                "Hormat kami,<br/><b>PT Reethau Cipta Energi</b><br/><br/><br/><br/>"
-                "<b>Commercial Head</b>",
-                styles["SphBody"],
-            )]],
-            colWidths=[85 * mm],
+            [[
+                [
+                    Paragraph("Hormat kami,<br/><b>PT Reethau Cipta Energi</b>", styles["SphBody"]),
+                    Spacer(1, 26 * mm),
+                    Paragraph(
+                        "<u><b>Sahrul Asturrachman</b></u><br/><i>Commercial Head</i>",
+                        styles["SphBody"],
+                    ),
+                ],
+                Table(
+                    [
+                        [Paragraph("Approval Penawaran", styles["SphApprovalHeader"])],
+                        [Paragraph("PT Green Pulse Dynamics", styles["SphApprovalHeader"])],
+                        [""],
+                        [Paragraph("Direktur/Manajer", styles["SphApprovalText"])],
+                    ],
+                    colWidths=[52 * mm],
+                    rowHeights=[8 * mm, 8 * mm, 18 * mm, 8 * mm],
+                    style=TableStyle([
+                        ("BOX", (0, 0), (-1, -1), .5, colors.black),
+                        ("LINEBELOW", (0, 0), (-1, 0), .5, colors.black),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                        ("TOPPADDING", (0, 0), (-1, -1), 0),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ]),
+                ),
+            ]],
+            colWidths=[document.width - 57 * mm, 52 * mm],
             hAlign="LEFT",
+            style=TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]),
         ),
     ])
     is_draft = proposal["status"] == "draft"
 
     def page_footer(canvas, _document):
         canvas.saveState()
-        logo_width = 60 * mm
-        logo_height = logo_width * 0.6
+        logo_width = 62 * mm
+        logo_image = ImageReader(str(sph_pdf_logo))
+        logo_pixel_width, logo_pixel_height = logo_image.getSize()
+        logo_height = logo_width * logo_pixel_height / logo_pixel_width
         canvas.drawImage(
-            str(sph_pdf_logo),
-            14 * mm,
+            logo_image,
+            11.5 * mm,
             A4[1] - 2 * mm - logo_height,
             width=logo_width,
             height=logo_height,

@@ -344,6 +344,13 @@ class UserRoleTests(unittest.TestCase):
         self.assertEqual(response, {"username": "sales.team", "sphRole": "sales"})
         self.assertEqual(self.database.users["sales.team"]["sph_role"], "sales")
 
+        request = FakeRequest({"sphRole": "legal"})
+        request.session["application"] = "sph"
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.update_sph_user_role("sales.team", request))
+        self.assertEqual(error.exception.status_code, 400)
+        self.assertEqual(self.database.users["sales.team"]["sph_role"], "sales")
+
         sph_request = FakeRequest()
         sph_request.session["application"] = "sph"
         self.assertEqual(
