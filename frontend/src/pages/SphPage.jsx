@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import logoImage from '../assets/reethau.png';
+import '../sph.css';
 
 const roleLabels = {
     sales: 'Sales',
@@ -416,8 +418,8 @@ export default function SphPage({ user, onLogout }) {
         <main className="sph-app">
             <header className="sph-topbar">
                 <a className="sph-brand" href="/sph" aria-label="SPH CNG Reethau">
-                    <span className="sph-brand-mark">R</span>
-                    <span><strong>REETHAU</strong><small>COMMERCIAL SYSTEMS</small></span>
+                    <img src={logoImage} alt="Reethau Clean Energy" />
+                    <span><strong>SPH CNG</strong><small>COMMERCIAL SYSTEMS</small></span>
                 </a>
                 <div className="sph-topbar-right">
                     <span className="sph-user-chip">
