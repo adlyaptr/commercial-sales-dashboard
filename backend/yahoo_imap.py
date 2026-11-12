@@ -9,6 +9,7 @@ from email.utils import parseaddr
 MAX_ATTACHMENT_BYTES = 30 * 1024 * 1024
 MAX_EMAIL_BYTES = 35 * 1024 * 1024
 MAX_MESSAGES_TO_SCAN = 20
+PLANNER_SENDER = "reethauplanner@gmail.com"
 
 
 def decode_value(value):
@@ -28,10 +29,7 @@ def _settings():
         raise RuntimeError("YAHOO_IMAP_PORT harus berupa angka.") from exc
     email_address = os.getenv("YAHOO_EMAIL", "").strip()
     password = os.getenv("YAHOO_APP_PASSWORD", "").strip()
-    allowed_sender = os.getenv(
-        "YAHOO_ALLOWED_SENDER",
-        "reethauplanner@gmail.com",
-    ).strip().lower()
+    allowed_sender = PLANNER_SENDER
     folder = os.getenv("YAHOO_IMAP_FOLDER", "INBOX").strip()
 
     if not email_address or not password:
@@ -40,8 +38,8 @@ def _settings():
         )
     if not host or not 1 <= port <= 65535:
         raise RuntimeError("Konfigurasi server IMAP tidak valid.")
-    if not allowed_sender or not folder:
-        raise RuntimeError("Pengirim Planner dan folder IMAP harus dikonfigurasi.")
+    if not folder:
+        raise RuntimeError("Folder IMAP harus dikonfigurasi.")
     return host, port, email_address, password, allowed_sender, folder
 
 

@@ -3,6 +3,8 @@ import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
 import OperatorTables from '../components/OperatorTables';
 
+const EMAIL_SYNC_INTERVAL_MS = 310_000;
+
 function parseIndonesianNumber(value) {
     const normalized = value.trim().replace(/\s/g, '');
     if (!normalized) return null;
@@ -73,12 +75,26 @@ export default function DailyPage() {
         if (!canEdit) return undefined;
 
         let active = true;
-        setEmailSyncStatus({ loading: true, text: 'Memeriksa email Daily Report Planner...' });
-        api('/api/email/daily-sales/sync', {
-            method: 'POST',
-            signal: AbortSignal.timeout(90_000),
-        })
-            .then((result) => {
+        let syncInFlight = false;
+        const syncEmail = async () => {
+            if (
+                !active ||
+                syncInFlight ||
+                document.visibilityState === 'hidden'
+            ) {
+                return;
+            }
+
+            syncInFlight = true;
+            setEmailSyncStatus({
+                loading: true,
+                text: 'Memeriksa email Daily Report Planner...',
+            });
+            try {
+                const result = await api('/api/email/daily-sales/sync', {
+                    method: 'POST',
+                    signal: AbortSignal.timeout(90_000),
+                });
                 if (!active) return;
                 const importedDetails = (result.imported ?? [])
                     .map((item) => `${item.report_date}: ${item.rows_saved} baris`)
@@ -109,17 +125,30 @@ export default function DailyPage() {
                         }
                     });
                 }
-            })
-            .catch((error) => {
+            } catch (error) {
                 if (active) {
                     setEmailSyncStatus({
                         bad: true,
                         text: error.message || 'Sinkronisasi email Planner gagal.',
                     });
                 }
-            });
+            } finally {
+                syncInFlight = false;
+            }
+        };
 
-        return () => { active = false; };
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== 'hidden') syncEmail();
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        syncEmail();
+        const timer = window.setInterval(syncEmail, EMAIL_SYNC_INTERVAL_MS);
+
+        return () => {
+            active = false;
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.clearInterval(timer);
+        };
     }, [canEdit]);
 
     useEffect(() => {

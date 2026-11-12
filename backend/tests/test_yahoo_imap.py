@@ -115,6 +115,16 @@ class FakeMailboxWithMessages(FakeMailbox):
 
 
 class YahooImapEmailParsingTests(unittest.TestCase):
+    def test_uses_the_fixed_planner_sender_address(self):
+        with patch.dict("os.environ", {
+            "YAHOO_EMAIL": "dashboard@example.com",
+            "YAHOO_APP_PASSWORD": "test-app-password",
+            "YAHOO_ALLOWED_SENDER": "reethuplanner@gmail.com",
+        }):
+            settings = yahoo_imap._settings()
+
+        self.assertEqual(settings[4], "reethauplanner@gmail.com")
+
     def test_extracts_daily_sales_excel_from_planner_email(self):
         parsed = yahoo_imap.parse_daily_sales_email(
             build_message(),
