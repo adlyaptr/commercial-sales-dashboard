@@ -601,7 +601,6 @@ export default function SphPage({ user, onLogout }) {
                                     <div className="sph-form-grid">
                                         <TextField label="Nomor surat *" name="proposalNumber" value={form.proposalNumber} onChange={updateField} required maxLength={80} placeholder="Contoh: SPH-2026-11-MKT-000" />
                                         <TextField label="Nama pelanggan *" name="customerName" value={form.customerName} onChange={updateField} required maxLength={255} />
-                                        <TextField label="Tanggal penawaran *" name="proposalDate" type="date" value={form.proposalDate} onChange={updateField} required />
                                         <label className="sph-field sph-field-address">
                                             <span>Alamat</span>
                                             <textarea
@@ -613,6 +612,7 @@ export default function SphPage({ user, onLogout }) {
                                                 placeholder={'Jalan Akses Tol Cibitung No.82, Gandasari,\nKecamatan Cikarang Barat, Kabupaten Bekasi, Jawa Barat 17530'}
                                             />
                                         </label>
+                                        <TextField label="Tanggal penawaran *" name="proposalDate" type="date" value={form.proposalDate} onChange={updateField} required />
                                     </div>
                                 </div>
                                 <div className="sph-form-section">
