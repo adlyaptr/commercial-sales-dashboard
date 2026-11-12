@@ -2827,6 +2827,7 @@ def sync_daily_sales_email(request: Request):
                 "subject": subject,
                 "rows_read": result["rows_read"],
                 "rows_saved": result["rows_saved"],
+                "report_date": report_date.isoformat(),
                 "start_date": validated["start_date"],
                 "end_date": validated["end_date"],
                 "message": status_message,

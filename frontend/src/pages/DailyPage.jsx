@@ -81,8 +81,14 @@ export default function DailyPage() {
             .then((result) => {
                 if (!active) return;
                 const importedDetails = (result.imported ?? [])
-                    .map((item) => `${item.start_date} s.d. ${item.end_date}: ${item.rows_saved} baris`)
+                    .map((item) => `${item.report_date}: ${item.rows_saved} baris`)
                     .join('; ');
+                const importedReportDates = (result.imported ?? [])
+                    .map((item) => item.report_date)
+                    .filter((reportDate) => typeof reportDate === 'string')
+                    .sort();
+                const latestImportedDate =
+                    importedReportDates[importedReportDates.length - 1];
                 const failedDetails = (result.failed ?? [])
                     .map((item) => item.message)
                     .join(' ');
@@ -93,7 +99,7 @@ export default function DailyPage() {
                         .join(' '),
                 });
                 if ((result.imported ?? []).length > 0) {
-                    refreshDashboardRef.current().catch((error) => {
+                    refreshDashboardRef.current(latestImportedDate).catch((error) => {
                         if (active) {
                             setEmailSyncStatus((current) => ({
                                 ...current,
