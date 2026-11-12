@@ -113,7 +113,7 @@ function formFromProposal(proposal) {
     return {
         proposalNumber: proposal.number || '',
         customerName: proposal.customerName || '',
-        address: [proposal.addressLine1, proposal.addressLine2].filter(Boolean).join('\n'),
+        address: [proposal.addressLine1, proposal.addressLine2].filter(Boolean).join(' '),
         proposalDate: proposal.proposalDate || '',
         volumeMin: proposal.volumeMin,
         volumeMax: proposal.volumeMax,
@@ -335,8 +335,8 @@ export default function SphPage({ user, onLogout }) {
         setNotice('');
         const payload = {
             ...form,
-            addressLine1: form.address.split(/\r?\n/, 2)[0].trim(),
-            addressLine2: form.address.split(/\r?\n/).slice(1).join('\n').trim(),
+            addressLine1: form.address.trim(),
+            addressLine2: '',
             volumeMin: Number(form.volumeMin),
             volumeMax: Number(form.volumeMax),
             priceUsd: Number(form.priceUsd),
@@ -601,18 +601,8 @@ export default function SphPage({ user, onLogout }) {
                                     <div className="sph-form-grid">
                                         <TextField label="Nomor surat *" name="proposalNumber" value={form.proposalNumber} onChange={updateField} required maxLength={80} placeholder="Contoh: SPH-2026-11-MKT-000" />
                                         <TextField label="Nama pelanggan *" name="customerName" value={form.customerName} onChange={updateField} required maxLength={255} />
-                                        <label className="sph-field sph-field-address">
-                                            <span>Alamat</span>
-                                            <textarea
-                                                name="address"
-                                                value={form.address}
-                                                onChange={updateField}
-                                                maxLength={4000}
-                                                rows={3}
-                                                placeholder={'Jalan Akses Tol Cibitung No.82, Gandasari,\nKecamatan Cikarang Barat, Kabupaten Bekasi, Jawa Barat 17530'}
-                                            />
-                                        </label>
                                         <TextField label="Tanggal penawaran *" name="proposalDate" type="date" value={form.proposalDate} onChange={updateField} required />
+                                        <TextField label="Alamat" name="address" value={form.address} onChange={updateField} maxLength={2000} placeholder="Jalan Akses Tol Cibitung No.82, Gandasari, Kecamatan Cikarang Barat, Kabupaten Bekasi, Jawa Barat 17530" />
                                     </div>
                                 </div>
                                 <div className="sph-form-section">
