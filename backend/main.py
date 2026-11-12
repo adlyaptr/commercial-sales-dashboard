@@ -284,6 +284,7 @@ SPH_ROLES = {
     "director": "Direksi",
     "legal": "Legal",
 }
+SPH_ASSIGNABLE_ROLES = {"sales", "commercial_head"}
 
 
 def require_sph_access(request: Request):
@@ -1294,7 +1295,11 @@ def operator_sheet_daily_sales_records(wb):
     return records
 
 
-def import_excel(path: Path, original_filename: str):
+def import_excel(
+    path: Path,
+    original_filename: str,
+    report_date_filter: Optional[date] = None,
+):
     # data_only=True is important: Daily Sales is formula-based, and Excel's saved
     # cached results are the actual reported figures we want to import.
     rows_read = rows_saved = 0
@@ -1302,6 +1307,9 @@ def import_excel(path: Path, original_filename: str):
     unmapped_customers = []
     mapping_saved = 0
     imported_dates = set()
+    report_date_filter_value = (
+        report_date_filter.isoformat() if report_date_filter else None
+    )
     wb = None
     try:
         wb = load_workbook(path, data_only=True, read_only=False)
@@ -1358,6 +1366,8 @@ def import_excel(path: Path, original_filename: str):
                     report_date = parse_date(date_value)
                     if not report_date:
                         continue
+                    if report_date_filter_value and report_date != report_date_filter_value:
+                        continue
                     for customer, actual_col in actual_cols:
                         actual_value = ws.cell(r, actual_col).value
                         # Do not create rows for blank cells. Explicit numeric zero is valid.
@@ -1396,7 +1406,9 @@ def import_excel(path: Path, original_filename: str):
             elif operator_records:
                 for record in operator_records:
                     customer = record["customer"]
-                    report_date = record["report_date"]
+                    report_date = parse_date(record["report_date"])
+                    if report_date_filter_value and report_date != report_date_filter_value:
+                        continue
                     key = norm(customer)
                     rows_read += 1
                     op = find_operator(con, customer) or record["operator"]
@@ -1438,6 +1450,8 @@ def import_excel(path: Path, original_filename: str):
                             continue
                         report_date = parse_date(val("date"))
                         if not report_date:
+                            continue
+                        if report_date_filter_value and report_date != report_date_filter_value:
                             continue
                         rows_read += 1
                         op = str(val("operator") or "").strip().upper()
@@ -1635,7 +1649,7 @@ async def update_sph_user_role(username: str, request: Request):
         raise HTTPException(status_code=400, detail="Format role SPH tidak valid.")
     sph_role = payload.get("sphRole")
     if sph_role is not None and (
-        not isinstance(sph_role, str) or sph_role not in SPH_ROLES
+        not isinstance(sph_role, str) or sph_role not in SPH_ASSIGNABLE_ROLES
     ):
         raise HTTPException(status_code=400, detail="Role SPH tidak dikenal.")
     with db() as con:
@@ -2044,7 +2058,7 @@ async def sph_update_proposal(proposal_id: int, request: Request):
 
 @app.post("/api/sph/proposals/{proposal_id}/actions")
 async def sph_proposal_action(proposal_id: int, request: Request):
-    require_sph_access(request)
+    actor = require_sph_access(request)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format tindakan tidak valid.")
@@ -2130,7 +2144,7 @@ async def sph_proposal_action(proposal_id: int, request: Request):
             )
             message = "Dokumen diserahkan ke Legal untuk proses PJBG."
         elif action == "activate" and status == "pjbg":
-            allowed_role, next_status = "legal", "active"
+            allowed_role, next_status = "admin", "active"
             update = (
                 "UPDATE sph_proposals SET status=%s,updated_at=%s WHERE id=%s",
                 (next_status, now, proposal_id),
@@ -2159,10 +2173,16 @@ async def sph_proposal_action(proposal_id: int, request: Request):
             message = f"Mencatat volume aktual {actual_volume:g} MMBTU."
         else:
             raise HTTPException(status_code=409, detail="Tindakan tidak sesuai dengan status SPH.")
-        if sph_role != allowed_role:
+        authorized = (
+            actor["role"] == "admin"
+            if allowed_role == "admin"
+            else sph_role == allowed_role
+        )
+        if not authorized:
+            required_role = "Admin" if allowed_role == "admin" else SPH_ROLES[allowed_role]
             raise HTTPException(
                 status_code=403,
-                detail=f"Tindakan ini hanya dapat dilakukan oleh {SPH_ROLES[allowed_role]}.",
+                detail=f"Tindakan ini hanya dapat dilakukan oleh {required_role}.",
             )
         con.execute(*update)
         _sph_log(con, proposal_id, request, message)
@@ -2181,6 +2201,7 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
+        from reportlab.lib.utils import ImageReader
         from reportlab.platypus import (
             PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
         )
@@ -2189,8 +2210,8 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
 
     output = BytesIO()
     document = SimpleDocTemplate(
-        output, pagesize=A4, rightMargin=28 * mm, leftMargin=28 * mm,
-        topMargin=35 * mm, bottomMargin=18 * mm,
+        output, pagesize=A4, rightMargin=28.34 * mm, leftMargin=28.34 * mm,
+        topMargin=34.8 * mm, bottomMargin=18 * mm,
         title=f"Surat Penawaran Harga {proposal['number']}",
         author="Reethau",
     )
@@ -2200,35 +2221,56 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(
         name="SphBody", parent=styles["BodyText"], fontName="Times-Roman",
-        fontSize=9, leading=10.2, alignment=TA_LEFT, spaceAfter=1,
+        fontSize=10, leading=11.5, alignment=TA_LEFT,
+        leftIndent=-6, spaceBefore=0, spaceAfter=0,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphMetadata", parent=styles["BodyText"], fontName="Times-Roman",
+        fontSize=10, leading=11.5, alignment=TA_LEFT,
+        spaceBefore=0, spaceAfter=0,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphSubject", parent=styles["BodyText"], fontName="Times-Bold",
+        fontSize=10, leading=11.5, alignment=TA_LEFT,
+        spaceBefore=0, spaceAfter=0,
     ))
     styles.add(ParagraphStyle(
         name="SphSection", parent=styles["BodyText"], fontName="Times-Bold",
         fontSize=10, leading=12, textColor=colors.black,
-        leftIndent=6 * mm,
+        leftIndent=4.2 * mm,
         spaceBefore=5, spaceAfter=3, keepWithNext=True,
     ))
     styles.add(ParagraphStyle(
         name="SphIndented", parent=styles["BodyText"], fontName="Times-Roman",
-        fontSize=9, leading=10.2, leftIndent=12 * mm, spaceAfter=1,
+        fontSize=10, leading=11.5, leftIndent=10.6 * mm,
+        spaceBefore=0, spaceAfter=0,
     ))
     styles.add(ParagraphStyle(
         name="SphList", parent=styles["BodyText"], fontName="Times-Roman",
-        fontSize=9, leading=10.2, leftIndent=12 * mm, spaceAfter=1,
+        fontSize=10, leading=11.5, leftIndent=12 * mm,
+        bulletIndent=6 * mm,
+        spaceBefore=0, spaceAfter=0,
     ))
     styles.add(ParagraphStyle(
         name="SphTableHeader", parent=styles["BodyText"], fontName="Times-Bold",
-        fontSize=9, leading=10, alignment=TA_CENTER,
+        fontSize=10, leading=11.5, alignment=TA_CENTER,
     ))
     styles.add(ParagraphStyle(
         name="SphWatermark", parent=styles["BodyText"], fontName="Helvetica-Bold",
         fontSize=28, textColor=colors.HexColor("#b94a48"),
     ))
     safe = lambda value: str(value or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+    def numbered_item(number, value):
+        return Paragraph(
+            safe(value),
+            styles["SphList"],
+            bulletText=f"{number}.",
+        )
+
     def obligation_lines(value):
         lines = [line.strip() for line in str(value or "").splitlines() if line.strip()]
         return [
-            Paragraph(f"{index}. {safe(line)}", styles["SphList"])
+            numbered_item(index, line)
             for index, line in enumerate(lines, start=1)
         ] or [Paragraph("-", styles["SphBody"])]
 
@@ -2242,11 +2284,11 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
         f"{weekdays[proposal_date.weekday()]}, {proposal_date.day} "
         f"{months[proposal_date.month - 1]} {proposal_date.year}"
     )
-    address = ", ".join(
-        part.strip().rstrip(",")
+    address_lines = [
+        part.strip()
         for part in (proposal["addressLine1"], proposal["addressLine2"])
         if part.strip()
-    )
+    ]
     contract_year_words = {
         1: "Satu", 2: "Dua", 3: "Tiga", 4: "Empat", 5: "Lima",
         6: "Enam", 7: "Tujuh", 8: "Delapan", 9: "Sembilan",
@@ -2263,13 +2305,18 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
     story = [
         Table(
             [
-                ["No", ":", Paragraph(f"<b>{safe(proposal['number'])}</b>", styles["SphBody"])],
-                ["Hari/Tanggal", ":", date_label],
+                [
+                    "No", ":", Paragraph(
+                        f"<b>{safe(proposal['number'])}</b>",
+                        styles["SphMetadata"],
+                    ),
+                ],
+                ["Hari/Tanggal", ":", Paragraph(date_label, styles["SphMetadata"])],
             ],
-            colWidths=[22 * mm, 4 * mm, document.width - 26 * mm],
+            colWidths=[25.4 * mm, 1.87 * mm, document.width - 27.27 * mm],
             style=TableStyle([
                 ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 2),
@@ -2277,25 +2324,28 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ]),
         ),
-        Spacer(1, 7 * mm),
+        Spacer(1, 7.75 * mm),
         Paragraph("Kepada Yth.", styles["SphBody"]),
         Paragraph(f"<b>{safe(proposal['customerName'])}</b>", styles["SphBody"]),
-        Paragraph(safe(address) or "-", styles["SphBody"]),
-        Spacer(1, 3 * mm),
+        Paragraph(
+            "<br/>".join(safe(part) for part in address_lines) or "-",
+            styles["SphBody"],
+        ),
+        Spacer(1, 4 * mm),
         Table(
             [[
                 "Perihal",
                 ":",
                 Paragraph(
-                    f"<b>Penawaran Harga Compressed Natural Gas (CNG) "
-                    f"{safe(proposal['customerName'])}</b>",
-                    styles["SphBody"],
+                    f"Penawaran Harga <i>Compressed Natural Gas</i> (CNG) "
+                    f"{safe(proposal['customerName'])}",
+                    styles["SphSubject"],
                 ),
             ]],
-            colWidths=[22 * mm, 4 * mm, document.width - 26 * mm],
+            colWidths=[19.05 * mm, 2.75 * mm, document.width - 21.8 * mm],
             style=TableStyle([
                 ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 2),
@@ -2351,46 +2401,46 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
         Spacer(1, 2 * mm),
         table,
         Paragraph("B. Detail Penawaran", styles["SphSection"]),
-        Paragraph(
-            f"1. Masa kontrak {proposal['contractYears']} "
+        numbered_item(
+            1,
+            f"Masa kontrak {proposal['contractYears']} "
             f"({contract_year_words[proposal['contractYears']]}) tahun.",
-            styles["SphIndented"],
         ),
-        Paragraph("2. Garansi supply atau garansi kelangsungan pasokan CNG.", styles["SphIndented"]),
-        Paragraph(
-            "3. Perhitungan pemakaian CNG menggunakan metering milik "
+        numbered_item(2, "Garansi supply atau garansi kelangsungan pasokan CNG."),
+        numbered_item(
+            3,
+            "Perhitungan pemakaian CNG menggunakan metering milik "
             "PT Reethau Cipta Energi.",
-            styles["SphIndented"],
         ),
-        Paragraph(
-            "4. Konversi sm3 menjadi MMBTU berdasarkan spesifikasi gas (nilai kalori) "
+        numbered_item(
+            4,
+            "Konversi sm3 menjadi MMBTU berdasarkan spesifikasi gas (nilai kalori) "
             "yang akan dikalkulasi setiap bulannya.",
-            styles["SphIndented"],
         ),
-        Paragraph(
-            f"5. Menggunakan jaminan pembayaran berupa {safe(proposal['guarantee'])}.",
-            styles["SphIndented"],
+        numbered_item(
+            5,
+            f"Menggunakan jaminan pembayaran berupa {proposal['guarantee']}.",
         ),
-        Paragraph(
-            f"6. Dikenakan TOP (Take or Pay) {proposal['topPercent']:g}% dari "
+        numbered_item(
+            6,
+            f"Dikenakan TOP (Take or Pay) {proposal['topPercent']:g}% dari "
             "pengambilan minimum pemakaian.",
-            styles["SphIndented"],
         ),
-        Paragraph(
-            f"7. Pembayaran dilakukan oleh Pihak Kedua paling lambat tanggal "
+        numbered_item(
+            7,
+            f"Pembayaran dilakukan oleh Pihak Kedua paling lambat tanggal "
             f"{proposal['dueDay']} setiap bulannya ke rekening Pihak Pertama, "
             "PT Reethau Cipta Energi, PT Bank Mandiri No. Rekening "
             "167-000701735-2 (IDR).",
-            styles["SphIndented"],
         ),
-        Paragraph(
-            "8. Sumber gas langsung dari PT Pertamina dan memiliki Izin Niaga Gas CNG.",
-            styles["SphIndented"],
+        numbered_item(
+            8,
+            "Sumber gas langsung dari PT Pertamina dan memiliki Izin Niaga Gas CNG.",
         ),
-        Paragraph(
-            "9. Harga gas dapat berubah berdasarkan eskalasi harga resmi dari "
+        numbered_item(
+            9,
+            "Harga gas dapat berubah berdasarkan eskalasi harga resmi dari "
             "pemerintah dan/atau sumber gas.",
-            styles["SphIndented"],
         ),
         Paragraph("C. Kewajiban PT Reethau Cipta Energi", styles["SphSection"]),
         *obligation_lines(proposal["reethauObligations"]),
@@ -2407,24 +2457,41 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
         ),
         Spacer(1, 12 * mm),
         Table(
-            [[Paragraph(
-                "Hormat kami,<br/><b>PT Reethau Cipta Energi</b><br/><br/><br/><br/>"
-                "<b>Commercial Head</b>",
-                styles["SphBody"],
-            )]],
-            colWidths=[85 * mm],
+            [[
+                Paragraph(
+                    "Hormat kami,<br/><b>PT Reethau Cipta Energi</b>"
+                    "<br/><br/><br/><br/><b>Sahrul Asturrachman</b>"
+                    "<br/>Commercial Head",
+                    styles["SphBody"],
+                ),
+                Paragraph(
+                    f"Approval Penawaran<br/><b>{safe(proposal['customerName'])}</b>"
+                    "<br/><br/><br/><br/><b>Direktur/Manajer</b>",
+                    styles["SphBody"],
+                ),
+            ]],
+            colWidths=[document.width / 2] * 2,
             hAlign="LEFT",
+            style=TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8 * mm),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]),
         ),
     ])
     is_draft = proposal["status"] == "draft"
 
     def page_footer(canvas, _document):
         canvas.saveState()
-        logo_width = 60 * mm
-        logo_height = logo_width * 0.6
+        logo_width = 62 * mm
+        logo_image = ImageReader(str(sph_pdf_logo))
+        logo_pixel_width, logo_pixel_height = logo_image.getSize()
+        logo_height = logo_width * logo_pixel_height / logo_pixel_width
         canvas.drawImage(
-            str(sph_pdf_logo),
-            14 * mm,
+            logo_image,
+            11.5 * mm,
             A4[1] - 2 * mm - logo_height,
             width=logo_width,
             height=logo_height,
@@ -2697,6 +2764,33 @@ def _finish_email_import(message_hash, status, filename="", rows_read=0,
         )
 
 
+def daily_report_date_from_subject(subject):
+    match = re.search(
+        r"\bDaily\s+Report\s+Tanggal\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})\b",
+        subject,
+        re.IGNORECASE,
+    )
+    month_numbers = {
+        "januari": 1, "februari": 2, "maret": 3, "april": 4,
+        "mei": 5, "juni": 6, "juli": 7, "agustus": 8,
+        "september": 9, "oktober": 10, "november": 11, "desember": 12,
+    }
+    if not match or match.group(2).lower() not in month_numbers:
+        raise ValueError(
+            "Tanggal laporan tidak dapat dibaca dari subjek email Planner."
+        )
+    try:
+        return date(
+            int(match.group(3)),
+            month_numbers[match.group(2).lower()],
+            int(match.group(1)),
+        )
+    except ValueError as exc:
+        raise ValueError(
+            "Tanggal laporan pada subjek email Planner tidak valid."
+        ) from exc
+
+
 @app.post("/api/email/daily-sales/sync")
 def sync_daily_sales_email(request: Request):
     require_admin(request)
@@ -2751,13 +2845,22 @@ def sync_daily_sales_email(request: Request):
             attachment = attachments[0]
             content = attachment["content"]
             validated = validate_email_daily_sales_workbook(content)
+            report_date = daily_report_date_from_subject(subject)
+            if not validated["start_date"] <= report_date.isoformat() <= validated["end_date"]:
+                raise ValueError(
+                    "Tanggal laporan pada subjek email tidak ada dalam rentang tanggal lampiran."
+                )
             original_name = Path(attachment["filename"]).name
             safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", original_name)[:150]
             content_hash = hashlib.sha256(content).hexdigest()[:12]
             filename = f"Planner_{content_hash}_{safe_name}"
             destination = INPUT_DIR / filename
             destination.write_bytes(content)
-            result = import_excel(destination, filename)
+            result = import_excel(
+                destination,
+                filename,
+                report_date_filter=report_date,
+            )
             if result.get("mapping_only") or not result.get("rows_saved"):
                 raise ValueError("Tidak ada baris penjualan yang berhasil disimpan.")
 

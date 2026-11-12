@@ -242,6 +242,17 @@ class YahooImapEmailParsingTests(unittest.TestCase):
 
 
 class YahooDailySalesSyncTests(unittest.TestCase):
+    def test_extracts_report_date_from_daily_report_subject(self):
+        self.assertEqual(
+            main.daily_report_date_from_subject(
+                "Daily Report Tanggal 11 November 2026"
+            ),
+            main.date(2026, 11, 11),
+        )
+
+        with self.assertRaisesRegex(ValueError, "tidak dapat dibaca"):
+            main.daily_report_date_from_subject("Daily Report November 2026")
+
     def test_email_message_is_claimed_only_once(self):
         stored_hashes = set()
 

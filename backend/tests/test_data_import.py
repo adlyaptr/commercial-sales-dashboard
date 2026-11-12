@@ -32,6 +32,49 @@ def operator_sheet_workbook():
 
 
 class OperatorSheetImportTests(unittest.TestCase):
+    def test_import_date_filter_leaves_other_daily_sales_dates_untouched(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Daily Sales"
+        sheet.cell(3, 2, "HSK (KSO GAS)")
+        sheet.cell(4, 3, "TARGET")
+        sheet.cell(4, 4, "ACTUAL")
+        for row_number, day, actual in (
+            (5, 10, 100),
+            (6, 11, 110),
+            (7, 12, 120),
+        ):
+            sheet.cell(row_number, 2, datetime(2026, 11, day))
+            sheet.cell(row_number, 3, 500)
+            sheet.cell(row_number, 4, actual)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "daily-sales.xlsx"
+            workbook.save(path)
+            workbook.close()
+
+            database = MemoryImportDatabase()
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", return_value="BLORA"),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+            ):
+                result = main.import_excel(
+                    path,
+                    path.name,
+                    report_date_filter=main.date(2026, 11, 11),
+                )
+
+        sales = [
+            row for row in database.saved
+            if row[0].startswith("INSERT INTO sales")
+        ]
+        self.assertEqual(result["rows_read"], 1)
+        self.assertEqual(result["rows_saved"], 1)
+        self.assertEqual(len(sales), 1)
+        self.assertEqual(sales[0][1][0], "2026-11-11")
+        self.assertEqual(sales[0][1][3], 110.0)
+
     def test_selects_populated_duplicate_actual_column_and_skips_total_labels(self):
         workbook = operator_sheet_workbook()
         sheet = workbook["BLORA"]
