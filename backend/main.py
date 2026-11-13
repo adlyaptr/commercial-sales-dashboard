@@ -2200,6 +2200,10 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
     proposal = _sph_get_proposal(proposal_id)
     with db() as con:
         _sph_log(con, proposal_id, request, "Mengunduh PDF SPH.")
+    return _sph_generate_proposal_pdf(proposal)
+
+
+def _sph_generate_proposal_pdf(proposal, inline=False):
     try:
         from reportlab.lib import colors
         from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -2560,10 +2564,36 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
     document.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
     output.seek(0)
     filename = f"{proposal['number'].replace('/', '-')}.pdf"
+    disposition = "inline" if inline else "attachment"
     return StreamingResponse(
         output, media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
     )
+
+
+@app.post("/api/sph/proposals/preview/pdf")
+async def sph_proposal_pdf_preview(request: Request):
+    require_sph_access(request)
+    validated = _sph_validate_proposal(await request.json())
+    preview = {
+        "number": validated["proposal_number"],
+        "customerName": validated["customer_name"],
+        "addressLine1": validated["address_line1"],
+        "addressLine2": validated["address_line2"],
+        "proposalDate": validated["proposal_date"].isoformat(),
+        "volumeMin": validated["volume_min"],
+        "volumeMax": validated["volume_max"],
+        "priceUsd": validated["price_usd"],
+        "topPercent": validated["top_percent"],
+        "guarantee": validated["guarantee"],
+        "dueDay": validated["due_day"],
+        "exchangeClause": validated["exchange_clause"],
+        "contractYears": validated["contract_years"],
+        "reethauObligations": validated["reethau_obligations"],
+        "customerObligations": validated["customer_obligations"],
+        "status": "draft",
+    }
+    return _sph_generate_proposal_pdf(preview, inline=True)
 
 
 @app.post("/api/import/preview")

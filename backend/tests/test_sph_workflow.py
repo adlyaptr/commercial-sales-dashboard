@@ -324,6 +324,38 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertTrue(content.startswith(b"%PDF-"))
         self.assertIn("attachment;", response.headers["content-disposition"])
 
+    def test_sph_pdf_preview_uses_unsaved_input_without_logging_or_mutating_proposal(self):
+        original_row = dict(self.database.row)
+        original_logs = list(self.database.logs)
+        request = SphRequest("commercial_head", {
+            "proposalNumber": "SPH-2026-11-MKT-009",
+            "customerName": "Preview Customer",
+            "addressLine1": "Preview Street 10",
+            "addressLine2": "",
+            "proposalDate": "2026-11-13",
+            "volumeMin": 8000,
+            "volumeMax": 10000,
+            "priceUsd": 15,
+            "topPercent": 90,
+            "guarantee": "Cash Deposit",
+            "dueDay": 20,
+            "contractYears": 2,
+            "exchangeClause": False,
+            "reethauObligations": "Mengirim CNG.",
+            "customerObligations": "Menyediakan area.",
+        })
+        response = asyncio.run(main.sph_proposal_pdf_preview(request))
+
+        async def read_response():
+            return b"".join([chunk async for chunk in response.body_iterator])
+
+        content = asyncio.run(read_response())
+        self.assertEqual(response.media_type, "application/pdf")
+        self.assertIn("inline;", response.headers["content-disposition"])
+        self.assertTrue(content.startswith(b"%PDF-"))
+        self.assertEqual(self.database.row, original_row)
+        self.assertEqual(self.database.logs, original_logs)
+
     def test_sph_pdf_formats_address_and_approval_page_like_template(self):
         from reportlab.platypus import Paragraph
 

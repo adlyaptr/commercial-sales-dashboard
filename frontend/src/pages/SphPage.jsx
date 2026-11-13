@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import logoImage from '../assets/reethau.png';
 import '../sph.css';
@@ -155,154 +155,84 @@ function formatUpdatedAt(value) {
     }).format(updatedAt);
 }
 
-function formatProposalDate(value) {
-    if (!value) return '—';
-    const date = new Date(`${value}T12:00:00`);
-    if (Number.isNaN(date.getTime())) return '—';
-    return new Intl.DateTimeFormat('id-ID', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-    }).format(date);
-}
+function SphPaperPreview({ form }) {
+    const [previewUrl, setPreviewUrl] = useState('');
+    const [previewError, setPreviewError] = useState('');
+    const [loadingPreview, setLoadingPreview] = useState(false);
+    const previewUrlRef = useRef('');
+    const previewPayload = JSON.stringify({
+        proposalNumber: form.proposalNumber,
+        customerName: form.customerName,
+        addressLine1: form.address,
+        addressLine2: '',
+        proposalDate: form.proposalDate,
+        volumeMin: form.volumeMin,
+        volumeMax: form.volumeMax,
+        priceUsd: form.priceUsd,
+        topPercent: form.topPercent,
+        guarantee: form.guarantee,
+        dueDay: form.dueDay,
+        exchangeClause: form.exchangeClause,
+        contractYears: form.contractYears,
+        reethauObligations: form.reethauObligations,
+        customerObligations: form.customerObligations,
+    });
 
-function formatPaperVolume(value) {
-    if (value == null || value === '') return '—';
-    const volume = Number(value);
-    if (!Number.isFinite(volume)) return '—';
-    return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(volume);
-}
+    useEffect(() => {
+        const controller = new AbortController();
+        const timeout = setTimeout(async () => {
+            setLoadingPreview(true);
+            setPreviewError('');
+            try {
+                const response = await fetch('/api/sph/proposals/preview/pdf', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/pdf',
+                        'Content-Type': 'application/json',
+                    },
+                    body: previewPayload,
+                    signal: controller.signal,
+                });
+                if (!response.ok) {
+                    const payload = await response.json().catch(() => ({}));
+                    throw new Error(payload.detail || 'Pratinjau PDF gagal dibuat.');
+                }
+                const url = URL.createObjectURL(await response.blob());
+                if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+                previewUrlRef.current = url;
+                setPreviewUrl(url);
+            } catch (requestError) {
+                if (requestError.name !== 'AbortError') {
+                    setPreviewError(requestError.message || 'Pratinjau PDF gagal dibuat.');
+                }
+            } finally {
+                if (!controller.signal.aborted) setLoadingPreview(false);
+            }
+        }, 350);
 
-function PaperFooter() {
-    return (
-        <footer className="sph-paper-footer">
-            <div><strong>OFFICE</strong><span>PT Reethau Cipta Energi</span><span>Jl. Darmawangsa Raya No. 8,</span><span>Kebayoran Baru - Jakarta Selatan 12160</span></div>
-            <span>P: +62 21 723 1238&nbsp;&nbsp; | &nbsp;&nbsp;+62 21 720 7130</span>
-            <span>www.reethau.com</span>
-        </footer>
-    );
-}
+        return () => {
+            clearTimeout(timeout);
+            controller.abort();
+        };
+    }, [previewPayload]);
 
-function SphPaperPreview({ form, proposal }) {
-    const contractYears = Number(form.contractYears);
-    const contractYearWords = {
-        1: 'Satu', 2: 'Dua', 3: 'Tiga', 4: 'Empat', 5: 'Lima',
-        6: 'Enam', 7: 'Tujuh', 8: 'Delapan', 9: 'Sembilan', 10: 'Sepuluh',
-        11: 'Sebelas', 12: 'Dua Belas', 13: 'Tiga Belas', 14: 'Empat Belas',
-        15: 'Lima Belas',
-    };
-    const reethauObligations = String(form.reethauObligations || '').split(/\r?\n/).filter((line) => line.trim());
-    const customerObligations = String(form.customerObligations || '').split(/\r?\n/).filter((line) => line.trim());
-    const customerName = form.customerName.trim() || '[Nama pelanggan]';
-    const address = form.address.trim() || '—';
-    const isDraft = !proposal || proposal.status !== 'draft';
+    useEffect(() => () => {
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    }, []);
 
     return (
         <section className="sph-document-preview" aria-label="Pratinjau surat penawaran">
             <div className="sph-document-preview-heading">
                 <strong>Pratinjau surat</strong>
-                <span>Ikuti perubahan input · 2 halaman</span>
+                <span>{loadingPreview ? 'Membuat PDF…' : 'PDF resmi · mengikuti input'}</span>
             </div>
-            <div className="sph-document-pages">
-                <article className="sph-paper-page">
-                    <img className="sph-paper-logo" src="/static/reethau-sph.png" alt="Reethau Clean Energy" />
-                    {isDraft && <span className="sph-paper-watermark" aria-hidden="true">DRAFT</span>}
-                    <div className="sph-paper-content">
-                        <table className="sph-paper-metadata">
-                            <tbody>
-                                <tr><td>No</td><td>:</td><td><strong>{form.proposalNumber || '—'}</strong></td></tr>
-                                <tr><td>Hari/Tanggal</td><td>:</td><td>{formatProposalDate(form.proposalDate)}</td></tr>
-                            </tbody>
-                        </table>
-                        <div className="sph-paper-recipient">
-                            <span>Kepada Yth.</span>
-                            <strong>{customerName}</strong>
-                            <span>{address}</span>
-                        </div>
-                        <div className="sph-paper-subject">
-                            <strong>Perihal</strong><span>:</span>
-                            <strong>Penawaran Harga <em>Compressed Natural Gas</em> (CNG) {customerName}</strong>
-                        </div>
-                        <p>Dengan hormat,</p>
-                        <p>
-                            Kami PT Reethau Cipta Energi merupakan perusahaan yang bergerak di bidang penyaluran
-                            {' '}<em>Compressed Natural Gas</em> (CNG) yang memiliki mother station berlokasi di
-                            {' '}Jalan Raya Setu, Bekasi, Jawa Barat. Dengan ini kami bermaksud memberikan penawaran
-                            harga CNG dengan kondisi penawaran sebagai berikut:
-                        </p>
-                        <h3>A. Kondisi Penawaran</h3>
-                        <p className="sph-paper-indented">
-                            Harga jual dan volume penggunaan <em>Compressed Natural Gas</em> (CNG) Direct sebagai berikut:
-                        </p>
-                        <table className="sph-paper-offer-table">
-                            <thead><tr><th>Volume Min<br />(MMBTU)</th><th>Volume Max<br />(MMBTU)</th><th>USD/MMBTU</th></tr></thead>
-                            <tbody><tr>
-                                <td>{formatPaperVolume(form.volumeMin)}</td>
-                                <td>{formatPaperVolume(form.volumeMax)}</td>
-                                <td>{form.priceUsd === '' ? '—' : formatNumber(form.priceUsd, 2)}</td>
-                            </tr></tbody>
-                        </table>
-                        <h3>B. Detail Penawaran</h3>
-                        <ol className="sph-paper-list">
-                            <li>Masa kontrak {form.contractYears || '—'} ({contractYearWords[contractYears] || '—'}) tahun.</li>
-                            <li>Garansi supply atau garansi kelangsungan pasokan CNG.</li>
-                            <li>Perhitungan pemakaian CNG menggunakan metering milik PT Reethau Cipta Energi.</li>
-                            <li>Konversi sm3 menjadi MMBTU berdasarkan spesifikasi gas (nilai kalori) yang akan dikalkulasi setiap bulannya.</li>
-                            <li>Menggunakan jaminan pembayaran berupa {form.guarantee || '—'}.</li>
-                            <li>Dikenakan TOP (Take or Pay) {form.topPercent || '—'}% dari pengambilan minimum pemakaian.</li>
-                            <li>
-                                Pembayaran dilakukan oleh Pihak Kedua paling lambat tanggal {form.dueDay || '—'} setiap bulannya
-                                {' '}ke rekening Pihak Pertama, PT Reethau Cipta Energi, PT Bank Mandiri No. Rekening
-                                {' '}167-000701735-2 (IDR).
-                            </li>
-                            <li>Sumber gas langsung dari PT Pertamina dan memiliki Izin Niaga Gas CNG.</li>
-                            <li>Harga gas dapat berubah berdasarkan eskalasi harga resmi dari pemerintah dan/atau sumber gas.</li>
-                        </ol>
-                        <h3>C. Kewajiban PT Reethau Cipta Energi</h3>
-                        <ol className="sph-paper-list">
-                            {reethauObligations.length
-                                ? reethauObligations.map((obligation, index) => <li key={`${index}-${obligation}`}>{obligation}</li>)
-                                : <li>—</li>}
-                        </ol>
-                        <h3>D. Kewajiban Customer</h3>
-                        <ol className="sph-paper-list">
-                            {customerObligations.length
-                                ? customerObligations.map((obligation, index) => <li key={`${index}-${obligation}`}>{obligation}</li>)
-                                : <li>—</li>}
-                        </ol>
-                        <h3>E. Lain-lain</h3>
-                        <p className="sph-paper-indented">Draft Perjanjian Jual Beli Gas akan diberikan secara terpisah.</p>
-                    </div>
-                    <PaperFooter />
-                </article>
-                <article className="sph-paper-page sph-paper-page-second">
-                    <img className="sph-paper-logo" src="/static/reethau-sph.png" alt="Reethau Clean Energy" />
-                    {isDraft && <span className="sph-paper-watermark" aria-hidden="true">DRAFT</span>}
-                    <div className="sph-paper-content">
-                        <p>
-                            Demikian surat penawaran harga Compressed Natural Gas (CNG) ini yang dapat kami sampaikan.
-                            Atas perhatian dan kerja sama Anda, kami ucapkan terima kasih.
-                        </p>
-                        <div className="sph-paper-signatures">
-                            <div>
-                                <span>Hormat kami,</span>
-                                <strong>PT Reethau Cipta Energi</strong>
-                                <span className="sph-paper-signature-space" />
-                                <strong><u>Sahrul Asturrachman</u></strong>
-                                <em>Commercial Head</em>
-                            </div>
-                            <div className="sph-paper-approval">
-                                <strong>Approval Penawaran</strong>
-                                <strong>PT Green Pulse Dynamics</strong>
-                                <span />
-                                <span>Direktur/Manajer</span>
-                            </div>
-                        </div>
-                    </div>
-                    <PaperFooter />
-                </article>
-            </div>
+            {previewError && <p className="sph-preview-error" role="alert">{previewError}</p>}
+            {previewUrl ? (
+                <iframe className="sph-pdf-preview-frame" src={previewUrl} title="Pratinjau PDF surat penawaran" />
+            ) : !previewError ? (
+                <div className="sph-pdf-preview-placeholder">Lengkapi data wajib untuk membuat pratinjau surat.</div>
+            ) : null}
         </section>
     );
 }
@@ -924,7 +854,7 @@ export default function SphPage({ user, onLogout }) {
                                     <button className="sph-primary" type="submit" disabled={busy}>{busy ? 'Menyimpan...' : proposal ? 'Simpan perubahan' : 'Simpan draft'}</button>
                                 </div>
                             </form>
-                            <SphPaperPreview form={form} proposal={proposal} />
+                            <SphPaperPreview form={form} />
                             </div>
                         )}
                     </section>
