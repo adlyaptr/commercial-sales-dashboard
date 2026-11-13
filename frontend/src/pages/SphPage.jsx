@@ -12,13 +12,23 @@ const roleLabels = {
 
 const statusLabels = {
     draft: 'Draft',
-    review: 'Review',
-    approved: 'Disetujui',
+    review: 'Menunggu approval',
+    approved: 'Disetujui internal',
     sent: 'Terkirim',
     negotiation: 'Negosiasi',
-    customer_approved: 'Disetujui pelanggan',
-    active: 'Aktif',
+    customer_approved: 'Disetujui customer',
+    active: 'Kontrak aktif',
 };
+
+const statusFilters = [
+    { key: 'draft', label: statusLabels.draft },
+    { key: 'review', label: statusLabels.review },
+    { key: 'approved', label: statusLabels.approved },
+    { key: 'sent', label: statusLabels.sent },
+    { key: 'negotiation', label: statusLabels.negotiation },
+    { key: 'customer_approved', label: statusLabels.customer_approved },
+    { key: 'active', label: statusLabels.active },
+];
 
 const workflow = [
     'draft',
@@ -134,6 +144,17 @@ function formatNumber(value, digits = 0) {
     }).format(value);
 }
 
+function formatUpdatedAt(value) {
+    if (!value) return '—';
+    const updatedAt = new Date(value);
+    if (Number.isNaN(updatedAt.getTime())) return '—';
+    return new Intl.DateTimeFormat('id-ID', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+    }).format(updatedAt);
+}
+
 function nextAction(proposal) {
     if (proposal.status === 'draft') return { action: 'submit', role: 'sales', label: 'Kirim untuk review' };
     if (proposal.status === 'review') {
@@ -231,6 +252,7 @@ export default function SphPage({ user, onLogout }) {
     const [proposal, setProposal] = useState(null);
     const [form, setForm] = useState(blankProposal);
     const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
     const [returnReason, setReturnReason] = useState('');
     const [actualVolume, setActualVolume] = useState('');
     const [loading, setLoading] = useState(true);
@@ -393,17 +415,31 @@ export default function SphPage({ user, onLogout }) {
 
     const visibleProposals = useMemo(() => {
         const query = search.trim().toLocaleLowerCase('id-ID');
-        if (!query) return proposals;
-        return proposals.filter((item) =>
-            `${item.number} ${item.customerName} ${item.status}`.toLocaleLowerCase('id-ID').includes(query),
-        );
-    }, [proposals, search]);
+        return proposals.filter((item) => {
+            const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+            const matchesSearch = !query
+                || `${item.number} ${item.customerName} ${item.status} ${statusLabels[item.status] || ''}`
+                    .toLocaleLowerCase('id-ID')
+                    .includes(query);
+            return matchesStatus && matchesSearch;
+        });
+    }, [proposals, search, statusFilter]);
 
-    const activeCount = proposals.filter((item) => item.status === 'active').length;
-    const reviewCount = proposals.filter((item) => item.status === 'review').length;
-    const pipelineVolume = proposals
-        .filter((item) => item.status !== 'active')
-        .reduce((total, item) => total + Number(item.volumeMax || 0), 0);
+    const statusCounts = proposals.reduce((counts, item) => {
+        if (Object.prototype.hasOwnProperty.call(counts, item.status)) {
+            counts[item.status] += 1;
+        }
+        return counts;
+    }, {
+        draft: 0,
+        review: 0,
+        approved: 0,
+        sent: 0,
+        negotiation: 0,
+        customer_approved: 0,
+        active: 0,
+    });
+    const activeProposals = proposals.filter((item) => item.status === 'active');
     const averagePrice = proposals.length
         ? proposals.reduce((total, item) => total + Number(item.priceUsd || 0), 0) / proposals.length
         : 0;
@@ -512,23 +548,40 @@ export default function SphPage({ user, onLogout }) {
 
                 {activeTab === 'dashboard' && (
                     <section className="sph-dashboard">
-                        <div className="sph-kpis">
-                            <article><span>Total SPH</span><strong>{proposals.length}</strong><small>Seluruh penawaran</small></article>
-                            <article><span>Menunggu persetujuan</span><strong>{reviewCount}</strong><small>Dalam alur review</small></article>
-                            <article><span>Kontrak aktif</span><strong>{activeCount}</strong><small>SPH yang telah efektif</small></article>
-                            <article><span>Pipeline volume</span><strong>{formatNumber(pipelineVolume)}</strong><small>MMBTU/hari · di luar kontrak aktif</small></article>
-                        </div>
-
                         <section className="sph-panel">
-                            <div className="sph-panel-heading">
-                                <div><h2>Daftar penawaran</h2><p>SPH tersimpan di database dan mengikuti alur persetujuan berdasarkan role akun.</p></div>
+                            <div className="sph-list-heading">
+                                <h2>DAFTAR SPH</h2>
+                                <p>Klik Buka untuk mengedit atau PDF untuk melihat hasil export</p>
+                            </div>
+                            <label className="sph-search-field">
+                                <span>Cari customer atau nomor</span>
                                 <input
-                                    className="sph-search"
-                                    aria-label="Cari SPH"
-                                    placeholder="Cari nomor atau pelanggan"
+                                    aria-label="Cari customer atau nomor SPH"
+                                    placeholder="Contoh: Excel atau MKT-003"
                                     value={search}
                                     onChange={(event) => setSearch(event.target.value)}
                                 />
+                            </label>
+                            <div className="sph-status-filters" aria-label="Filter status SPH">
+                                <button
+                                    type="button"
+                                    className={statusFilter === 'all' ? 'active' : ''}
+                                    aria-pressed={statusFilter === 'all'}
+                                    onClick={() => setStatusFilter('all')}
+                                >
+                                    Semua {proposals.length}
+                                </button>
+                                {statusFilters.map((filter) => (
+                                    <button
+                                        key={filter.key}
+                                        type="button"
+                                        className={statusFilter === filter.key ? 'active' : ''}
+                                        aria-pressed={statusFilter === filter.key}
+                                        onClick={() => setStatusFilter(filter.key)}
+                                    >
+                                        {filter.label} {statusCounts[filter.key]}
+                                    </button>
+                                ))}
                             </div>
                             {loading ? (
                                 <p className="sph-empty">Memuat daftar SPH...</p>
@@ -536,7 +589,7 @@ export default function SphPage({ user, onLogout }) {
                                 <div className="sph-empty">
                                     <span className="sph-empty-mark">SPH</span>
                                     <strong>{proposals.length ? 'Tidak ada hasil yang sesuai' : 'Belum ada data SPH'}</strong>
-                                    <p>{proposals.length ? 'Coba kata kunci lain.' : 'Data akan muncul setelah draft SPH pertama dibuat. Tidak ada data contoh yang dimasukkan.'}</p>
+                                    <p>{proposals.length ? 'Coba kata kunci atau filter status lain.' : 'Data akan muncul setelah draft SPH pertama dibuat. Tidak ada data contoh yang dimasukkan.'}</p>
                                     {isSales && proposals.length === 0 && (
                                         <button className="sph-primary" type="button" onClick={startNewProposal}>Buat SPH pertama</button>
                                     )}
@@ -544,20 +597,99 @@ export default function SphPage({ user, onLogout }) {
                             ) : (
                                 <div className="sph-table-wrap">
                                     <table className="sph-table">
-                                        <thead><tr><th>Nomor SPH</th><th>Pelanggan</th><th>Tanggal</th><th>Harga</th><th>Status</th><th /></tr></thead>
+                                        <thead>
+                                            <tr>
+                                                <th>No SPH</th>
+                                                <th>Customer</th>
+                                                <th>Volume (MMBTU)</th>
+                                                <th>USD/MMBTU</th>
+                                                <th>Nilai/bln (min)</th>
+                                                <th>Status</th>
+                                                <th>Update</th>
+                                                <th aria-label="Tindakan" />
+                                            </tr>
+                                        </thead>
                                         <tbody>
                                             {visibleProposals.map((item) => (
                                                 <tr key={item.id}>
-                                                    <td><strong>{item.number}</strong>{item.version > 0 && <small>Revisi {item.version}</small>}</td>
+                                                    <td>
+                                                        <strong className="sph-proposal-number">
+                                                            {item.number}{item.version > 0 ? ` · Rev.${item.version}` : ''}
+                                                        </strong>
+                                                    </td>
                                                     <td>{item.customerName}</td>
-                                                    <td>{item.proposalDate}</td>
-                                                    <td>USD {formatNumber(item.priceUsd, 2)}</td>
-                                                    <td><span className={`sph-status ${item.status}`}>{statusLabels[item.status]}</span></td>
-                                                    <td><button className="sph-text-button" type="button" onClick={() => openProposal(item.id)}>Lihat detail</button></td>
+                                                    <td className="sph-number-cell">{formatNumber(item.volumeMin)} - {formatNumber(item.volumeMax)}</td>
+                                                    <td className="sph-number-cell">{formatNumber(item.priceUsd, 2)}</td>
+                                                    <td className="sph-number-cell">{formatNumber(Number(item.volumeMin) * Number(item.priceUsd))}</td>
+                                                    <td><span className={`sph-status sph-status-pill ${item.status}`}>{statusLabels[item.status]}</span></td>
+                                                    <td className="sph-updated-cell">{formatUpdatedAt(item.updatedAt)}</td>
+                                                    <td>
+                                                        <div className="sph-row-actions">
+                                                            <button className="sph-row-button" type="button" disabled={busy} onClick={() => openProposal(item.id, 'process')}>Alur</button>
+                                                            <button className="sph-row-button" type="button" disabled={busy} onClick={() => openProposal(item.id, isSales ? 'editor' : 'process')}>Buka</button>
+                                                            <a className="sph-row-button" href={`/api/sph/proposals/${item.id}/pdf`}>PDF</a>
+                                                        </div>
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
+                                </div>
+                            )}
+                        </section>
+
+                        <section className="sph-panel sph-active-contracts">
+                            <div className="sph-panel-heading">
+                                <div>
+                                    <h2>KONTRAK AKTIF: REALISASI DAN MINIMUM TOP</h2>
+                                    <p>Bandingkan realisasi tercatat dengan ambang TOP dan volume minimum kontrak.</p>
+                                </div>
+                                <span>Volume MMBTU/hari</span>
+                            </div>
+                            {activeProposals.length === 0 ? (
+                                <p className="sph-empty">Belum ada kontrak aktif.</p>
+                            ) : (
+                                <div className="sph-active-contract-list">
+                                    {activeProposals.map((item) => {
+                                        const minimum = Number(item.volumeMin || 0);
+                                        const maximum = Number(item.volumeMax || minimum);
+                                        const top = minimum * Number(item.topPercent || 0) / 100;
+                                        const actual = item.actualVolume == null ? null : Number(item.actualVolume);
+                                        const scale = Math.max(maximum, actual || 0, 1);
+                                        const topPosition = Math.min((top / scale) * 100, 100);
+                                        const minimumPosition = Math.min((minimum / scale) * 100, 100);
+                                        const actualWidth = actual == null ? 0 : Math.min((actual / scale) * 100, 100);
+                                        const belowTop = actual != null && actual < top;
+                                        return (
+                                            <article className="sph-active-contract" key={item.id}>
+                                                <div className="sph-contract-heading">
+                                                    <strong>{item.customerName}</strong>
+                                                    <span>{item.number}</span>
+                                                </div>
+                                                <div className="sph-contract-scale">
+                                                    <div className={`sph-contract-fill ${belowTop ? 'below-top' : ''}`} style={{ width: `${actualWidth}%` }} />
+                                                    <span className="sph-contract-marker top" style={{ left: `${topPosition}%` }} />
+                                                    <span className="sph-contract-marker minimum" style={{ left: `${minimumPosition}%` }} />
+                                                </div>
+                                                <div className="sph-contract-markers">
+                                                    <span style={{ left: `${topPosition}%` }}>TOP {formatNumber(top)}</span>
+                                                    <span style={{ left: `${minimumPosition}%` }}>Min {formatNumber(minimum)}</span>
+                                                </div>
+                                                <div className="sph-contract-result">
+                                                    {actual == null ? (
+                                                        <span className="sph-contract-unrecorded">Belum ada realisasi yang dicatat.</span>
+                                                    ) : (
+                                                        <>
+                                                            <strong className={belowTop ? 'below-top' : 'meets-top'}>
+                                                                {belowTop ? 'Di bawah TOP' : 'Mencapai TOP'}
+                                                            </strong>
+                                                            <span>Realisasi {formatNumber(actual)} MMBTU/hari · TOP {formatNumber(top)} MMBTU/hari</span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </article>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </section>
