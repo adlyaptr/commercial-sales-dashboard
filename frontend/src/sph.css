@@ -139,7 +139,6 @@
 .sph-status.approved, .sph-status.customer_approved { border-color: #cce5d2; background: #edf7ef; color: #32724b; }
 .sph-status.active { border-color: #b9ddc9; background: #e7f5ec; color: #176542; }
 .sph-status.negotiation { border-color: #e8d6bf; background: #fff6ec; color: #986839; }
-.sph-status.pjbg { border-color: #d7d2ef; background: #f4f2fc; color: #65579a; }
 .sph-empty { display: grid; min-height: 190px; place-content: center; justify-items: center; gap: 9px; color: #6f8175; text-align: center; }
 .sph-empty-mark { display: grid; width: 48px; height: 48px; place-items: center; border: 1px solid #cfe4d8; border-radius: 13px; background: #e8f6ef; color: var(--sph-green); font-size: 12px; font-weight: 800; }
 .sph-empty strong { color: #345441; font-size: 12px; }

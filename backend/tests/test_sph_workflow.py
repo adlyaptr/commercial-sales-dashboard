@@ -268,14 +268,14 @@ class SphWorkflowTests(unittest.TestCase):
             ))
         self.assertEqual(error.exception.status_code, 409)
 
-    def test_only_admin_can_activate_proposal_after_legal_handoff(self):
-        self.database.row["status"] = "pjbg"
-        self.database.user["sph_role"] = "legal"
-        legal_request = SphRequest("legal", {"action": "activate"})
+    def test_only_admin_can_activate_customer_approved_proposal(self):
+        self.database.row["status"] = "customer_approved"
+        self.database.user["sph_role"] = "sales"
+        sales_request = SphRequest("sales", {"action": "activate"})
         with self.assertRaises(main.HTTPException) as error:
-            asyncio.run(main.sph_proposal_action(7, legal_request))
+            asyncio.run(main.sph_proposal_action(7, sales_request))
         self.assertEqual(error.exception.status_code, 403)
-        self.assertEqual(self.database.row["status"], "pjbg")
+        self.assertEqual(self.database.row["status"], "customer_approved")
 
         self.database.user.update({"role": "admin", "sph_role": None})
         admin_request = SphRequest("admin", {"action": "activate"})
@@ -287,6 +287,31 @@ class SphWorkflowTests(unittest.TestCase):
         result = asyncio.run(main.sph_proposal_action(7, admin_request))
         self.assertEqual(result["status"], "active")
         self.assertEqual(self.database.logs[-1]["actorRole"], "admin")
+        self.assertEqual(
+            self.database.logs[-1]["message"],
+            "Pelanggan diaktifkan setelah persetujuan SPH.",
+        )
+
+    def test_legal_handoff_action_is_no_longer_valid(self):
+        self.database.row["status"] = "customer_approved"
+        self.database.user["sph_role"] = "sales"
+        request = SphRequest("sales", {"action": "handoff_legal"})
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.sph_proposal_action(7, request))
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertEqual(self.database.row["status"], "customer_approved")
+
+    def test_legacy_pjbg_proposal_can_be_activated_by_admin(self):
+        self.database.row["status"] = "pjbg"
+        self.database.user.update({"role": "admin", "sph_role": None})
+        request = SphRequest("admin", {"action": "activate"})
+        request.session.update({
+            "username": "admin",
+            "role": "admin",
+            "sph_role": None,
+        })
+        proposal = asyncio.run(main.sph_proposal_action(7, request))
+        self.assertEqual(proposal["status"], "active")
 
     def test_sph_pdf_endpoint_returns_a_downloadable_pdf(self):
         response = main.sph_proposal_pdf(7, SphRequest("commercial_head"))

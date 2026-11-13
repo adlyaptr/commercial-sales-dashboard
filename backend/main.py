@@ -1747,7 +1747,6 @@ SPH_STATUSES = {
     "sent": "Terkirim",
     "negotiation": "Negosiasi",
     "customer_approved": "Disetujui Pelanggan",
-    "pjbg": "Proses PJBG",
     "active": "Aktif",
 }
 
@@ -1873,6 +1872,8 @@ def _sph_proposal_json(row):
     if not row:
         return None
     result = dict(row)
+    if result["status"] == "pjbg":
+        result["status"] = "customer_approved"
     result["id"] = int(result["id"])
     result["version"] = int(result["version"])
     result["exchangeClause"] = bool(result["exchangeClause"])
@@ -1921,6 +1922,8 @@ def sph_list_proposals(request: Request):
     proposals = []
     for row in rows:
         proposal = dict(row)
+        if proposal["status"] == "pjbg":
+            proposal["status"] = "customer_approved"
         proposal["id"] = int(proposal["id"])
         proposal["version"] = int(proposal["version"])
         proposal["proposalDate"] = proposal["proposalDate"].isoformat()
@@ -2145,20 +2148,13 @@ async def sph_proposal_action(proposal_id: int, request: Request):
                 (next_status, now, proposal_id),
             )
             message = "Membuat revisi SPH dari hasil negosiasi."
-        elif action == "handoff_legal" and status == "customer_approved":
-            allowed_role, next_status = "sales", "pjbg"
-            update = (
-                "UPDATE sph_proposals SET status=%s,updated_at=%s WHERE id=%s",
-                (next_status, now, proposal_id),
-            )
-            message = "Dokumen diserahkan ke Legal untuk proses PJBG."
-        elif action == "activate" and status == "pjbg":
+        elif action == "activate" and status == "customer_approved":
             allowed_role, next_status = "admin", "active"
             update = (
                 "UPDATE sph_proposals SET status=%s,updated_at=%s WHERE id=%s",
                 (next_status, now, proposal_id),
             )
-            message = "PJBG selesai dan pelanggan diaktifkan."
+            message = "Pelanggan diaktifkan setelah persetujuan SPH."
         elif action == "record_actual" and status == "active":
             allowed_role = "commercial_head"
             try:

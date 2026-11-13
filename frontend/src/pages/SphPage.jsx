@@ -17,7 +17,6 @@ const statusLabels = {
     sent: 'Terkirim',
     negotiation: 'Negosiasi',
     customer_approved: 'Disetujui pelanggan',
-    pjbg: 'Proses PJBG',
     active: 'Aktif',
 };
 
@@ -28,7 +27,6 @@ const workflow = [
     'sent',
     'negotiation',
     'customer_approved',
-    'pjbg',
     'active',
 ];
 
@@ -145,8 +143,7 @@ function nextAction(proposal) {
     if (proposal.status === 'approved') return { action: 'mark_sent', role: 'sales', label: 'Tandai telah dikirim' };
     if (proposal.status === 'sent') return { action: 'customer_approved', role: 'sales', label: 'Pelanggan menyetujui' };
     if (proposal.status === 'negotiation') return { action: 'revise', role: 'sales', label: 'Buat revisi' };
-    if (proposal.status === 'customer_approved') return { action: 'handoff_legal', role: 'sales', label: 'Serahkan ke Legal' };
-    if (proposal.status === 'pjbg') return { action: 'activate', role: 'admin', label: 'Aktifkan pelanggan (Admin)' };
+    if (proposal.status === 'customer_approved') return { action: 'activate', role: 'admin', label: 'Aktifkan pelanggan (Admin)' };
     return null;
 }
 
