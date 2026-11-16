@@ -661,8 +661,8 @@ class DashboardApiTests(unittest.TestCase):
             )
 
         forecast_customer = result["operators"]["WUNUT"][0]
-        self.assertEqual(forecast_customer["so"], 500)
-        self.assertEqual(forecast_customer["actual"], 500)
+        self.assertEqual(forecast_customer["so"], 700)
+        self.assertEqual(forecast_customer["actual"], 700)
         self.assertTrue(forecast_customer["actual_is_forecast"])
 
     def test_dashboard_rejects_unknown_trend_period(self):
@@ -837,12 +837,12 @@ class HomeSummaryTests(unittest.TestCase):
         ):
             result = main.home_summary(FakeRequest(), month="2026-10")
 
-        self.assertEqual(result["month_summary"]["so"], 750)
-        self.assertEqual(result["month_summary"]["actual"], 550)
+        self.assertEqual(result["month_summary"]["so"], 900)
+        self.assertEqual(result["month_summary"]["actual"], 700)
         self.assertEqual(result["days"][8]["so"], 200)
         self.assertEqual(result["days"][8]["actual"], 0)
-        self.assertEqual(result["days"][9]["so"], 150)
-        self.assertEqual(result["days"][9]["actual"], 150)
+        self.assertEqual(result["days"][9]["so"], 300)
+        self.assertEqual(result["days"][9]["actual"], 300)
         self.assertEqual(result["days"][10]["actual"], 400)
 
     def test_home_summary_rejects_invalid_month(self):

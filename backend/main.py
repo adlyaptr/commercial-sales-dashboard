@@ -915,7 +915,16 @@ def overlay_sales_order_forecast(
         if isinstance(report_date, date):
             report_date = report_date.isoformat()
         enriched["report_date"] = str(report_date)
-        enriched.setdefault("actual_is_forecast", False)
+        if forecast_only_unimported_dates:
+            enriched["actual_is_forecast"] = False
+            if (
+                enriched["report_date"] not in actual_imported_dates
+                and not enriched.get("manual_fob")
+            ):
+                enriched["so"] = 0.0
+                enriched["actual"] = 0.0
+        else:
+            enriched.setdefault("actual_is_forecast", False)
         if float(enriched.get("actual") or 0) != 0:
             dates_with_nonzero_actual.add(enriched["report_date"])
         enriched_by_key[(enriched["report_date"], str(enriched["customer_key"]))] = enriched
@@ -938,19 +947,23 @@ def overlay_sales_order_forecast(
             existing = enriched_by_key.get(key)
             if existing is not None:
                 existing_so = float(existing.get("so") or 0)
-                preserve_existing_so = (
-                    preserve_imported_so
-                    and existing.get("source_file")
-                    and existing["source_file"] != "manual-fob"
-                    and existing_so > 0
-                )
-                if (
-                    not preserve_imported_so
-                    or not existing.get("source_file")
-                    or existing["source_file"] == "manual-fob"
-                    or existing_so <= 0
-                ):
+                preserve_existing_so = False
+                if forecast_only_unimported_dates:
                     existing["so"] = order["so"]
+                else:
+                    preserve_existing_so = (
+                        preserve_imported_so
+                        and existing.get("source_file")
+                        and existing["source_file"] != "manual-fob"
+                        and existing_so > 0
+                    )
+                    if (
+                        not preserve_imported_so
+                        or not existing.get("source_file")
+                        or existing["source_file"] == "manual-fob"
+                        or existing_so <= 0
+                    ):
+                        existing["so"] = order["so"]
                 can_forecast = report_date not in actual_imported_dates and (
                     forecast_only_unimported_dates
                     or (
@@ -3753,7 +3766,8 @@ def home_summary(request: Request, month: str):
         rows = con.execute(
             """
             SELECT s.report_date, c.customer_name, c.operator,
-                   s.customer_key, s.so, s.actual, s.source_file
+                   s.customer_key, s.so, s.actual, s.source_file,
+                   c.customer_key LIKE 'manualfob-%%' AS manual_fob
             FROM sales s
             JOIN customers c ON c.customer_key = s.customer_key
             WHERE s.report_date BETWEEN %s AND %s

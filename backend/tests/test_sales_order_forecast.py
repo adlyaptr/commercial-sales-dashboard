@@ -201,6 +201,14 @@ class SalesOrderForecastTests(unittest.TestCase):
             "so": 4020000,
             "actual": 120,
             "source_file": "planner.xlsx",
+        }, {
+            "report_date": "2026-11-16",
+            "customer_key": "other",
+            "customer_name": "OTHER",
+            "operator": "SETU",
+            "so": 1000,
+            "actual": 500,
+            "source_file": "planner.xlsx",
         }]
         customers = [
             {"customer_key": "platinum", "customer_name": "PLATINUM", "operator": "WUNUT"},
@@ -244,10 +252,14 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertFalse(by_customer_date[("other", "2026-11-15")]["actual_is_forecast"])
         self.assertNotIn(("new", "2026-11-15"), by_customer_date)
 
-        so_only_import = by_customer_date[("platinum", "2026-11-16")]
-        self.assertEqual(so_only_import["so"], 4020000)
-        self.assertEqual(so_only_import["actual"], 4020000)
-        self.assertTrue(so_only_import["actual_is_forecast"])
+        unimported_forecast = by_customer_date[("platinum", "2026-11-16")]
+        self.assertEqual(unimported_forecast["so"], 999999)
+        self.assertEqual(unimported_forecast["actual"], 999999)
+        self.assertTrue(unimported_forecast["actual_is_forecast"])
+        stale_customer = by_customer_date[("other", "2026-11-16")]
+        self.assertEqual(stale_customer["so"], 0)
+        self.assertEqual(stale_customer["actual"], 0)
+        self.assertFalse(stale_customer["actual_is_forecast"])
 
         sheet_forecast = by_customer_date[("platinum", "2026-11-17")]
         self.assertEqual(sheet_forecast["so"], 4030000)
