@@ -631,6 +631,24 @@ def _business_today() -> date:
     return datetime.now(ZoneInfo("Asia/Jakarta")).date()
 
 
+def _confirmed_actual_import_dates(import_rows):
+    confirmed_dates = set()
+    for row in import_rows:
+        report_date = row["report_date"]
+        if isinstance(report_date, datetime):
+            report_date = report_date.date()
+        elif not isinstance(report_date, date):
+            report_date = date.fromisoformat(str(report_date))
+
+        imported_at = row["imported_at"]
+        if not isinstance(imported_at, datetime):
+            imported_at = datetime.fromisoformat(str(imported_at))
+
+        if imported_at.date() > report_date:
+            confirmed_dates.add(report_date.isoformat())
+    return confirmed_dates
+
+
 def parse_sales_order_number(value):
     if value is None:
         return None
@@ -3824,7 +3842,7 @@ def home_summary(request: Request, month: str):
             (year_start.isoformat(), month_end.isoformat()),
         ).fetchall()
         actual_import_rows = con.execute(
-            "SELECT report_date FROM daily_actual_imports "
+            "SELECT report_date, imported_at FROM daily_actual_imports "
             "WHERE report_date BETWEEN %s AND %s",
             (year_start.isoformat(), month_end.isoformat()),
         ).fetchall()
@@ -3836,12 +3854,7 @@ def home_summary(request: Request, month: str):
             (month_start.isoformat(),),
         ).fetchone()
 
-    actual_imported_dates = {
-        row["report_date"].isoformat()
-        if isinstance(row["report_date"], date)
-        else str(row["report_date"])
-        for row in actual_import_rows
-    }
+    actual_imported_dates = _confirmed_actual_import_dates(actual_import_rows)
     rows, _ = overlay_sales_order_forecast(
         rows,
         customer_rows,
@@ -4075,7 +4088,7 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             (start.isoformat(), end.isoformat()),
         ).fetchall()
         actual_import_rows = con.execute(
-            "SELECT report_date FROM daily_actual_imports "
+            "SELECT report_date, imported_at FROM daily_actual_imports "
             "WHERE report_date BETWEEN %s AND %s",
             (start.isoformat(), end.isoformat()),
         ).fetchall()
@@ -4087,12 +4100,7 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             (first_month.isoformat(), last_month.isoformat()),
         ).fetchall()
 
-    actual_imported_dates = {
-        row["report_date"].isoformat()
-        if isinstance(row["report_date"], date)
-        else str(row["report_date"])
-        for row in actual_import_rows
-    }
+    actual_imported_dates = _confirmed_actual_import_dates(actual_import_rows)
     rows, _ = overlay_sales_order_forecast(
         rows,
         customer_rows,
@@ -5298,7 +5306,7 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
             (start.isoformat(), end.isoformat()),
         ).fetchall()
         actual_import_rows = con.execute(
-            "SELECT report_date FROM daily_actual_imports "
+            "SELECT report_date, imported_at FROM daily_actual_imports "
             "WHERE report_date BETWEEN %s AND %s",
             (start.isoformat(), end.isoformat()),
         ).fetchall()
@@ -5306,12 +5314,7 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
             "SELECT customer_key, customer_name, operator FROM customers"
         ).fetchall()
 
-    actual_imported_dates = {
-        row["report_date"].isoformat()
-        if isinstance(row["report_date"], date)
-        else str(row["report_date"])
-        for row in actual_import_rows
-    }
+    actual_imported_dates = _confirmed_actual_import_dates(actual_import_rows)
     rows, sales_order_unmapped = overlay_sales_order_forecast(
         sales_rows,
         customer_rows,
@@ -5769,8 +5772,9 @@ def dashboard(
             FROM sales s JOIN customers c ON c.customer_key=s.customer_key
             WHERE s.report_date=%s ORDER BY c.operator, c.customer_name
         """, (report_date,)).fetchall()
-        actual_imported = con.execute(
-            "SELECT 1 FROM daily_actual_imports WHERE report_date=%s",
+        actual_import_row = con.execute(
+            "SELECT report_date, imported_at FROM daily_actual_imports "
+            "WHERE report_date=%s",
             (report_date,),
         ).fetchone()
         customer_rows = con.execute(
@@ -5782,7 +5786,9 @@ def dashboard(
             get_sales_order_data(),
             selected_date,
             selected_date,
-            actual_imported_dates={report_date} if actual_imported else set(),
+            actual_imported_dates=_confirmed_actual_import_dates(
+                [actual_import_row] if actual_import_row else []
+            ),
             preserve_imported_so=True,
             forecast_only_unimported_dates=True,
         )

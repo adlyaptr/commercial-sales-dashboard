@@ -127,8 +127,14 @@ class MemoryCustomerMappings:
 
 
 class MemoryDashboard:
-    def __init__(self, actual_imported=True, sales_rows=None):
+    def __init__(
+        self,
+        actual_imported=True,
+        sales_rows=None,
+        imported_day_offset=1,
+    ):
         self.actual_imported = actual_imported
+        self.imported_day_offset = imported_day_offset
         self.sales_rows = sales_rows or [
             {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU", "so": 100, "actual": 120, "id": 1, "source_file": "daily.xlsx", "manual_fob": False},
             {"customer_key": "pelanggankht", "customer_name": "Pelanggan KHT", "operator": "KHT", "so": 0, "actual": 10, "id": 2, "source_file": "daily.xlsx", "manual_fob": False},
@@ -146,8 +152,17 @@ class MemoryDashboard:
         if normalized_statement.startswith("SELECT c.customer_name, c.operator, c.customer_key"):
             return SimpleNamespace(fetchall=lambda: self.sales_rows)
 
-        if normalized_statement.startswith("SELECT 1 FROM daily_actual_imports"):
-            imported = {"1": 1} if self.actual_imported else None
+        if normalized_statement.startswith(
+            "SELECT report_date, imported_at FROM daily_actual_imports"
+        ):
+            report_date = date.fromisoformat(parameters[0])
+            imported = {
+                "report_date": report_date,
+                "imported_at": datetime.combine(
+                    report_date + timedelta(days=self.imported_day_offset),
+                    datetime.min.time(),
+                ),
+            } if self.actual_imported else None
             return SimpleNamespace(fetchone=lambda: imported)
 
         if normalized_statement.startswith("SELECT customer_key, customer_name, operator FROM customers"):
@@ -238,9 +253,17 @@ class MemoryHomeSummary:
                 {"customer_key": "kht-a", "customer_name": "KHT Customer", "operator": "KHT"},
                 {"customer_key": "off-a", "customer_name": "OFF Customer", "operator": "OFF"},
             ])
-        if statement.startswith("SELECT report_date FROM daily_actual_imports"):
+        if statement.startswith(
+            "SELECT report_date, imported_at FROM daily_actual_imports"
+        ):
             return SimpleNamespace(fetchall=lambda: [
-                {"report_date": report_date}
+                {
+                    "report_date": report_date,
+                    "imported_at": datetime.combine(
+                        report_date + timedelta(days=1),
+                        datetime.min.time(),
+                    ),
+                }
                 for report_date in self.actual_imported_dates
             ])
         if "SELECT s.report_date, c.customer_name, c.operator" not in statement:
@@ -283,9 +306,17 @@ class MemoryHomeSummaryRange:
     def execute(self, statement, parameters=None):
         if "FROM sales s" in statement and "WHERE s.report_date BETWEEN" in statement:
             return SimpleNamespace(fetchall=lambda: self.sales_rows)
-        if statement.startswith("SELECT report_date FROM daily_actual_imports"):
+        if statement.startswith(
+            "SELECT report_date, imported_at FROM daily_actual_imports"
+        ):
             return SimpleNamespace(fetchall=lambda: [
-                {"report_date": report_date}
+                {
+                    "report_date": report_date,
+                    "imported_at": datetime.combine(
+                        report_date + timedelta(days=1),
+                        datetime.min.time(),
+                    ),
+                }
                 for report_date in self.actual_imported_dates
             ])
         if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
@@ -657,6 +688,41 @@ class DashboardApiTests(unittest.TestCase):
                 "actual": 120,
                 "id": 7,
                 "source_file": "planner.xlsx",
+                "manual_fob": False,
+            }],
+        )
+        sales_orders = {
+            "2026-10-14": [
+                {"customer": "Pelanggan Forecast", "so": 700},
+            ],
+        }
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "get_sales_order_data", return_value=sales_orders),
+        ):
+            result = main.dashboard(
+                FakeRequest(),
+                report_date="2026-10-14",
+                trend_period="monthly",
+            )
+
+        forecast_customer = result["operators"]["WUNUT"][0]
+        self.assertEqual(forecast_customer["so"], 700)
+        self.assertEqual(forecast_customer["actual"], 700)
+        self.assertTrue(forecast_customer["actual_is_forecast"])
+
+    def test_dashboard_forecasts_same_day_actual_import(self):
+        database = MemoryDashboard(
+            actual_imported=True,
+            imported_day_offset=0,
+            sales_rows=[{
+                "customer_key": "pelangganforecast",
+                "customer_name": "Pelanggan Forecast",
+                "operator": "WUNUT",
+                "so": 0,
+                "actual": 10000,
+                "id": 1,
+                "source_file": "daily.xlsx",
                 "manual_fob": False,
             }],
         )

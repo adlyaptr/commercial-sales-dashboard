@@ -9,6 +9,20 @@ import main
 
 
 class SalesOrderForecastTests(unittest.TestCase):
+    def test_same_day_actual_import_is_not_confirmed(self):
+        imported_dates = main._confirmed_actual_import_dates([
+            {
+                "report_date": date(2026, 11, 15),
+                "imported_at": "2026-11-16T04:54:13",
+            },
+            {
+                "report_date": date(2026, 11, 16),
+                "imported_at": "2026-11-16T04:54:13",
+            },
+        ])
+
+        self.assertEqual(imported_dates, {"2026-11-15"})
+
     def test_strict_forecast_ignores_import_markers_for_future_dates(self):
         future_date = main._business_today() + timedelta(days=14)
         report_date = future_date.isoformat()

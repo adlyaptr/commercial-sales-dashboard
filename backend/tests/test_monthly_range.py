@@ -1,5 +1,6 @@
 import sys
 import unittest
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -65,9 +66,17 @@ class MemoryMonthlyRange:
             if parameters != self.expected_range:
                 raise AssertionError(f"Unexpected date parameters: {parameters}")
             return SimpleNamespace(fetchall=lambda: self.sales_rows)
-        if statement.startswith("SELECT report_date FROM daily_actual_imports"):
+        if statement.startswith(
+            "SELECT report_date, imported_at FROM daily_actual_imports"
+        ):
             return SimpleNamespace(fetchall=lambda: [
-                {"report_date": report_date}
+                {
+                    "report_date": date.fromisoformat(report_date),
+                    "imported_at": datetime.combine(
+                        date.fromisoformat(report_date) + timedelta(days=1),
+                        datetime.min.time(),
+                    ),
+                }
                 for report_date in self.actual_imported_dates
             ])
         if statement.startswith("SELECT customer_key, customer_name, operator FROM customers"):
