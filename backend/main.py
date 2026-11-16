@@ -880,8 +880,10 @@ def overlay_sales_order_forecast(
     sales_orders_by_date,
     start_date,
     end_date,
-    per_customer_forecast=False,
+    actual_imported_dates=None,
+    preserve_imported_so=False,
 ):
+    actual_imported_dates = actual_imported_dates or set()
     customers_by_key = {}
     customer_lookup = {}
     for customer in customer_rows:
@@ -920,6 +922,8 @@ def overlay_sales_order_forecast(
         day = date.fromisoformat(report_date)
         if day < start_date or day > end_date:
             continue
+        if report_date in actual_imported_dates:
+            continue
         for order in orders:
             customer = resolve_customer(order["customer"])
             if customer is None:
@@ -930,17 +934,27 @@ def overlay_sales_order_forecast(
             key = (report_date, str(customer["customer_key"]))
             existing = enriched_by_key.get(key)
             if existing is not None:
-                existing["so"] = order["so"]
+                if (
+                    not preserve_imported_so
+                    or not existing.get("source_file")
+                    or existing["source_file"] == "manual-fob"
+                ):
+                    existing["so"] = order["so"]
                 if (
                     float(existing.get("actual") or 0) == 0
-                    and (
-                        per_customer_forecast
-                        or report_date not in dates_with_nonzero_actual
-                    )
+                    and report_date not in actual_imported_dates
+                    and report_date not in dates_with_nonzero_actual
                     and order["so"] > 0
                 ):
-                    existing["actual"] = order["so"]
-                    existing["actual_is_forecast"] = True
+                    forecast_so = (
+                        float(existing.get("so") or 0)
+                        if preserve_imported_so and existing.get("source_file")
+                        and existing["source_file"] != "manual-fob"
+                        else order["so"]
+                    )
+                    if forecast_so > 0:
+                        existing["actual"] = forecast_so
+                        existing["actual_is_forecast"] = True
                 continue
 
             enriched_by_key[key] = {
@@ -958,10 +972,8 @@ def overlay_sales_order_forecast(
     for row in enriched_by_key.values():
         if (
             float(row.get("actual") or 0) == 0
-            and (
-                per_customer_forecast
-                or row["report_date"] not in dates_with_nonzero_actual
-            )
+            and row["report_date"] not in actual_imported_dates
+            and row["report_date"] not in dates_with_nonzero_actual
             and float(row.get("so") or 0) > 0
         ):
             row["actual"] = float(row["so"])
@@ -1325,6 +1337,7 @@ def import_excel(
     unmapped_customers = []
     mapping_saved = 0
     imported_dates = set()
+    actual_imported_dates = set()
     report_date_filter_values = {
         report_date.isoformat() for report_date in report_dates_filter
     } if report_dates_filter else None
@@ -1405,6 +1418,7 @@ def import_excel(
                             continue
                         if has_actual:
                             rows_read += 1
+                            actual_imported_dates.add(report_date)
                         key = norm(customer)
                         op = find_operator(con, customer)
                         if op not in CUSTOMER_ASSIGNMENTS:
@@ -1455,6 +1469,7 @@ def import_excel(
                     key = norm(customer)
                     if import_actual:
                         rows_read += 1
+                        actual_imported_dates.add(report_date)
                     con.execute(
                         "INSERT IGNORE INTO customers(customer_key,customer_name,operator) "
                         "VALUES(%s,%s,%s)",
@@ -1522,6 +1537,7 @@ def import_excel(
                             customer,
                             report_date,
                         )
+                        actual_imported_dates.add(report_date)
                         con.execute("INSERT INTO sales(report_date,customer_key,so,actual,source_file,imported_at) "
                                     "VALUES(%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
                                     "so=VALUES(so),actual=VALUES(actual),source_file=VALUES(source_file),imported_at=VALUES(imported_at)",
@@ -1547,6 +1563,13 @@ def import_excel(
             if rows_saved == 0:
                 msg = "Tidak ada data yang berhasil diimpor. Pastikan file memiliki sheet Daily Sales, sheet operator dengan tabel tanggal/Actual, atau tabel Excel berformat vertikal."
                 raise ValueError(msg)
+            for report_date in actual_imported_dates:
+                con.execute(
+                    "INSERT INTO daily_actual_imports(report_date,source_file,imported_at) "
+                    "VALUES(%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                    "source_file=VALUES(source_file),imported_at=VALUES(imported_at)",
+                    (report_date, original_filename, now),
+                )
             import_format = (
                 "Daily Sales"
                 if daily is not None
@@ -5598,11 +5621,20 @@ def dashboard(
 
         rows = con.execute("""
             SELECT c.customer_name, c.operator, c.customer_key,
-                   s.so, s.actual, s.id,
+                   s.so, s.actual, s.id, s.source_file,
                    c.customer_key LIKE 'manualfob-%%' AS manual_fob
             FROM sales s JOIN customers c ON c.customer_key=s.customer_key
             WHERE s.report_date=%s ORDER BY c.operator, c.customer_name
         """, (report_date,)).fetchall()
+        actual_imported = con.execute(
+            "SELECT 1 FROM daily_actual_imports WHERE report_date=%s",
+            (report_date,),
+        ).fetchone()
+        if actual_imported is None:
+            actual_imported = any(
+                float(row["actual"] or 0) != 0 and not row["manual_fob"]
+                for row in rows
+            )
         customer_rows = con.execute(
             "SELECT customer_key, customer_name, operator FROM customers"
         ).fetchall()
@@ -5612,7 +5644,8 @@ def dashboard(
             get_sales_order_data(),
             selected_date,
             selected_date,
-            per_customer_forecast=True,
+            actual_imported_dates={report_date} if actual_imported else set(),
+            preserve_imported_so=True,
         )
         operator_data = {op: [] for op in (*OPERATORS, "OFF")}
         operator_totals = {

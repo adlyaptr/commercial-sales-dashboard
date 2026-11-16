@@ -176,7 +176,7 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertFalse(by_customer_date[("kf", "2026-11-03")]["actual_is_forecast"])
         self.assertEqual(unmapped, ["Missing Customer"])
 
-    def test_daily_per_customer_forecast_uses_so_when_only_another_customer_has_actual(self):
+    def test_daily_forecast_uses_imported_values_on_imported_dates_and_so_otherwise(self):
         sales_rows = [{
             "report_date": "2026-11-15",
             "customer_key": "platinum",
@@ -184,6 +184,7 @@ class SalesOrderForecastTests(unittest.TestCase):
             "operator": "WUNUT",
             "so": 4019000,
             "actual": 0,
+            "source_file": "daily-sales.xlsx",
         }, {
             "report_date": "2026-11-15",
             "customer_key": "other",
@@ -191,39 +192,66 @@ class SalesOrderForecastTests(unittest.TestCase):
             "operator": "SETU",
             "so": 1000,
             "actual": 500,
+            "source_file": "daily-sales.xlsx",
         }, {
             "report_date": "2026-11-16",
             "customer_key": "platinum",
             "customer_name": "PLATINUM",
             "operator": "WUNUT",
             "so": 4020000,
-            "actual": 120,
+            "actual": 0,
+            "source_file": "planner.xlsx",
         }]
         customers = [
             {"customer_key": "platinum", "customer_name": "PLATINUM", "operator": "WUNUT"},
             {"customer_key": "other", "customer_name": "OTHER", "operator": "SETU"},
+            {"customer_key": "new", "customer_name": "NEW", "operator": "KHT"},
         ]
+        sales_orders = {
+            "2026-11-15": [
+                {"customer": "PLATINUM", "so": 999999},
+                {"customer": "OTHER", "so": 8888},
+                {"customer": "NEW", "so": 7777},
+            ],
+            "2026-11-16": [
+                {"customer": "PLATINUM", "so": 999999},
+            ],
+            "2026-11-17": [
+                {"customer": "PLATINUM", "so": 4030000},
+            ],
+        }
 
         rows, _ = main.overlay_sales_order_forecast(
             sales_rows,
             customers,
-            {},
+            sales_orders,
             date(2026, 11, 15),
-            date(2026, 11, 16),
-            per_customer_forecast=True,
+            date(2026, 11, 17),
+            actual_imported_dates={"2026-11-15"},
+            preserve_imported_so=True,
         )
         by_customer_date = {
             (row["customer_key"], row["report_date"]): row
             for row in rows
         }
 
-        platinum_forecast = by_customer_date[("platinum", "2026-11-15")]
-        self.assertEqual(platinum_forecast["actual"], 4019000)
-        self.assertTrue(platinum_forecast["actual_is_forecast"])
+        imported_platinum = by_customer_date[("platinum", "2026-11-15")]
+        self.assertEqual(imported_platinum["so"], 4019000)
+        self.assertEqual(imported_platinum["actual"], 0)
+        self.assertFalse(imported_platinum["actual_is_forecast"])
         self.assertEqual(by_customer_date[("other", "2026-11-15")]["actual"], 500)
         self.assertFalse(by_customer_date[("other", "2026-11-15")]["actual_is_forecast"])
-        self.assertEqual(by_customer_date[("platinum", "2026-11-16")]["actual"], 120)
-        self.assertFalse(by_customer_date[("platinum", "2026-11-16")]["actual_is_forecast"])
+        self.assertNotIn(("new", "2026-11-15"), by_customer_date)
+
+        so_only_import = by_customer_date[("platinum", "2026-11-16")]
+        self.assertEqual(so_only_import["so"], 4020000)
+        self.assertEqual(so_only_import["actual"], 4020000)
+        self.assertTrue(so_only_import["actual_is_forecast"])
+
+        sheet_forecast = by_customer_date[("platinum", "2026-11-17")]
+        self.assertEqual(sheet_forecast["so"], 4030000)
+        self.assertEqual(sheet_forecast["actual"], 4030000)
+        self.assertTrue(sheet_forecast["actual_is_forecast"])
 
 if __name__ == "__main__":
     unittest.main()

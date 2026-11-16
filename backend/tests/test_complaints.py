@@ -127,6 +127,14 @@ class MemoryCustomerMappings:
 
 
 class MemoryDashboard:
+    def __init__(self, actual_imported=False, sales_rows=None):
+        self.actual_imported = actual_imported
+        self.sales_rows = sales_rows or [
+            {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU", "so": 100, "actual": 120, "id": 1, "source_file": "daily.xlsx", "manual_fob": False},
+            {"customer_key": "pelanggankht", "customer_name": "Pelanggan KHT", "operator": "KHT", "so": 0, "actual": 10, "id": 2, "source_file": "daily.xlsx", "manual_fob": False},
+            {"customer_key": "pelangganoff", "customer_name": "Pelanggan OFF", "operator": "OFF", "so": 50, "actual": 20, "id": 3, "source_file": "daily.xlsx", "manual_fob": False},
+        ]
+
     def __enter__(self):
         return self
 
@@ -136,11 +144,11 @@ class MemoryDashboard:
     def execute(self, statement, parameters=None):
         normalized_statement = statement.strip()
         if normalized_statement.startswith("SELECT c.customer_name, c.operator, c.customer_key"):
-            return SimpleNamespace(fetchall=lambda: [
-                {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU", "so": 100, "actual": 120, "id": 1, "manual_fob": False},
-                {"customer_key": "pelanggankht", "customer_name": "Pelanggan KHT", "operator": "KHT", "so": 0, "actual": 10, "id": 2, "manual_fob": False},
-                {"customer_key": "pelangganoff", "customer_name": "Pelanggan OFF", "operator": "OFF", "so": 50, "actual": 20, "id": 3, "manual_fob": False},
-            ])
+            return SimpleNamespace(fetchall=lambda: self.sales_rows)
+
+        if normalized_statement.startswith("SELECT 1 FROM daily_actual_imports"):
+            imported = {"1": 1} if self.actual_imported else None
+            return SimpleNamespace(fetchone=lambda: imported)
 
         if normalized_statement.startswith("SELECT customer_key, customer_name, operator FROM customers"):
             return SimpleNamespace(fetchall=lambda: [
@@ -525,7 +533,7 @@ class DashboardApiTests(unittest.TestCase):
         self.assertTrue(result["trend"][-1]["has_data"])
         self.assertEqual(result["trend"][-1]["actual"], 150)
 
-    def test_dashboard_uses_sheet_so_and_preserves_imported_actual(self):
+    def test_dashboard_preserves_imported_so_and_actual_when_date_has_actuals(self):
         sales_orders = {
             "2026-10-14": [
                 {"customer": "Pelanggan Setu", "so": 140},
@@ -539,11 +547,45 @@ class DashboardApiTests(unittest.TestCase):
                 trend_period="monthly",
             )
 
-        self.assertEqual(result["total_so"], 250)
+        self.assertEqual(result["total_so"], 150)
         self.assertEqual(result["total_actual"], 150)
         setu = result["operators"]["SETU"][0]
-        self.assertEqual(setu["so"], 140)
+        self.assertEqual(setu["so"], 100)
         self.assertEqual(setu["actual"], 120)
+
+    def test_dashboard_keeps_zero_actual_when_date_has_actual_import(self):
+        database = MemoryDashboard(
+            actual_imported=True,
+            sales_rows=[{
+                "customer_key": "pelangganforecast",
+                "customer_name": "Pelanggan Forecast",
+                "operator": "WUNUT",
+                "so": 500,
+                "actual": 0,
+                "id": 7,
+                "source_file": "daily.xlsx",
+                "manual_fob": False,
+            }],
+        )
+        sales_orders = {
+            "2026-10-14": [
+                {"customer": "Pelanggan Forecast", "so": 700},
+            ],
+        }
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "get_sales_order_data", return_value=sales_orders),
+        ):
+            result = main.dashboard(
+                FakeRequest(),
+                report_date="2026-10-14",
+                trend_period="monthly",
+            )
+
+        forecast_customer = result["operators"]["WUNUT"][0]
+        self.assertEqual(forecast_customer["so"], 500)
+        self.assertEqual(forecast_customer["actual"], 0)
+        self.assertFalse(forecast_customer["actual_is_forecast"])
 
     def test_dashboard_rejects_unknown_trend_period(self):
         with self.assertRaises(main.HTTPException) as invalid:

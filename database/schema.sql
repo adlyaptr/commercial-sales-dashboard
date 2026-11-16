@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS sales (
     FOREIGN KEY(customer_key) REFERENCES customers(customer_key)
 );
 
+CREATE TABLE IF NOT EXISTS daily_actual_imports (
+    report_date DATE NOT NULL PRIMARY KEY,
+    source_file VARCHAR(255) NOT NULL,
+    imported_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS monthly_so_targets (
     month_start DATE NOT NULL PRIMARY KEY,
     so DOUBLE NOT NULL,

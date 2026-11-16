@@ -41,7 +41,7 @@ class OperatorSheetImportTests(unittest.TestCase):
         sheet.cell(4, 4, "ACTUAL")
         for row_number, day, actual in (
             (5, 9, 90),
-            (6, 10, 100),
+            (6, 10, 0),
             (7, 11, 110),
             (8, 12, 120),
         ):
@@ -79,7 +79,15 @@ class OperatorSheetImportTests(unittest.TestCase):
             [row[1][0] for row in sales],
             ["2026-11-10", "2026-11-11"],
         )
-        self.assertEqual([row[1][3] for row in sales], [100.0, 110.0])
+        self.assertEqual([row[1][3] for row in sales], [0.0, 110.0])
+        actual_imports = [
+            row for row in database.saved
+            if "INSERT INTO daily_actual_imports" in row[0]
+        ]
+        self.assertEqual(
+            sorted(row[1][0] for row in actual_imports),
+            ["2026-11-10", "2026-11-11"],
+        )
 
     def test_full_sheet_so_import_preserves_actuals_outside_email_date_filter(self):
         workbook = Workbook()
@@ -131,6 +139,14 @@ class OperatorSheetImportTests(unittest.TestCase):
         )
         self.assertEqual([row[1][2] for row in sales], [500.0, 600.0, 700.0])
         self.assertEqual([row[1][3] for row in sales], [321.0, 42.0, 0.0])
+        actual_imports = [
+            row for row in database.saved
+            if "INSERT INTO daily_actual_imports" in row[0]
+        ]
+        self.assertEqual(
+            [row[1][0] for row in actual_imports],
+            ["2026-11-14"],
+        )
         forecast_rows, _ = main.overlay_sales_order_forecast(
             [{
                 "report_date": row[1][0],
