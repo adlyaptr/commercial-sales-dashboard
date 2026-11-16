@@ -82,7 +82,9 @@ SESSION_COOKIE_SECURE = os.getenv(
     "true" if APP_ENV == "production" else "false",
 ).strip().lower() == "true"
 YAHOO_SYNC_ENABLED = os.getenv("YAHOO_SYNC_ENABLED", "false").strip().lower() == "true"
-EMAIL_IMPORT_DATE_FILTER_MARKER = "Daily report two-day Actual / full-sheet SO import:"
+EMAIL_IMPORT_DATE_FILTER_MARKER = (
+    "Daily report two-day Actual / full-sheet SO import with date tracking:"
+)
 PASSWORD_HASH_ITERATIONS = 310_000
 logger = logging.getLogger(__name__)
 ISSUE_SHEET_ID = os.getenv(
