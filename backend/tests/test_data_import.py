@@ -3,7 +3,7 @@ from io import BytesIO
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -32,6 +32,42 @@ def operator_sheet_workbook():
 
 
 class OperatorSheetImportTests(unittest.TestCase):
+    def test_future_actual_zeros_do_not_mark_date_as_imported(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Daily Sales"
+        sheet.cell(3, 2, "PLATINUM")
+        sheet.cell(4, 3, "TARGET")
+        sheet.cell(4, 4, "ACTUAL")
+        future_date = main._business_today() + timedelta(days=30)
+        sheet.cell(5, 2, datetime.combine(future_date, datetime.min.time()))
+        sheet.cell(5, 3, 5000)
+        sheet.cell(5, 4, 0)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "daily-sales.xlsx"
+            workbook.save(path)
+            workbook.close()
+            database = MemoryImportDatabase()
+
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", return_value="WUNUT"),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+            ):
+                result = main.import_excel(
+                    path,
+                    path.name,
+                )
+
+        self.assertEqual(result["rows_read"], 0)
+        self.assertEqual(result["rows_saved"], 1)
+        actual_imports = [
+            row for row in database.saved
+            if "INSERT INTO daily_actual_imports" in row[0]
+        ]
+        self.assertEqual(actual_imports, [])
+
     def test_import_date_filter_leaves_other_daily_sales_dates_untouched(self):
         workbook = Workbook()
         sheet = workbook.active

@@ -627,6 +627,10 @@ def parse_date(value) -> Optional[str]:
     return None
 
 
+def _business_today() -> date:
+    return datetime.now(ZoneInfo("Asia/Jakarta")).date()
+
+
 def parse_sales_order_number(value):
     if value is None:
         return None
@@ -886,7 +890,21 @@ def overlay_sales_order_forecast(
     preserve_imported_so=False,
     forecast_only_unimported_dates=False,
 ):
-    actual_imported_dates = actual_imported_dates or set()
+    actual_imported_dates = {
+        value.date().isoformat()
+        if isinstance(value, datetime)
+        else value.isoformat()
+        if isinstance(value, date)
+        else str(value)
+        for value in (actual_imported_dates or ())
+    }
+    if forecast_only_unimported_dates:
+        today = _business_today().isoformat()
+        actual_imported_dates = {
+            report_date
+            for report_date in actual_imported_dates
+            if report_date <= today
+        }
     customers_by_key = {}
     customer_lookup = {}
     for customer in customer_rows:
@@ -1377,6 +1395,29 @@ def import_excel(
     report_date_filter_values = {
         report_date.isoformat() for report_date in report_dates_filter
     } if report_dates_filter else None
+
+    def is_report_date_in_import_filter(report_date):
+        report_date_iso = (
+            report_date.isoformat()
+            if isinstance(report_date, date)
+            else str(report_date)
+        )
+        return (
+            report_date_filter_values is None
+            or report_date_iso in report_date_filter_values
+        )
+
+    def is_actual_import_date(report_date):
+        report_date_iso = (
+            report_date.isoformat()
+            if isinstance(report_date, date)
+            else str(report_date)
+        )
+        return (
+            date.fromisoformat(report_date_iso) <= _business_today()
+            and is_report_date_in_import_filter(report_date)
+        )
+
     wb = None
     try:
         wb = load_workbook(path, data_only=True, read_only=False)
@@ -1433,11 +1474,11 @@ def import_excel(
                     report_date = parse_date(date_value)
                     if not report_date:
                         continue
-                    import_actual = (
-                        report_date_filter_values is None
-                        or report_date in report_date_filter_values
+                    import_actual = is_actual_import_date(report_date)
+                    import_so = (
+                        include_all_so_targets
+                        or is_report_date_in_import_filter(report_date)
                     )
-                    import_so = include_all_so_targets or import_actual
                     for customer, actual_col in actual_cols:
                         actual_value = ws.cell(r, actual_col).value
                         target_col = target_cols.get(norm(customer))
@@ -1489,11 +1530,11 @@ def import_excel(
                 for record in operator_records:
                     customer = record["customer"]
                     report_date = parse_date(record["report_date"])
-                    import_actual = (
-                        report_date_filter_values is None
-                        or report_date in report_date_filter_values
+                    import_actual = is_actual_import_date(report_date)
+                    import_so = (
+                        include_all_so_targets
+                        or is_report_date_in_import_filter(report_date)
                     )
-                    import_so = include_all_so_targets or import_actual
                     if not import_actual and (
                         not import_so or record["so"] is None
                     ):
@@ -1549,9 +1590,11 @@ def import_excel(
                         report_date = parse_date(val("date"))
                         if not report_date:
                             continue
-                        if report_date_filter_values and report_date not in report_date_filter_values:
+                        if not is_report_date_in_import_filter(report_date):
                             continue
-                        rows_read += 1
+                        import_actual = is_actual_import_date(report_date)
+                        if import_actual:
+                            rows_read += 1
                         op = str(val("operator") or "").strip().upper()
                         if op not in CUSTOMER_ASSIGNMENTS:
                             op = find_operator(con, customer)
@@ -1568,12 +1611,17 @@ def import_excel(
                             report_date,
                             "SO",
                         )
-                        actual = _parse_import_actual(
-                            val("actual"),
-                            customer,
-                            report_date,
+                        actual = (
+                            _parse_import_actual(
+                                val("actual"),
+                                customer,
+                                report_date,
+                            )
+                            if import_actual
+                            else 0.0
                         )
-                        actual_imported_dates.add(report_date)
+                        if import_actual:
+                            actual_imported_dates.add(report_date)
                         con.execute("INSERT INTO sales(report_date,customer_key,so,actual,source_file,imported_at) "
                                     "VALUES(%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
                                     "so=VALUES(so),actual=VALUES(actual),source_file=VALUES(source_file),imported_at=VALUES(imported_at)",
@@ -5133,7 +5181,9 @@ def latest_actual_date(request: Request):
     require_home_access(request)
     with db() as con:
         row = con.execute(
-            "SELECT MAX(report_date) AS report_date FROM sales WHERE actual <> 0"
+            "SELECT MAX(report_date) AS report_date FROM sales "
+            "WHERE actual <> 0 AND report_date <= %s",
+            (_business_today().isoformat(),),
         ).fetchone()
     return row["report_date"].isoformat() if row["report_date"] else None
 

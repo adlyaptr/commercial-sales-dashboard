@@ -2,7 +2,7 @@ import asyncio
 import os
 import sys
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -168,6 +168,21 @@ class MemoryDashboard:
             return SimpleNamespace(fetchone=lambda: None)
 
         raise AssertionError(f"Unexpected SQL in test: {statement}")
+
+
+class MemoryLatestActualDate:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def execute(self, statement, parameters=None):
+        if "report_date <= %s" not in statement or not parameters:
+            raise AssertionError("Latest actual date must exclude future dates.")
+        cutoff = date.fromisoformat(parameters[0])
+        latest_past_date = cutoff - timedelta(days=1)
+        return SimpleNamespace(fetchone=lambda: {"report_date": latest_past_date})
 
 
 class MemoryMonthlySummary:
@@ -684,6 +699,15 @@ class DashboardApiTests(unittest.TestCase):
 
         self.assertEqual(result["through_date"], "2026-10-14")
         self.assertEqual(result["items"][0]["actual"], 120)
+
+    def test_latest_actual_date_excludes_future_actual_rows(self):
+        with patch.object(main, "db", return_value=MemoryLatestActualDate()):
+            result = main.latest_actual_date(FakeRequest())
+
+        self.assertEqual(
+            result,
+            (main._business_today() - timedelta(days=1)).isoformat(),
+        )
 
 
 class HomeSummaryTests(unittest.TestCase):

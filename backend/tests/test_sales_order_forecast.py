@@ -1,7 +1,7 @@
 import json
 import sys
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -9,6 +9,38 @@ import main
 
 
 class SalesOrderForecastTests(unittest.TestCase):
+    def test_strict_forecast_ignores_import_markers_for_future_dates(self):
+        future_date = main._business_today() + timedelta(days=14)
+        report_date = future_date.isoformat()
+        customer = {
+            "customer_key": "platinum",
+            "customer_name": "PLATINUM",
+            "operator": "WUNUT",
+        }
+
+        rows, _ = main.overlay_sales_order_forecast(
+            [{
+                "report_date": report_date,
+                "customer_key": "platinum",
+                "customer_name": "PLATINUM",
+                "operator": "WUNUT",
+                "so": 0,
+                "actual": 10000,
+                "source_file": "stale-import.xlsx",
+                "manual_fob": False,
+            }],
+            [customer],
+            {report_date: [{"customer": "PLATINUM", "so": 5000}]},
+            future_date,
+            future_date,
+            actual_imported_dates={report_date},
+            forecast_only_unimported_dates=True,
+        )
+
+        self.assertEqual(rows[0]["so"], 5000)
+        self.assertEqual(rows[0]["actual"], 5000)
+        self.assertTrue(rows[0]["actual_is_forecast"])
+
     def test_parse_sales_order_sheet_with_indonesian_numbers(self):
         csv_text = (
             ",,,,,,\n"
