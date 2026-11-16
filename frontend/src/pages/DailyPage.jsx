@@ -47,15 +47,11 @@ export default function DailyPage() {
     const [summaryLoading, setSummaryLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
     const [emailSyncStatus, setEmailSyncStatus] = useState(null);
-    const [emailMappings, setEmailMappings] = useState([]);
-    const [emailMappingSaving, setEmailMappingSaving] = useState(false);
-    const [emailMappingError, setEmailMappingError] = useState('');
     const [periodRows, setPeriodRows] = useState([]);
     const [periodSalesOrderUnmapped, setPeriodSalesOrderUnmapped] = useState([]);
     const [periodError, setPeriodError] = useState('');
     const [periodLoading, setPeriodLoading] = useState(false);
     const refreshDashboardRef = useRef(refreshDashboard);
-    const emailSyncRef = useRef(null);
     const isDateRange = Boolean(rangeStartDate && rangeEndDate && rangeStartDate !== rangeEndDate);
     const unmappedCount = customerMappings.filter((item) => !item.operator).length;
     const autoMappedCount = customerMappings.filter((item) => !item.requiresMapping).length;
@@ -112,19 +108,6 @@ export default function DailyPage() {
                 const failedDetails = (result.failed ?? [])
                     .map((item) => item.message)
                     .join(' ');
-                const unmappedCustomers = [...new Set(
-                    (result.failed ?? []).flatMap((item) => item.unmapped_customers ?? []),
-                )];
-                setEmailMappings((current) => {
-                    const selectedOperators = new Map(
-                        current.map((item) => [item.customer, item.operator]),
-                    );
-                    return unmappedCustomers.map((customer) => ({
-                        customer,
-                        operator: selectedOperators.get(customer) || '',
-                    }));
-                });
-                if (unmappedCustomers.length === 0) setEmailMappingError('');
                 setEmailSyncStatus({
                     bad: (result.failed ?? []).length > 0,
                     text: [result.message, importedDetails, failedDetails]
@@ -154,7 +137,6 @@ export default function DailyPage() {
             }
         };
 
-        emailSyncRef.current = syncEmail;
         const handleVisibilityChange = () => {
             if (document.visibilityState !== 'hidden') syncEmail();
         };
@@ -164,49 +146,10 @@ export default function DailyPage() {
 
         return () => {
             active = false;
-            if (emailSyncRef.current === syncEmail) emailSyncRef.current = null;
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             window.clearInterval(timer);
         };
     }, [canEdit]);
-
-    async function saveEmailCustomerMappings() {
-        if (emailMappings.some((item) => !item.operator)) {
-            setEmailMappingError('Pilih WS untuk setiap customer baru sebelum menyimpan.');
-            return;
-        }
-
-        const syncEmail = emailSyncRef.current;
-        if (!syncEmail) {
-            setEmailMappingError('Sinkronisasi email belum siap. Coba kembali beberapa saat lagi.');
-            return;
-        }
-
-        setEmailMappingSaving(true);
-        setEmailMappingError('');
-        try {
-            await api('/api/customer-mapping/bulk', {
-                method: 'POST',
-                body: {
-                    mappings: emailMappings.map(({ customer, operator }) => ({
-                        customer,
-                        operator,
-                    })),
-                },
-            });
-            setEmailSyncStatus({
-                loading: true,
-                text: 'Pemetaan tersimpan. Mencoba mengimpor ulang email Planner...',
-            });
-            await syncEmail();
-        } catch (requestError) {
-            setEmailMappingError(
-                requestError.message || 'Pemetaan customer gagal disimpan.',
-            );
-        } finally {
-            setEmailMappingSaving(false);
-        }
-    }
 
     useEffect(() => {
         const reportDate = dashboard?.report_date;
@@ -519,65 +462,6 @@ export default function DailyPage() {
                 <div className={`notice${emailSyncStatus.bad ? ' bad' : ''}`} role="status">
                     {emailSyncStatus.text}
                 </div>
-            )}
-            {emailMappings.length > 0 && (
-                <section className="mapping-panel" aria-label="Pemetaan customer email Planner">
-                    <div className="mapping-panel-heading">
-                        <b>Pemetaan Customer Baru dari Email Planner</b>
-                        <span>{emailMappings.length} customer perlu dipetakan</span>
-                    </div>
-                    <p className="mapping-complete">
-                        Pilih WS untuk setiap customer. Pemetaan akan disimpan dan email dicoba impor ulang.
-                    </p>
-                    <div className="mapping-table-wrap">
-                        <table className="mapping-table">
-                            <thead><tr><th>Customer</th><th>WS</th></tr></thead>
-                            <tbody>{emailMappings.map((item) => (
-                                <tr key={item.customer}>
-                                    <td>{item.customer}</td>
-                                    <td>
-                                        <select
-                                            aria-label={`WS untuk ${item.customer}`}
-                                            value={item.operator}
-                                            onChange={(event) => {
-                                                const operator = event.target.value;
-                                                setEmailMappings((current) => current.map((entry) => (
-                                                    entry.customer === item.customer
-                                                        ? { ...entry, operator }
-                                                        : entry
-                                                )));
-                                                setEmailMappingError('');
-                                            }}
-                                        >
-                                            <option value="">Pilih WS</option>
-                                            <option value="SETU">SETU</option>
-                                            <option value="KHT">KHT</option>
-                                            <option value="BLORA">BLORA</option>
-                                            <option value="WUNUT">WUNUT</option>
-                                        </select>
-                                    </td>
-                                </tr>
-                            ))}</tbody>
-                        </table>
-                    </div>
-                    {emailMappingError && (
-                        <p className="mapping-unmapped" role="alert">{emailMappingError}</p>
-                    )}
-                    <button
-                        className="primary"
-                        type="button"
-                        disabled={
-                            emailMappingSaving ||
-                            emailSyncStatus?.loading ||
-                            emailMappings.some((item) => !item.operator)
-                        }
-                        onClick={saveEmailCustomerMappings}
-                    >
-                        {emailMappingSaving
-                            ? 'Menyimpan dan mengulang impor...'
-                            : 'Simpan Pemetaan & Coba Impor Ulang'}
-                    </button>
-                </section>
             )}
             {isDateRange && periodLoading && (
                 <div className="notice" role="status">Memuat data periode...</div>

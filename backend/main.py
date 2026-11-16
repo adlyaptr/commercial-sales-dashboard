@@ -1296,12 +1296,6 @@ def operator_sheet_daily_sales_records(wb):
     return records
 
 
-class UnmappedCustomersError(ValueError):
-    def __init__(self, customers, message):
-        self.unmapped_customers = list(dict.fromkeys(customers))
-        super().__init__(message)
-
-
 def import_excel(
     path: Path,
     original_filename: str,
@@ -1345,8 +1339,7 @@ def import_excel(
                     names = ", ".join(unmapped_customers[:20])
                     remainder = len(unmapped_customers) - 20
                     suffix = f", dan {remainder} lainnya" if remainder > 0 else ""
-                    raise UnmappedCustomersError(
-                        unmapped_customers,
+                    raise ValueError(
                         "Impor dibatalkan. Operator tidak ditemukan otomatis untuk customer: "
                         f"{names}{suffix}. Tambahkan customer ke sheet operator pada file Excel "
                         "atau gunakan mapping yang sudah tersimpan."
@@ -1495,8 +1488,7 @@ def import_excel(
                 names = ", ".join(unmapped_customers[:20])
                 remainder = len(unmapped_customers) - 20
                 suffix = f", dan {remainder} lainnya" if remainder > 0 else ""
-                raise UnmappedCustomersError(
-                    unmapped_customers,
+                raise ValueError(
                     "Impor dibatalkan. Operator tidak ditemukan otomatis untuk customer: "
                     f"{names}{suffix}. Tambahkan mapping ke database atau sheet operator pada file Excel."
                 )
@@ -3439,7 +3431,6 @@ def sync_daily_sales_email(request: Request):
             failed.append({
                 "subject": subject,
                 "message": failure_message,
-                "unmapped_customers": getattr(exc, "unmapped_customers", []),
             })
 
     if imported:
