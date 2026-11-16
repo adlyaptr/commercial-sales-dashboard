@@ -2916,16 +2916,75 @@ def _sph_generate_proposal_pdf(proposal, inline=False):
     )
 
 
+def _sph_register_term_description_fonts():
+    font_sets = (
+        (
+            Path("/usr/share/fonts/truetype/liberation2"),
+            (
+                "LiberationSansNarrow-Regular.ttf",
+                "LiberationSansNarrow-Bold.ttf",
+                "LiberationSansNarrow-Italic.ttf",
+                "LiberationSansNarrow-BoldItalic.ttf",
+            ),
+        ),
+        (
+            Path("/usr/share/fonts/truetype/liberation"),
+            (
+                "LiberationSansNarrow-Regular.ttf",
+                "LiberationSansNarrow-Bold.ttf",
+                "LiberationSansNarrow-Italic.ttf",
+                "LiberationSansNarrow-BoldItalic.ttf",
+            ),
+        ),
+        (
+            Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts",
+            ("ARIALN.TTF", "ARIALNB.TTF", "ARIALNI.TTF", "ARIALNBI.TTF"),
+        ),
+    )
+    font_files = next(
+        (
+            tuple(root / name for name in names)
+            for root, names in font_sets
+            if all((root / name).is_file() for name in names)
+        ),
+        None,
+    )
+    if font_files is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Font PDF Term / Deskripsi tidak tersedia.",
+        )
+
+    font_names = (
+        "SphTermsText",
+        "SphTermsText-Bold",
+        "SphTermsText-Italic",
+        "SphTermsText-BoldItalic",
+    )
+    registered_fonts = set(pdfmetrics.getRegisteredFontNames())
+    for font_name, font_file in zip(font_names, font_files):
+        if font_name not in registered_fonts:
+            pdfmetrics.registerFont(TTFont(font_name, str(font_file)))
+    pdfmetrics.registerFontFamily(
+        "SphTermsText",
+        normal="SphTermsText",
+        bold="SphTermsText-Bold",
+        italic="SphTermsText-Italic",
+        boldItalic="SphTermsText-BoldItalic",
+    )
+
+
 def _sph_generate_term_description_pdf(proposal, inline=False):
     try:
         from reportlab.lib import colors
         from reportlab.lib.enums import TA_CENTER, TA_LEFT
-        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
         from reportlab.lib.utils import ImageReader
         from reportlab.platypus import (
-            PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+            HRFlowable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table,
+            TableStyle,
         )
     except ImportError as exc:
         raise HTTPException(status_code=503, detail="Generator PDF SPH belum tersedia.") from exc
@@ -2933,33 +2992,50 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
     sph_pdf_logo = BASE_DIR / "static" / "reethau-sph.png"
     if not sph_pdf_logo.is_file():
         raise HTTPException(status_code=503, detail="Logo template PDF SPH tidak tersedia.")
+    _sph_register_term_description_fonts()
     output = BytesIO()
     document = SimpleDocTemplate(
-        output, pagesize=A4, rightMargin=20 * mm, leftMargin=20 * mm,
-        topMargin=36 * mm, bottomMargin=22 * mm,
+        output, pagesize=letter, rightMargin=38.3, leftMargin=38.3,
+        topMargin=35.2 * mm, bottomMargin=22 * mm,
         title=f"Surat Penawaran Harga {proposal['number']}",
         author="Reethau",
     )
+    term_table_width = document.width - 12
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(
-        name="SphTermsBody", parent=styles["BodyText"], fontName="Times-Roman",
-        fontSize=10, leading=12, alignment=TA_LEFT, spaceBefore=0, spaceAfter=0,
+        name="SphTermsBody", parent=styles["BodyText"], fontName="SphTermsText",
+        fontSize=10, leading=11.5, leftIndent=0,
+        alignment=TA_LEFT, spaceBefore=0, spaceAfter=0,
     ))
     styles.add(ParagraphStyle(
-        name="SphTermsHeading", parent=styles["BodyText"], fontName="Times-Bold",
-        fontSize=10, leading=12, alignment=TA_CENTER, spaceBefore=0, spaceAfter=0,
+        name="SphTermsBodyLetter", parent=styles["SphTermsBody"], leftIndent=27.7,
     ))
     styles.add(ParagraphStyle(
-        name="SphTermsLabel", parent=styles["BodyText"], fontName="Times-Bold",
-        fontSize=10, leading=12, spaceBefore=0, spaceAfter=0,
+        name="SphTermsMetadata", parent=styles["SphTermsBody"], leading=11,
     ))
     styles.add(ParagraphStyle(
-        name="SphTermsIntro", parent=styles["BodyText"], fontName="Times-Roman",
-        fontSize=10, leading=13, alignment=TA_LEFT, spaceBefore=0, spaceAfter=0,
+        name="SphTermsLetterLabel", parent=styles["SphTermsBodyLetter"],
+        fontName="SphTermsText-Bold",
     ))
     styles.add(ParagraphStyle(
-        name="SphTermsSignature", parent=styles["BodyText"], fontName="Times-Roman",
-        fontSize=10, leading=13, alignment=TA_CENTER, spaceBefore=0, spaceAfter=0,
+        name="SphTermsHeading", parent=styles["BodyText"],
+        fontName="SphTermsText-Bold", fontSize=10, leading=11.5,
+        alignment=TA_CENTER, spaceBefore=0, spaceAfter=0,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphTermsLabel", parent=styles["SphTermsBody"],
+        fontName="SphTermsText-Bold",
+    ))
+    styles.add(ParagraphStyle(
+        name="SphTermsIntro", parent=styles["SphTermsBodyLetter"],
+        fontSize=10, leading=11.5, alignment=TA_LEFT,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphTermsApprovalHeading", parent=styles["SphTermsBody"],
+        fontName="SphTermsText-Bold", fontSize=9, leading=10.5,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphTermsApprovalText", parent=styles["SphTermsApprovalHeading"],
     ))
     safe = lambda value: (
         str(value or "").replace("&", "&amp;").replace("<", "&lt;")
@@ -2968,24 +3044,63 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
     def paragraph(value, style="SphTermsBody"):
         return Paragraph(safe(value) or "-", styles[style])
 
-    def checklist_description(value, fallback=None, numbered=False):
+    def rich_paragraph(value, style="SphTermsBody"):
+        return Paragraph(value or "-", styles[style])
+
+    def numbered_markup(value, fallback=None, numbered=False):
         selected = [
             item["label"]
             for item in _sph_parse_term_checklist(value)
             if item["checked"]
         ]
-        if numbered:
-            numbered_items = []
-            for index, item in enumerate(selected, start=1):
-                first_line, separator, remaining = item.partition("\n")
-                prefix, marker, text = first_line.partition(".")
-                if marker and prefix.strip().isdigit():
-                    first_line = text.strip()
-                numbered_items.append(
-                    f"{index}. {first_line}"
-                    + (f"\n{remaining}" if separator else "")
-                )
-            selected = numbered_items
+        if not selected:
+            selected = [fallback] if fallback else ["-"]
+            numbered = False
+        rendered = []
+        for index, item in enumerate(selected, start=1):
+            lines = item.splitlines() or [item]
+            first_line = lines[0]
+            prefix, marker, text = first_line.partition(".")
+            if numbered and marker and prefix.strip().isdigit():
+                first_line = text.strip()
+            if numbered:
+                first_line = f"<b>{index}.</b> {safe(first_line)}"
+            else:
+                first_line = safe(first_line)
+            rendered.append(
+                "<br/>".join([first_line, *(safe(line) for line in lines[1:])])
+            )
+        return "<br/>".join(rendered)
+
+    def price_details_markup(value):
+        rendered = []
+        section = None
+        for line in str(value or "").splitlines():
+            match = re.match(r"^\s*(\d+)\.\s*(.*)$", line)
+            if match:
+                section = int(match.group(1))
+                heading, separator, remainder = match.group(2).partition(":")
+                if separator:
+                    rendered.append(
+                        f"<b>{section}. {safe(heading)}:</b>{safe(remainder)}"
+                    )
+                else:
+                    rendered.append(f"<b>{section}.</b> {safe(match.group(2))}")
+            elif section == 1 and line.strip():
+                if line.lstrip().startswith("("):
+                    rendered.append(f"<i>{safe(line)}</i>")
+                else:
+                    rendered.append(f"<b>{safe(line)}</b>")
+            else:
+                rendered.append(safe(line))
+        return "<br/>".join(rendered) or "-"
+
+    def checklist_description(value, fallback=None):
+        selected = [
+            item["label"]
+            for item in _sph_parse_term_checklist(value)
+            if item["checked"]
+        ]
         return "\n".join(selected) or fallback or "-"
 
     proposal_date = date.fromisoformat(proposal["proposalDate"])
@@ -3054,12 +3169,11 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
     buyer_name = proposal["customerName"]
     if proposal.get("plantName"):
         buyer_name += f" ({proposal['plantName']})"
-    buyer_description = paragraph(
-        "\n".join(
-            value.strip()
-            for value in (buyer_name, proposal.get("plantAddress"))
-            if value and value.strip()
-        )
+    buyer_lines = [f"<b>{safe(buyer_name)}</b>"]
+    if proposal.get("plantAddress"):
+        buyer_lines.append(safe(proposal["plantAddress"]))
+    buyer_description = rich_paragraph(
+        "<br/>".join(buyer_lines)
     )
     mother_station = str(proposal.get("motherStation") or "").strip()
     if mother_station:
@@ -3068,7 +3182,7 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
             if mother_station.lower().startswith("supply gas by ")
             else f"Supply Gas By {mother_station}"
         )
-        description_width = document.width - 31 * mm - 10
+        description_width = term_table_width - 30 * mm - 10
         buyer_description = Table(
             [[
                 buyer_description,
@@ -3088,12 +3202,11 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         ("Penjual", "PT Reethau Cipta Energi"),
         ("Pembeli", buyer_description),
         (
-            "Pola Supply",
-            proposal.get("supplyPattern") or "Sesuai kesepakatan para pihak.",
-        ),
-        (
-            "Titik Penyerahan",
-            proposal.get("deliveryPoint") or "Sesuai kesepakatan para pihak.",
+            "Pola Supply\nTitik Penyerahan",
+            "\n".join((
+                proposal.get("supplyPattern") or "Sesuai kesepakatan para pihak.",
+                proposal.get("deliveryPoint") or "Sesuai kesepakatan para pihak.",
+            )),
         ),
         ("Tanggal Dimulai", start_date_label),
         (
@@ -3101,13 +3214,13 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
             duration_description,
         ),
         ("Volume", volume),
-        ("Harga CNG", price),
-        ("Pembayaran", checklist_description(
+        ("Harga CNG", rich_paragraph(price_details_markup(price))),
+        ("Pembayaran", rich_paragraph(numbered_markup(
             proposal.get("paymentTerms"), payment_fallback, numbered=True
-        )),
-        ("Keunggulan", checklist_description(
+        ))),
+        ("Keunggulan", rich_paragraph(numbered_markup(
             proposal.get("advantages"), numbered=True
-        )),
+        ))),
         ("Ketentuan Lain", checklist_description(json.dumps(other_terms))),
         ("Preparation", checklist_description(proposal.get("preparation"))),
     ]
@@ -3127,87 +3240,116 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         ])
         table = Table(
             rows,
-            colWidths=[31 * mm, document.width - 31 * mm],
+            colWidths=[30 * mm, term_table_width - 30 * mm],
             repeatRows=1 if include_header else 0,
             splitByRow=1,
             hAlign="LEFT",
         )
         table_style = [
             ("GRID", (0, 0), (-1, -1), .5, colors.black),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LEFTPADDING", (0, 0), (-1, -1), 5),
             ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]
         if include_header:
             table_style.append(
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8cc63f"))
             )
+            table_style.extend([
+                ("TOPPADDING", (0, 0), (-1, 0), 5.8),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 5.8),
+            ])
+        table_style.extend([
+            ("BOTTOMPADDING", (1, 3), (1, 6), 4.3),
+        ])
+        if not include_header:
+            table_style.append(("BOTTOMPADDING", (1, 0), (1, 0), 5))
         table.setStyle(TableStyle(table_style))
         return table
 
-    term_table = make_term_table(terms[:10], include_header=True)
-    continuation_table = make_term_table(terms[10:], include_header=False)
+    term_table = make_term_table(terms[:9], include_header=True)
+    continuation_table = make_term_table(terms[9:], include_header=False)
     story = [
         Table(
             [
-                ["No", ":", paragraph(proposal["number"])],
-                ["Hari/Tanggal", ":", paragraph(date_label)],
+                ["", paragraph("No", "SphTermsMetadata"), paragraph(
+                    ":", "SphTermsMetadata"
+                ), rich_paragraph(
+                    f"<b>{safe(proposal['number'])}</b>", "SphTermsMetadata"
+                )],
+                [
+                    "",
+                    paragraph("Hari/Tanggal", "SphTermsMetadata"),
+                    paragraph(":", "SphTermsMetadata"),
+                    paragraph(date_label, "SphTermsMetadata"),
+                ],
+                [
+                    "",
+                    paragraph("Perihal", "SphTermsMetadata"),
+                    paragraph(":", "SphTermsMetadata"),
+                    rich_paragraph(
+                        "<b>Penawaran Harga</b> "
+                        "<b><i>Compressed Natural Gas (CNG)</i></b>",
+                        "SphTermsMetadata",
+                    ),
+                ],
             ],
-            colWidths=[25 * mm, 3 * mm, document.width - 28 * mm],
+            colWidths=[27.7, 56.7, 7.1, term_table_width - 91.5],
+            rowHeights=[11.5, 11.5, 11.5],
             style=TableStyle([
-                ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
-                ("FONTSIZE", (0, 0), (-1, -1), 10),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ("TOPPADDING", (0, 0), (-1, -1), 0),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ]),
         ),
-        Spacer(1, 5 * mm),
-        paragraph("Perihal: Penawaran Harga Compressed Natural Gas (CNG)"),
-        Spacer(1, 5 * mm),
-        paragraph("Kepada Yth."),
-        paragraph(proposal["customerName"], "SphTermsLabel"),
-        paragraph(address),
+        Spacer(1, 11.3),
+        paragraph("Kepada Yth.", "SphTermsLetterLabel"),
+        paragraph(proposal["customerName"], "SphTermsLetterLabel"),
+        paragraph(address, "SphTermsBodyLetter"),
+        Spacer(1, 11.5),
         *(
-            [paragraph(f"Up: {proposal['attentionTo']}")]
+            [paragraph(f"Up : {proposal['attentionTo']}", "SphTermsLetterLabel")]
             if proposal.get("attentionTo")
             else []
         ),
-        Spacer(1, 4 * mm),
-        paragraph("Dengan hormat,"),
-        Spacer(1, 2 * mm),
-        paragraph(
-            "Kami PT Reethau Cipta Energi merupakan perusahaan yang bergerak di "
-            "bidang penyaluran Compressed Natural Gas (CNG)"
+        Spacer(1, 11.5),
+        paragraph("Dengan hormat,", "SphTermsBodyLetter"),
+        rich_paragraph(
+            "Kami <b>PT Reethau Cipta Energi</b> merupakan perusahaan yang "
+            "bergerak di bidang penyaluran "
+            "<b><i>Compressed Natural Gas (CNG)</i></b>"
             + (
-                f" yang memiliki mother station berlokasi di "
-                f"{safe(proposal['motherStation'])}"
+                " yang memiliki <i>mother station</i> berlokasi di "
+                f"<b>{safe(proposal['motherStation'])}</b>"
                 if proposal.get("motherStation")
                 else ""
             )
-            + f", untuk supply di plant {safe(proposal['customerName'])}, "
+            + f", untuk suply di plant <b>{safe(proposal['customerName'])}</b>, "
             "bermaksud memberikan penawaran harga CNG dengan kondisi penawaran "
             "adalah sebagai berikut :",
             "SphTermsIntro",
         ),
-        Spacer(1, 3 * mm),
+        Spacer(1, 7.4),
         term_table,
         PageBreak(),
+        Spacer(1, 2.2),
         continuation_table,
-        Spacer(1, 5 * mm),
-        paragraph(
-            f"Besar harapan kami bahwa surat penawaran ini mendapat respon yang "
-            f"baik dari {safe(proposal['customerName'])}, dengan mengirimkan "
-            "surat minat dan persetujuan atas perincian penawaran tersebut di atas.",
+        Spacer(1, 4 * mm),
+        rich_paragraph(
+            "Besar harapan kami bahwa surat penawaran ini mendapat respon yang "
+            "baik dari "
+            f"<b>{safe(proposal['customerName'])}</b>, dengan mengirimkan "
+            "surat minat dan persetujuan atas perincian penawaran tersebut diatas.",
             "SphTermsIntro",
         ),
-        Spacer(1, 3 * mm),
-        paragraph(
-            "Demikian surat penawaran harga Compressed Natural Gas (CNG) ini yang "
+        Spacer(1, 5 * mm),
+        rich_paragraph(
+            "Demikian surat penawaran harga "
+            "<b><i>Compressed Natural Gas (CNG)</i></b> ini yang "
             "dapat kami sampaikan. Atas perhatian dan kerja sama Anda, kami "
             "ucapkan terima kasih.",
             "SphTermsIntro",
@@ -3216,44 +3358,51 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         Table(
             [[
                 [
-                    Paragraph("Hormat kami,<br/><b>PT Reethau Cipta Energi</b>", styles["SphTermsBody"]),
-                    Spacer(1, 26 * mm),
+                    Paragraph("Hormat kami,<br/><b>PT Reethau Cipta Energi</b>", styles["SphTermsBodyLetter"]),
+                    Spacer(1, 16.15 * mm),
                     Paragraph(
                         "<u><b>Sahrul Astrurrachman</b></u><br/>"
-                        "<i>Commercial &amp; Marketing Head</i>",
-                        styles["SphTermsBody"],
+                        "<i>Commersial &amp; Marketing Head</i>",
+                        styles["SphTermsBodyLetter"],
                     ),
                 ],
                 Table(
                     [
-                        [Paragraph("Approval Customer", styles["SphTermsHeading"])],
+                        [Paragraph("Approval Customer", styles["SphTermsApprovalHeading"])],
                         [""],
+                        [HRFlowable(
+                            width=107.4, thickness=.5, color=colors.black,
+                            hAlign="LEFT", spaceBefore=0, spaceAfter=0,
+                        )],
                         [Paragraph(
                             "Manager / GM / Direktur / Direktur Utama",
-                            styles["SphTermsSignature"],
+                            styles["SphTermsApprovalText"],
                         )],
                     ],
-                    colWidths=[58 * mm],
-                    rowHeights=[8 * mm, 18 * mm, 8 * mm],
+                    colWidths=[171.75],
+                    rowHeights=[19.2, 63.0, .5, 19.9],
                     style=TableStyle([
                         ("BOX", (0, 0), (-1, -1), .5, colors.black),
                         ("LINEBELOW", (0, 0), (-1, 0), .5, colors.black),
                         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                        ("VALIGN", (0, 3), (-1, 3), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 7.2),
                         ("RIGHTPADDING", (0, 0), (-1, -1), 2),
                         ("TOPPADDING", (0, 0), (-1, -1), 0),
                         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                        ("TOPPADDING", (0, 3), (-1, 3), 1.4),
                     ]),
                 ),
             ]],
-            colWidths=[document.width - 63 * mm, 58 * mm],
+            colWidths=[326.3, 171.75],
             style=TableStyle([
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 2),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ("TOPPADDING", (0, 0), (-1, -1), 0),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ]),
+            hAlign="LEFT",
         ),
     ]
     is_draft = (
@@ -3268,26 +3417,26 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         logo_pixel_width, logo_pixel_height = logo_image.getSize()
         logo_height = logo_width * logo_pixel_height / logo_pixel_width
         canvas.drawImage(
-            logo_image, 11.5 * mm, A4[1] - 2 * mm - logo_height,
+            logo_image, 11.5 * mm, letter[1] - 2 * mm - logo_height,
             width=logo_width, height=logo_height, mask="auto",
         )
         if is_draft:
             canvas.setFillColor(colors.Color(.8, .2, .2, alpha=.12))
             canvas.setFont("Helvetica-Bold", 34)
-            canvas.translate(A4[0] / 2, A4[1] / 2)
+            canvas.translate(letter[0] / 2, letter[1] / 2)
             canvas.rotate(35)
             canvas.drawCentredString(0, 0, "DRAFT")
             canvas.rotate(-35)
-            canvas.translate(-A4[0] / 2, -A4[1] / 2)
+            canvas.translate(-letter[0] / 2, -letter[1] / 2)
         canvas.setFillColor(colors.HexColor("#4f5551"))
         canvas.setFont("Helvetica-Bold", 5.5)
-        canvas.drawString(20 * mm, 19 * mm, "OFFICE")
+        canvas.drawString(14.5 * mm, 19 * mm, "OFFICE")
         canvas.setFont("Helvetica", 5.5)
-        canvas.drawString(20 * mm, 16 * mm, "PT Reethau Cipta Energi")
-        canvas.drawString(20 * mm, 13 * mm, "Jl. Darmawangsa Raya No. 8,")
-        canvas.drawString(20 * mm, 10 * mm, "Kebayoran Baru - Jakarta Selatan 12160")
-        canvas.drawCentredString(A4[0] * .64, 13 * mm, "P: +62 21 723 1238   |   +62 21 720 7130")
-        canvas.drawRightString(A4[0] - 20 * mm, 13 * mm, "www.reethau.com")
+        canvas.drawString(14.5 * mm, 16 * mm, "PT Reethau Cipta Energi")
+        canvas.drawString(14.5 * mm, 13 * mm, "Jl. Darmawangsa Raya No. 8,")
+        canvas.drawString(14.5 * mm, 10 * mm, "Kebayoran Baru - Jakarta Selatan 12160")
+        canvas.drawCentredString(letter[0] * .64, 13 * mm, "P: +62 21 723 1238   |   +62 21 720 7130")
+        canvas.drawRightString(letter[0] - 14.5 * mm, 13 * mm, "www.reethau.com")
         canvas.restoreState()
 
     document.build(story, onFirstPage=page_footer, onLaterPages=page_footer)

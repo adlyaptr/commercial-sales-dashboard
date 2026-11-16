@@ -17,6 +17,8 @@ SPH memakai tabel MySQL `sph_customers`, `sph_sequences`, `sph_proposals`, dan `
 
 Editor SPH menyediakan daftar ceklis kewajiban Reethau dan Customer. Opsi **Lainnya** membuka kolom esai untuk mencatat kewajiban tambahan; kewajiban yang dipilih dan catatan tambahan disimpan bersama draft dan ditampilkan pada PDF SPH.
 
+PDF Template Term / Deskripsi mengikuti ukuran Letter, posisi isi, lebar kolom, jarak baris, serta penekanan tebal dan miring dari contoh. Font narrow menggunakan Arial Narrow pada Windows dan Liberation Sans Narrow pada Linux agar hasil tetap konsisten di aplikasi lokal dan produksi.
+
 ## Issue Management
 
 Halaman Issue (`/issue`) hanya menampilkan data dari Google Sheets yang dikonfigurasi dengan `ISSUE_SHEET_ID` dan `ISSUE_SHEET_GID`. Jika tidak diatur, halaman menggunakan spreadsheet Issue saat ini. Jika spreadsheet tidak dipublikasikan, server membacanya menggunakan Google service account read-only pada `secrets/issue-google-service-account.json`. Aktifkan Google Sheets API pada project service account, bagikan spreadsheet kepada nilai `client_email` pada file kredensial dengan izin Viewer, lalu simpan isi file JSON sebagai GitHub Actions secret `ISSUE_GOOGLE_SERVICE_ACCOUNT_JSON`. Workflow deploy akan mengirim file tersebut ke VM dengan izin file terbatas. Jangan commit atau mengirim file kredensial melalui chat. Ekspor CSV publik tetap digunakan sebagai fallback jika file service account belum dikonfigurasi. Endpoint dashboard hanya tersedia bagi Admin dan User. Data dimuat otomatis saat halaman dibuka dan disegarkan setiap lima menit. Cache backend juga berlaku lima menit.

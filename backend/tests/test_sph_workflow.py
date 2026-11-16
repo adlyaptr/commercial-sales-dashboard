@@ -1,4 +1,5 @@
 import asyncio
+import re
 import sys
 import unittest
 from datetime import date, datetime
@@ -622,6 +623,16 @@ class SphWorkflowTests(unittest.TestCase):
 
         content = asyncio.run(read_response())
         self.assertTrue(content.startswith(b"%PDF-"))
+        self.assertIn(b"/MediaBox [ 0 0 612 792 ]", content)
+        font_resources = re.findall(rb"/BaseFont /([^\s/]+)", content)
+        self.assertTrue(any(
+            b"ArialNarrow" in name or b"LiberationSansNarrow" in name
+            for name in font_resources
+        ))
+        self.assertTrue(any(
+            b"Narrow-Bold" in name
+            for name in font_resources
+        ))
         for expected in (
             "TERM",
             "DESKRIPSI",
@@ -661,15 +672,26 @@ class SphWorkflowTests(unittest.TestCase):
             "Klausul tukar-menukar tidak berlaku" in text
             for text in paragraph_texts
         ))
-        self.assertNotIn(("Helvetica-Bold", 34), font_calls)
-        self.assertTrue(any("1. Maksimal 14 hari" in text for text in paragraph_texts))
-        self.assertTrue(any("2. Dibayar melalui transfer." in text for text in paragraph_texts))
         self.assertTrue(any(
-            "1. Keunggulan pertama.<br/>- Rincian armada A<br/>- Rincian armada B"
+            "Pola Supply<br/>Titik Penyerahan" in text
+            for text in paragraph_texts
+        ))
+        self.assertNotIn(("Helvetica-Bold", 34), font_calls)
+        self.assertTrue(any(
+            "<b>1.</b> Maksimal 14 hari" in text for text in paragraph_texts
+        ))
+        self.assertTrue(any(
+            "<b>2.</b> Dibayar melalui transfer." in text
+            for text in paragraph_texts
+        ))
+        self.assertTrue(any(
+            "<b>1.</b> Keunggulan pertama.<br/>- Rincian armada A<br/>- Rincian armada B"
             in text
             for text in paragraph_texts
         ))
-        self.assertTrue(any("2. Keunggulan kedua." in text for text in paragraph_texts))
+        self.assertTrue(any(
+            "<b>2.</b> Keunggulan kedua." in text for text in paragraph_texts
+        ))
 
         proposal["priceDetails"] = "Plant Gresik Harga USD: 15,00 / MMBTU"
         paragraph_texts.clear()
