@@ -1961,14 +1961,16 @@ def _sph_text(value, label, maximum=10000, required=False):
     return text
 
 
-def _sph_pack_supply_pattern(pattern, mother_station):
-    if not mother_station:
+def _sph_pack_supply_pattern(pattern, mother_station, plant_name="", plant_address=""):
+    if not any((mother_station, plant_name, plant_address)):
         return pattern
     return json.dumps(
         {
-            "format": "rce_supply_details_v1",
+            "format": "rce_supply_details_v2",
             "motherStation": mother_station,
             "pattern": pattern,
+            "plantName": plant_name,
+            "plantAddress": plant_address,
         },
         ensure_ascii=False,
     )
@@ -1979,13 +1981,21 @@ def _sph_unpack_supply_pattern(value):
     try:
         packed = json.loads(raw)
     except json.JSONDecodeError:
-        return "", raw
+        return "", raw, "", ""
     if (
         isinstance(packed, dict)
-        and packed.get("format") == "rce_supply_details_v1"
+        and packed.get("format") in (
+            "rce_supply_details_v1",
+            "rce_supply_details_v2",
+        )
     ):
-        return str(packed.get("motherStation") or ""), str(packed.get("pattern") or "")
-    return "", raw
+        return (
+            str(packed.get("motherStation") or ""),
+            str(packed.get("pattern") or ""),
+            str(packed.get("plantName") or ""),
+            str(packed.get("plantAddress") or ""),
+        )
+    return "", raw, "", ""
 
 
 def _sph_parse_term_checklist(value):
@@ -2004,11 +2014,14 @@ def _sph_parse_term_checklist(value):
         and isinstance(item.get("checked"), bool)
         for item in items
     ):
-        return [
-            {"label": item["label"].strip(), "checked": item["checked"]}
-            for item in items
-            if item["label"].strip()
-        ]
+        parsed_items = []
+        for item in items:
+            label = item["label"].strip()
+            if label.startswith("Lainnya:"):
+                label = label[len("Lainnya:"):].strip()
+            if label:
+                parsed_items.append({"label": label, "checked": item["checked"]})
+        return parsed_items
 
     parsed_lines = []
     for line in raw.splitlines():
@@ -2016,7 +2029,10 @@ def _sph_parse_term_checklist(value):
         if label.startswith("Lainnya:"):
             label = label[len("Lainnya:"):].strip()
         if label:
-            parsed_lines.append({"label": label, "checked": True})
+            if label.startswith("- ") and parsed_lines:
+                parsed_lines[-1]["label"] += f"\n{label}"
+            else:
+                parsed_lines.append({"label": label, "checked": True})
     return parsed_lines
 
 
@@ -2120,6 +2136,8 @@ def _sph_validate_proposal(payload):
         "duration_details": _sph_text(payload.get("durationDetails"), "Detail jangka waktu", 5000),
         "attention_to": _sph_text(payload.get("attentionTo"), "Perhatian", 255),
         "mother_station": mother_station,
+        "plant_name": _sph_text(payload.get("plantName"), "Nama plant customer", 255),
+        "plant_address": _sph_text(payload.get("plantAddress"), "Alamat plant supply", 2000),
         "supply_pattern": _sph_text(payload.get("supplyPattern"), "Pola supply", 2000),
         "delivery_point": _sph_text(payload.get("deliveryPoint"), "Titik penyerahan", 2000),
         "start_date": start_date,
@@ -2168,9 +2186,12 @@ def _sph_proposal_json(row):
     if not row:
         return None
     result = dict(row)
-    result["motherStation"], result["supplyPattern"] = _sph_unpack_supply_pattern(
-        result.get("supplyPattern")
-    )
+    (
+        result["motherStation"],
+        result["supplyPattern"],
+        result["plantName"],
+        result["plantAddress"],
+    ) = _sph_unpack_supply_pattern(result.get("supplyPattern"))
     if result["status"] == "pjbg":
         result["status"] = "customer_approved"
     result["id"] = int(result["id"])
@@ -2297,7 +2318,10 @@ async def sph_create_proposal(request: Request):
                     proposal["exchange_clause"], proposal["contract_duration_value"],
                     proposal["contract_duration_unit"], proposal["duration_details"],
                     proposal["attention_to"], _sph_pack_supply_pattern(
-                        proposal["supply_pattern"], proposal["mother_station"]
+                        proposal["supply_pattern"],
+                        proposal["mother_station"],
+                        proposal["plant_name"],
+                        proposal["plant_address"],
                     ),
                     proposal["delivery_point"], proposal["start_date"],
                     proposal["volume_details"], proposal["price_details"],
@@ -2362,7 +2386,10 @@ async def sph_update_proposal(proposal_id: int, request: Request):
                     proposal["exchange_clause"], proposal["contract_duration_value"],
                     proposal["contract_duration_unit"], proposal["duration_details"],
                     proposal["attention_to"], _sph_pack_supply_pattern(
-                        proposal["supply_pattern"], proposal["mother_station"]
+                        proposal["supply_pattern"],
+                        proposal["mother_station"],
+                        proposal["plant_name"],
+                        proposal["plant_address"],
                     ),
                     proposal["delivery_point"], proposal["start_date"],
                     proposal["volume_details"], proposal["price_details"],
@@ -2941,12 +2968,24 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
     def paragraph(value, style="SphTermsBody"):
         return Paragraph(safe(value) or "-", styles[style])
 
-    def checklist_description(value, fallback=None):
+    def checklist_description(value, fallback=None, numbered=False):
         selected = [
             item["label"]
             for item in _sph_parse_term_checklist(value)
             if item["checked"]
         ]
+        if numbered:
+            numbered_items = []
+            for index, item in enumerate(selected, start=1):
+                first_line, separator, remaining = item.partition("\n")
+                prefix, marker, text = first_line.partition(".")
+                if marker and prefix.strip().isdigit():
+                    first_line = text.strip()
+                numbered_items.append(
+                    f"{index}. {first_line}"
+                    + (f"\n{remaining}" if separator else "")
+                )
+            selected = numbered_items
         return "\n".join(selected) or fallback or "-"
 
     proposal_date = date.fromisoformat(proposal["proposalDate"])
@@ -2971,7 +3010,7 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         )
     else:
         start_date_label = "Sesuai kesepakatan para pihak."
-    address = ", ".join(
+    address = "\n".join(
         part.strip()
         for part in (proposal.get("addressLine1"), proposal.get("addressLine2"))
         if part and part.strip()
@@ -2986,9 +3025,17 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
     )
     if proposal.get("volumeDetails"):
         volume = proposal["volumeDetails"]
-    price = f"USD {proposal['priceUsd']:.2f}".replace(".", ",") + " / MMBTU"
-    if proposal.get("priceDetails"):
-        price += f"\n{proposal['priceDetails']}"
+    base_price = f"USD {proposal['priceUsd']:.2f}".replace(".", ",") + " / MMBTU"
+    price_details = str(proposal.get("priceDetails") or "").strip()
+    price_amount = f"{proposal['priceUsd']:.2f}".replace(".", ",")
+    price_is_in_details = bool(re.search(
+        rf"(?<!\d){re.escape(price_amount)}(?!\d)",
+        price_details.replace(".", ","),
+    ))
+    if price_details and not price_is_in_details:
+        price = f"{base_price}\n{price_details}"
+    else:
+        price = price_details or base_price
     payment_fallback = (
         f"Pembayaran paling lambat tanggal {proposal['dueDay']} setiap bulan. "
         f"Jaminan pembayaran berupa {proposal['guarantee']}."
@@ -3004,10 +3051,42 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
     duration_description = f"{_sph_contract_duration_label(proposal)}."
     if proposal.get("durationDetails"):
         duration_description += f"\n{proposal['durationDetails']}"
+    buyer_name = proposal["customerName"]
+    if proposal.get("plantName"):
+        buyer_name += f" ({proposal['plantName']})"
+    buyer_description = paragraph(
+        "\n".join(
+            value.strip()
+            for value in (buyer_name, proposal.get("plantAddress"))
+            if value and value.strip()
+        )
+    )
+    mother_station = str(proposal.get("motherStation") or "").strip()
+    if mother_station:
+        station_description = (
+            mother_station
+            if mother_station.lower().startswith("supply gas by ")
+            else f"Supply Gas By {mother_station}"
+        )
+        description_width = document.width - 31 * mm - 10
+        buyer_description = Table(
+            [[
+                buyer_description,
+                paragraph(station_description),
+            ]],
+            colWidths=[description_width * .55, description_width * .45],
+            style=TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]),
+        )
     terms = [
         ("Produk", "Compressed Natural Gas (CNG)"),
         ("Penjual", "PT Reethau Cipta Energi"),
-        ("Pembeli", proposal["customerName"]),
+        ("Pembeli", buyer_description),
         (
             "Pola Supply",
             proposal.get("supplyPattern") or "Sesuai kesepakatan para pihak.",
@@ -3023,8 +3102,12 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         ),
         ("Volume", volume),
         ("Harga CNG", price),
-        ("Pembayaran", checklist_description(proposal.get("paymentTerms"), payment_fallback)),
-        ("Keunggulan", checklist_description(proposal.get("advantages"))),
+        ("Pembayaran", checklist_description(
+            proposal.get("paymentTerms"), payment_fallback, numbered=True
+        )),
+        ("Keunggulan", checklist_description(
+            proposal.get("advantages"), numbered=True
+        )),
         ("Ketentuan Lain", checklist_description(json.dumps(other_terms))),
         ("Preparation", checklist_description(proposal.get("preparation"))),
     ]
@@ -3038,13 +3121,13 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         rows.extend([
             [
                 Paragraph(safe(label), styles["SphTermsLabel"]),
-                paragraph(description),
+                description if not isinstance(description, str) else paragraph(description),
             ]
             for label, description in table_terms
         ])
         table = Table(
             rows,
-            colWidths=[35 * mm, document.width - 35 * mm],
+            colWidths=[31 * mm, document.width - 31 * mm],
             repeatRows=1 if include_header else 0,
             splitByRow=1,
             hAlign="LEFT",
@@ -3107,8 +3190,8 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
                 else ""
             )
             + f", untuk supply di plant {safe(proposal['customerName'])}, "
-            "bermaksud memberikan penawaran harga CNG dengan kondisi sebagai "
-            "berikut:",
+            "bermaksud memberikan penawaran harga CNG dengan kondisi penawaran "
+            "adalah sebagai berikut :",
             "SphTermsIntro",
         ),
         Spacer(1, 3 * mm),
@@ -3173,7 +3256,10 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
             ]),
         ),
     ]
-    is_draft = proposal["status"] == "draft"
+    is_draft = (
+        proposal["status"] == "draft"
+        and proposal.get("templateKey") != "term_description"
+    )
 
     def page_footer(canvas, _document):
         canvas.saveState()
@@ -3226,6 +3312,8 @@ async def sph_proposal_pdf_preview(request: Request):
         "addressLine2": validated["address_line2"],
         "attentionTo": validated["attention_to"],
         "motherStation": validated["mother_station"],
+        "plantName": validated["plant_name"],
+        "plantAddress": validated["plant_address"],
         "supplyPattern": validated["supply_pattern"],
         "deliveryPoint": validated["delivery_point"],
         "startDate": validated["start_date"].isoformat() if validated["start_date"] else None,

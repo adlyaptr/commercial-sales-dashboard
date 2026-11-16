@@ -262,6 +262,8 @@ class SphWorkflowTests(unittest.TestCase):
             "durationDetails": "Evaluasi supply setiap tahun.",
             "attentionTo": "Bapak Setiadi",
             "motherStation": "Wunut - Sidoarjo, Jawa Timur",
+            "plantName": "Plant Gresik",
+            "plantAddress": "Jl. Raya Wringinanom Selatan,\nKab. Gresik",
             "supplyPattern": "Pengiriman sesuai jadwal operasional.",
             "deliveryPoint": "Lokasi pabrik customer.",
             "startDate": "2026-12-01",
@@ -291,6 +293,8 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertEqual(updated["durationDetails"], "Evaluasi supply setiap tahun.")
         self.assertEqual(updated["attentionTo"], "Bapak Setiadi")
         self.assertEqual(updated["motherStation"], "Wunut - Sidoarjo, Jawa Timur")
+        self.assertEqual(updated["plantName"], "Plant Gresik")
+        self.assertEqual(updated["plantAddress"], "Jl. Raya Wringinanom Selatan,\nKab. Gresik")
         self.assertEqual(updated["supplyPattern"], "Pengiriman sesuai jadwal operasional.")
         self.assertEqual(updated["deliveryPoint"], "Lokasi pabrik customer.")
         self.assertEqual(updated["startDate"], "2026-12-01")
@@ -318,10 +322,17 @@ class SphWorkflowTests(unittest.TestCase):
             "exchangeClause": False,
             "templateKey": "term_description",
             "motherStation": "Wunut - Sidoarjo, Jawa Timur",
+            "plantName": "Plant Gresik",
+            "plantAddress": "Jl. Raya Wringinanom Selatan, Kab. Gresik",
         }
         validated = main._sph_validate_proposal(proposal)
         self.assertEqual(validated["template_key"], "term_description")
         self.assertEqual(validated["mother_station"], "Wunut - Sidoarjo, Jawa Timur")
+        self.assertEqual(validated["plant_name"], "Plant Gresik")
+        self.assertEqual(
+            validated["plant_address"],
+            "Jl. Raya Wringinanom Selatan, Kab. Gresik",
+        )
         proposal["templateKey"] = "unknown"
         with self.assertRaises(main.HTTPException) as error:
             main._sph_validate_proposal(proposal)
@@ -346,6 +357,19 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertEqual(
             main._sph_parse_term_checklist("Lainnya: Syarat tambahan."),
             [{"label": "Syarat tambahan.", "checked": True}],
+        )
+        self.assertEqual(
+            main._sph_parse_term_checklist(
+                "Reethau memiliki banyak armada:\n- Tube Skid 40 ft\n- Head Truck 40 ft"
+            ),
+            [{
+                "label": (
+                    "Reethau memiliki banyak armada:\n"
+                    "- Tube Skid 40 ft\n"
+                    "- Head Truck 40 ft"
+                ),
+                "checked": True,
+            }],
         )
 
     def test_proposal_validation_accepts_duration_in_days_and_enforces_unit_limits(self):
@@ -463,7 +487,7 @@ class SphWorkflowTests(unittest.TestCase):
             "customerName": "Preview Customer",
             "templateKey": "term_description",
             "addressLine1": "Preview Street 10",
-            "addressLine2": "",
+            "addressLine2": "Preview City",
             "attentionTo": "Bapak Setiadi",
             "motherStation": "Wunut - Sidoarjo, Jawa Timur",
             "supplyPattern": "Pasokan mengikuti jadwal operasional.",
@@ -535,13 +559,14 @@ class SphWorkflowTests(unittest.TestCase):
 
     def test_term_description_pdf_uses_the_selected_templates_structure_and_data(self):
         from reportlab.platypus import Paragraph
+        from reportlab.pdfgen.canvas import Canvas
 
         proposal = {
             "number": "SPH-2026-11-MKT-010",
             "templateKey": "term_description",
             "customerName": "Preview Customer",
             "addressLine1": "Preview Street 10",
-            "addressLine2": "",
+            "addressLine2": "Preview City",
             "proposalDate": "2026-11-13",
             "volumeMin": 8000,
             "volumeMax": 10000,
@@ -554,14 +579,19 @@ class SphWorkflowTests(unittest.TestCase):
             "contractDurationUnit": "day",
             "durationDetails": "Evaluasi supply setiap tahun.",
             "attentionTo": "Bapak Setiadi",
-            "motherStation": "Wunut - Sidoarjo, Jawa Timur",
+            "motherStation": "MS Wunut - Sidoarjo, Jawa Timur",
+            "plantName": "Plant Gresik",
+            "plantAddress": "Jl. Raya Wringinanom Selatan,\nKab. Gresik",
             "supplyPattern": "Pasokan mengikuti jadwal operasional.",
             "deliveryPoint": "Plant customer.",
             "startDate": "2026-12-01",
             "volumeDetails": "10.000 SM3 per hari.",
             "priceDetails": "Harga belum termasuk pajak.",
             "paymentTerms": "Maksimal 14 hari setelah tagihan.\nDibayar melalui transfer.",
-            "advantages": "Layanan pasokan CNG.\nFasilitas armada tersedia.",
+            "advantages": (
+                "Keunggulan pertama.\n- Rincian armada A\n"
+                "- Rincian armada B\nKeunggulan kedua."
+            ),
             "otherTerms": "Evaluasi dilakukan setiap tahun.\nLainnya: Syarat tambahan.",
             "preparation": "30 hari setelah penawaran disetujui.",
             "reethauObligations": "Mengirim CNG.",
@@ -574,7 +604,17 @@ class SphWorkflowTests(unittest.TestCase):
             paragraph_texts.append(text)
             return Paragraph(text, style, *args, **kwargs)
 
-        with patch("reportlab.platypus.Paragraph", side_effect=capture_paragraph):
+        font_calls = []
+        original_set_font = Canvas.setFont
+
+        def capture_font(canvas, font_name, font_size, *args, **kwargs):
+            font_calls.append((font_name, font_size))
+            return original_set_font(canvas, font_name, font_size, *args, **kwargs)
+
+        with (
+            patch("reportlab.platypus.Paragraph", side_effect=capture_paragraph),
+            patch.object(Canvas, "setFont", autospec=True, side_effect=capture_font),
+        ):
             response = main._sph_generate_proposal_pdf(proposal, inline=True)
 
         async def read_response():
@@ -587,7 +627,11 @@ class SphWorkflowTests(unittest.TestCase):
             "DESKRIPSI",
             "Penjual",
             "Preview Customer",
+            "Preview Street 10<br/>Preview City",
             "Wunut - Sidoarjo, Jawa Timur",
+            "Supply Gas By MS Wunut - Sidoarjo, Jawa Timur",
+            "Plant Gresik",
+            "Jl. Raya Wringinanom Selatan,<br/>Kab. Gresik",
             "USD 15,00 / MMBTU",
             "30 hari.",
             "Evaluasi supply setiap tahun.",
@@ -597,8 +641,10 @@ class SphWorkflowTests(unittest.TestCase):
             "Harga belum termasuk pajak.",
             "Maksimal 14 hari setelah tagihan.",
             "Dibayar melalui transfer.",
-            "Layanan pasokan CNG.",
-            "Fasilitas armada tersedia.",
+            "Keunggulan pertama.",
+            "Rincian armada A",
+            "Rincian armada B",
+            "Keunggulan kedua.",
             "Evaluasi dilakukan setiap tahun.",
             "Syarat tambahan.",
             "30 hari setelah penawaran disetujui.",
@@ -615,6 +661,53 @@ class SphWorkflowTests(unittest.TestCase):
             "Klausul tukar-menukar tidak berlaku" in text
             for text in paragraph_texts
         ))
+        self.assertNotIn(("Helvetica-Bold", 34), font_calls)
+        self.assertTrue(any("1. Maksimal 14 hari" in text for text in paragraph_texts))
+        self.assertTrue(any("2. Dibayar melalui transfer." in text for text in paragraph_texts))
+        self.assertTrue(any(
+            "1. Keunggulan pertama.<br/>- Rincian armada A<br/>- Rincian armada B"
+            in text
+            for text in paragraph_texts
+        ))
+        self.assertTrue(any("2. Keunggulan kedua." in text for text in paragraph_texts))
+
+        proposal["priceDetails"] = "Plant Gresik Harga USD: 15,00 / MMBTU"
+        paragraph_texts.clear()
+        with patch("reportlab.platypus.Paragraph", side_effect=capture_paragraph):
+            main._sph_generate_proposal_pdf(proposal, inline=True)
+        self.assertTrue(any(
+            "Plant Gresik Harga USD: 15,00 / MMBTU" in text
+            for text in paragraph_texts
+        ))
+        self.assertFalse(any(
+            text.strip() == "USD 15,00 / MMBTU"
+            for text in paragraph_texts
+        ))
+
+    def test_supply_pattern_packing_reads_legacy_and_plant_details(self):
+        legacy = (
+            '{"format":"rce_supply_details_v1",'
+            '"motherStation":"MS Wunut","pattern":"Jadwal operasional."}'
+        )
+        self.assertEqual(
+            main._sph_unpack_supply_pattern(legacy),
+            ("MS Wunut", "Jadwal operasional.", "", ""),
+        )
+        packed = main._sph_pack_supply_pattern(
+            "Setiap hari.",
+            "MS Wunut",
+            "Plant Gresik",
+            "Jl. Raya Wringinanom",
+        )
+        self.assertEqual(
+            main._sph_unpack_supply_pattern(packed),
+            (
+                "MS Wunut",
+                "Setiap hari.",
+                "Plant Gresik",
+                "Jl. Raya Wringinanom",
+            ),
+        )
 
     def test_sph_pdf_list_numbers_match_body_font_and_indentation(self):
         from reportlab.pdfbase.pdfmetrics import stringWidth
