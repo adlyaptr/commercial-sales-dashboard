@@ -937,10 +937,18 @@ def overlay_sales_order_forecast(
             key = (report_date, str(customer["customer_key"]))
             existing = enriched_by_key.get(key)
             if existing is not None:
+                existing_so = float(existing.get("so") or 0)
+                preserve_existing_so = (
+                    preserve_imported_so
+                    and existing.get("source_file")
+                    and existing["source_file"] != "manual-fob"
+                    and existing_so > 0
+                )
                 if (
                     not preserve_imported_so
                     or not existing.get("source_file")
                     or existing["source_file"] == "manual-fob"
+                    or existing_so <= 0
                 ):
                     existing["so"] = order["so"]
                 can_forecast = report_date not in actual_imported_dates and (
@@ -958,12 +966,7 @@ def overlay_sales_order_forecast(
                     )
                     and order["so"] > 0
                 ):
-                    forecast_so = (
-                        float(existing.get("so") or 0)
-                        if preserve_imported_so and existing.get("source_file")
-                        and existing["source_file"] != "manual-fob"
-                        else order["so"]
-                    )
+                    forecast_so = existing_so if preserve_existing_so else order["so"]
                     if forecast_so > 0:
                         existing["actual"] = forecast_so
                         existing["actual_is_forecast"] = True
@@ -5221,6 +5224,7 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
                 c.operator,
                 s.so,
                 s.actual,
+                s.source_file,
                 s.id,
                 c.customer_key LIKE 'manualfob-%%' AS manual_fob
             FROM sales s
@@ -5229,16 +5233,30 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
             """,
             (start.isoformat(), end.isoformat()),
         ).fetchall()
+        actual_import_rows = con.execute(
+            "SELECT report_date FROM daily_actual_imports "
+            "WHERE report_date BETWEEN %s AND %s",
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
         customer_rows = con.execute(
             "SELECT customer_key, customer_name, operator FROM customers"
         ).fetchall()
 
+    actual_imported_dates = {
+        row["report_date"].isoformat()
+        if isinstance(row["report_date"], date)
+        else str(row["report_date"])
+        for row in actual_import_rows
+    }
     rows, sales_order_unmapped = overlay_sales_order_forecast(
         sales_rows,
         customer_rows,
         get_sales_order_data(),
         start,
         end,
+        actual_imported_dates=actual_imported_dates,
+        preserve_imported_so=True,
+        forecast_only_unimported_dates=True,
     )
     grouped_rows = {}
     for row in rows:

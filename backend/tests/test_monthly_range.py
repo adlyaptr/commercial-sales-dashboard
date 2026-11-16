@@ -19,6 +19,41 @@ class DivisionRequest:
 
 
 class MemoryMonthlyRange:
+    def __init__(
+        self,
+        sales_rows=None,
+        actual_imported_dates=None,
+        expected_range=("2025-12-15", "2026-02-10"),
+    ):
+        self.expected_range = expected_range
+        self.sales_rows = sales_rows or [
+            {
+                "report_date": "2025-12-15",
+                "customer_key": "customer-1",
+                "customer_name": "Customer Contoh",
+                "operator": "SETU",
+                "so": 120,
+                "actual": 100,
+                "source_file": "daily.xlsx",
+                "id": 1,
+                "manual_fob": False,
+            },
+            {
+                "report_date": "2026-01-03",
+                "customer_key": "customer-1",
+                "customer_name": "Customer Contoh",
+                "operator": "SETU",
+                "so": 80,
+                "actual": 75,
+                "source_file": "daily.xlsx",
+                "id": 2,
+                "manual_fob": False,
+            },
+        ]
+        if actual_imported_dates is None:
+            actual_imported_dates = ("2025-12-15", "2026-01-03")
+        self.actual_imported_dates = set(actual_imported_dates)
+
     def __enter__(self):
         return self
 
@@ -27,29 +62,13 @@ class MemoryMonthlyRange:
 
     def execute(self, statement, parameters=None):
         if "FROM sales" in statement and "WHERE s.report_date BETWEEN %s AND %s" in statement:
-            if parameters != ("2025-12-15", "2026-02-10"):
+            if parameters != self.expected_range:
                 raise AssertionError(f"Unexpected date parameters: {parameters}")
+            return SimpleNamespace(fetchall=lambda: self.sales_rows)
+        if statement.startswith("SELECT report_date FROM daily_actual_imports"):
             return SimpleNamespace(fetchall=lambda: [
-                {
-                    "report_date": "2025-12-15",
-                    "customer_key": "customer-1",
-                    "customer_name": "Customer Contoh",
-                    "operator": "SETU",
-                    "so": 120,
-                    "actual": 100,
-                    "id": 1,
-                    "manual_fob": False,
-                },
-                {
-                    "report_date": "2026-01-03",
-                    "customer_key": "customer-1",
-                    "customer_name": "Customer Contoh",
-                    "operator": "SETU",
-                    "so": 80,
-                    "actual": 75,
-                    "id": 2,
-                    "manual_fob": False,
-                },
+                {"report_date": report_date}
+                for report_date in self.actual_imported_dates
             ])
         if statement.startswith("SELECT customer_key, customer_name, operator FROM customers"):
             return SimpleNamespace(fetchall=lambda: [{
@@ -134,6 +153,62 @@ class MonthlyRangeTests(unittest.TestCase):
             [(item["period"], item["so"], item["actual"]) for item in result["items"]],
             [("2025-12", 120, 100), ("2026-01", 80, 75)],
         )
+
+    def test_forecasts_actual_only_for_dates_without_an_actual_import(self):
+        database = MemoryMonthlyRange(
+            sales_rows=[
+                {
+                    "report_date": "2025-12-15",
+                    "customer_key": "customer-1",
+                    "customer_name": "Customer Contoh",
+                    "operator": "SETU",
+                    "so": 120,
+                    "actual": 100,
+                    "source_file": "daily.xlsx",
+                    "id": 1,
+                    "manual_fob": False,
+                },
+                {
+                    "report_date": "2026-01-03",
+                    "customer_key": "customer-1",
+                    "customer_name": "Customer Contoh",
+                    "operator": "SETU",
+                    "so": 80,
+                    "actual": 75,
+                    "source_file": None,
+                    "id": 2,
+                    "manual_fob": False,
+                },
+            ],
+            actual_imported_dates=("2025-12-15",),
+            expected_range=("2025-12-15", "2026-01-04"),
+        )
+        sales_orders = {
+            "2025-12-15": [{"customer": "Customer Contoh", "so": 900}],
+            "2026-01-03": [{"customer": "Customer Contoh", "so": 300}],
+            "2026-01-04": [{"customer": "Customer Contoh", "so": 50}],
+        }
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "get_sales_order_data", return_value=sales_orders),
+        ):
+            result = main.monthly_range_summary(
+                FakeRequest(),
+                "2025-12-15",
+                "2026-01-04",
+            )
+
+        by_month = {item["period"]: item for item in result["items"]}
+        self.assertEqual(
+            (by_month["2025-12"]["so"], by_month["2025-12"]["actual"]),
+            (120, 100),
+        )
+        self.assertFalse(by_month["2025-12"]["actual_is_forecast"])
+        self.assertEqual(
+            (by_month["2026-01"]["so"], by_month["2026-01"]["actual"]),
+            (350, 350),
+        )
+        self.assertTrue(by_month["2026-01"]["actual_is_forecast"])
 
     def test_rejects_reversed_date_range(self):
         with self.assertRaises(main.HTTPException) as raised:

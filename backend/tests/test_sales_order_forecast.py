@@ -254,5 +254,40 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertEqual(sheet_forecast["actual"], 4030000)
         self.assertTrue(sheet_forecast["actual_is_forecast"])
 
+    def test_forecast_falls_back_to_sheet_when_stored_so_is_zero(self):
+        sales_rows = [{
+            "report_date": "2026-11-16",
+            "customer_key": "platinum",
+            "customer_name": "PLATINUM",
+            "operator": "WUNUT",
+            "so": 0,
+            "actual": 120,
+            "source_file": "daily-sales.xlsx",
+            "manual_fob": False,
+        }]
+        customers = [{
+            "customer_key": "platinum",
+            "customer_name": "PLATINUM",
+            "operator": "WUNUT",
+        }]
+        sales_orders = {
+            "2026-11-16": [{"customer": "PLATINUM", "so": 300}],
+        }
+
+        rows, _ = main.overlay_sales_order_forecast(
+            sales_rows,
+            customers,
+            sales_orders,
+            date(2026, 11, 16),
+            date(2026, 11, 16),
+            preserve_imported_so=True,
+            forecast_only_unimported_dates=True,
+        )
+
+        self.assertEqual(rows[0]["so"], 300)
+        self.assertEqual(rows[0]["actual"], 300)
+        self.assertTrue(rows[0]["actual_is_forecast"])
+
+
 if __name__ == "__main__":
     unittest.main()
