@@ -81,6 +81,84 @@ class OperatorSheetImportTests(unittest.TestCase):
         )
         self.assertEqual([row[1][3] for row in sales], [100.0, 110.0])
 
+    def test_full_sheet_so_import_preserves_actuals_outside_email_date_filter(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Daily Sales"
+        sheet.cell(3, 2, "PLATINUM")
+        sheet.cell(4, 3, "TARGET")
+        sheet.cell(4, 4, "ACTUAL")
+        for row_number, day, target, actual in (
+            (5, 14, 500, 321),
+            (6, 15, 600, 222),
+            (7, 16, 700, 333),
+        ):
+            sheet.cell(row_number, 2, datetime(2026, 11, day))
+            sheet.cell(row_number, 3, target)
+            sheet.cell(row_number, 4, actual)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "daily-sales.xlsx"
+            workbook.save(path)
+            workbook.close()
+            database = MemoryImportDatabase()
+            database.existing_sales.update({
+                ("2026-11-15", "platinum"): {"so": 550.0, "actual": 42.0},
+                ("2026-11-16", "platinum"): {"so": 660.0, "actual": 0.0},
+            })
+
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", return_value="WUNUT"),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+            ):
+                result = main.import_excel(
+                    path,
+                    path.name,
+                    report_dates_filter={main.date(2026, 11, 14)},
+                    include_all_so_targets=True,
+                )
+
+        sales = [
+            row for row in database.saved
+            if "INSERT INTO sales" in row[0]
+        ]
+        self.assertEqual(result["rows_read"], 1)
+        self.assertEqual(result["rows_saved"], 3)
+        self.assertEqual(
+            [row[1][0] for row in sales],
+            ["2026-11-14", "2026-11-15", "2026-11-16"],
+        )
+        self.assertEqual([row[1][2] for row in sales], [500.0, 600.0, 700.0])
+        self.assertEqual([row[1][3] for row in sales], [321.0, 42.0, 0.0])
+        forecast_rows, _ = main.overlay_sales_order_forecast(
+            [{
+                "report_date": row[1][0],
+                "customer_key": "platinum",
+                "customer_name": "PLATINUM",
+                "operator": "WUNUT",
+                "so": row[1][2],
+                "actual": row[1][3],
+                "id": None,
+                "manual_fob": False,
+            } for row in sales],
+            [{
+                "customer_key": "platinum",
+                "customer_name": "PLATINUM",
+                "operator": "WUNUT",
+            }],
+            {},
+            main.date(2026, 11, 14),
+            main.date(2026, 11, 16),
+        )
+        forecast_by_date = {
+            row["report_date"]: row for row in forecast_rows
+        }
+        self.assertEqual(forecast_by_date["2026-11-14"]["actual"], 321.0)
+        self.assertEqual(forecast_by_date["2026-11-15"]["actual"], 42.0)
+        self.assertEqual(forecast_by_date["2026-11-16"]["actual"], 700.0)
+        self.assertTrue(forecast_by_date["2026-11-16"]["actual_is_forecast"])
+
     def test_selects_populated_duplicate_actual_column_and_skips_total_labels(self):
         workbook = operator_sheet_workbook()
         sheet = workbook["BLORA"]
@@ -215,6 +293,7 @@ class OperatorSheetImportTests(unittest.TestCase):
 class MemoryImportDatabase:
     def __init__(self):
         self.saved = []
+        self.existing_sales = {}
 
     def __enter__(self):
         return self
@@ -223,8 +302,18 @@ class MemoryImportDatabase:
         return False
 
     def execute(self, statement, parameters=None):
+        if "SELECT so,actual FROM sales" in statement:
+            existing = self.existing_sales.get(
+                tuple(parameters),
+                {"so": 4500.0, "actual": 0.0},
+            )
+            return type("Result", (), {"fetchone": lambda self: existing})()
         if "SELECT so FROM sales" in statement:
-            return type("Result", (), {"fetchone": lambda self: {"so": 4500.0}})()
+            existing = self.existing_sales.get(
+                tuple(parameters),
+                {"so": 4500.0},
+            )
+            return type("Result", (), {"fetchone": lambda self: existing})()
         self.saved.append((statement, parameters))
         return type("Result", (), {"rowcount": 0})()
 
