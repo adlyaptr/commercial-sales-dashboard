@@ -176,5 +176,54 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertFalse(by_customer_date[("kf", "2026-11-03")]["actual_is_forecast"])
         self.assertEqual(unmapped, ["Missing Customer"])
 
+    def test_daily_per_customer_forecast_uses_so_when_only_another_customer_has_actual(self):
+        sales_rows = [{
+            "report_date": "2026-11-15",
+            "customer_key": "platinum",
+            "customer_name": "PLATINUM",
+            "operator": "WUNUT",
+            "so": 4019000,
+            "actual": 0,
+        }, {
+            "report_date": "2026-11-15",
+            "customer_key": "other",
+            "customer_name": "OTHER",
+            "operator": "SETU",
+            "so": 1000,
+            "actual": 500,
+        }, {
+            "report_date": "2026-11-16",
+            "customer_key": "platinum",
+            "customer_name": "PLATINUM",
+            "operator": "WUNUT",
+            "so": 4020000,
+            "actual": 120,
+        }]
+        customers = [
+            {"customer_key": "platinum", "customer_name": "PLATINUM", "operator": "WUNUT"},
+            {"customer_key": "other", "customer_name": "OTHER", "operator": "SETU"},
+        ]
+
+        rows, _ = main.overlay_sales_order_forecast(
+            sales_rows,
+            customers,
+            {},
+            date(2026, 11, 15),
+            date(2026, 11, 16),
+            per_customer_forecast=True,
+        )
+        by_customer_date = {
+            (row["customer_key"], row["report_date"]): row
+            for row in rows
+        }
+
+        platinum_forecast = by_customer_date[("platinum", "2026-11-15")]
+        self.assertEqual(platinum_forecast["actual"], 4019000)
+        self.assertTrue(platinum_forecast["actual_is_forecast"])
+        self.assertEqual(by_customer_date[("other", "2026-11-15")]["actual"], 500)
+        self.assertFalse(by_customer_date[("other", "2026-11-15")]["actual_is_forecast"])
+        self.assertEqual(by_customer_date[("platinum", "2026-11-16")]["actual"], 120)
+        self.assertFalse(by_customer_date[("platinum", "2026-11-16")]["actual_is_forecast"])
+
 if __name__ == "__main__":
     unittest.main()

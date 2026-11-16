@@ -880,6 +880,7 @@ def overlay_sales_order_forecast(
     sales_orders_by_date,
     start_date,
     end_date,
+    per_customer_forecast=False,
 ):
     customers_by_key = {}
     customer_lookup = {}
@@ -932,7 +933,10 @@ def overlay_sales_order_forecast(
                 existing["so"] = order["so"]
                 if (
                     float(existing.get("actual") or 0) == 0
-                    and report_date not in dates_with_nonzero_actual
+                    and (
+                        per_customer_forecast
+                        or report_date not in dates_with_nonzero_actual
+                    )
                     and order["so"] > 0
                 ):
                     existing["actual"] = order["so"]
@@ -954,7 +958,10 @@ def overlay_sales_order_forecast(
     for row in enriched_by_key.values():
         if (
             float(row.get("actual") or 0) == 0
-            and row["report_date"] not in dates_with_nonzero_actual
+            and (
+                per_customer_forecast
+                or row["report_date"] not in dates_with_nonzero_actual
+            )
             and float(row.get("so") or 0) > 0
         ):
             row["actual"] = float(row["so"])
@@ -5605,6 +5612,7 @@ def dashboard(
             get_sales_order_data(),
             selected_date,
             selected_date,
+            per_customer_forecast=True,
         )
         operator_data = {op: [] for op in (*OPERATORS, "OFF")}
         operator_totals = {
