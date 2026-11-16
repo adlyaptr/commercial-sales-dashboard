@@ -395,7 +395,7 @@ class YahooDailySalesSyncTests(unittest.TestCase):
 
         with TemporaryDirectory() as directory:
             with (
-                patch.object(main, "require_admin"),
+                patch.object(main, "require_login"),
                 patch.object(main, "YAHOO_SYNC_ENABLED", True),
                 patch.object(main, "db", side_effect=lambda: nullcontext(connection)),
                 patch.object(main, "fetch_daily_sales_emails", return_value=[email_item]),
