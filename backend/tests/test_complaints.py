@@ -193,6 +193,17 @@ class MemoryMonthlySummary:
 
 
 class MemoryHomeSummary:
+    def __init__(self, sales_rows=None, actual_imported_dates=()):
+        self.sales_rows = sales_rows or [
+            {"report_date": date(2026, 10, 5), "customer_name": "SETU Customer", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 80},
+            {"report_date": date(2026, 10, 6), "customer_name": "SETU Customer", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 90},
+            {"report_date": date(2026, 10, 6), "customer_name": "KHT Customer", "operator": "KHT", "customer_key": "kht-a", "so": 0, "actual": 20},
+            {"report_date": date(2026, 10, 7), "customer_name": "OFF Customer", "operator": "OFF", "customer_key": "off-a", "so": 50, "actual": 40},
+        ]
+        self.actual_imported_dates = {
+            date.fromisoformat(value) for value in actual_imported_dates
+        }
+
     def __enter__(self):
         return self
 
@@ -208,16 +219,16 @@ class MemoryHomeSummary:
                 {"customer_key": "kht-a", "customer_name": "KHT Customer", "operator": "KHT"},
                 {"customer_key": "off-a", "customer_name": "OFF Customer", "operator": "OFF"},
             ])
+        if statement.startswith("SELECT report_date FROM daily_actual_imports"):
+            return SimpleNamespace(fetchall=lambda: [
+                {"report_date": report_date}
+                for report_date in self.actual_imported_dates
+            ])
         if "SELECT s.report_date, c.customer_name, c.operator" not in statement:
             raise AssertionError(f"Unexpected SQL in test: {statement}")
         if parameters != ("2026-01-01", "2026-10-31"):
             raise AssertionError(f"Unexpected home-summary date range: {parameters}")
-        return SimpleNamespace(fetchall=lambda: [
-            {"report_date": date(2026, 10, 5), "customer_name": "SETU Customer", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 80},
-            {"report_date": date(2026, 10, 6), "customer_name": "SETU Customer", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 90},
-            {"report_date": date(2026, 10, 6), "customer_name": "KHT Customer", "operator": "KHT", "customer_key": "kht-a", "so": 0, "actual": 20},
-            {"report_date": date(2026, 10, 7), "customer_name": "OFF Customer", "operator": "OFF", "customer_key": "off-a", "so": 50, "actual": 40},
-        ])
+        return SimpleNamespace(fetchall=lambda: self.sales_rows)
 
 
 class MemoryHomeSummaryRange:
@@ -662,7 +673,7 @@ class HomeSummaryTests(unittest.TestCase):
         self.assertEqual(result["year_months"][-1]["month"], "2026-10")
         self.assertEqual(result["month_summary"]["manual_so"], 1250)
 
-    def test_home_summary_includes_forecasts_without_overwriting_imported_actual(self):
+    def test_home_summary_preserves_imported_days_and_forecasts_without_actual_import(self):
         sales_orders = {
             "2026-10-06": [{"customer": "SETU Customer", "so": 500}],
             "2026-10-08": [{"customer": "KHT Customer", "so": 40}],
@@ -673,10 +684,40 @@ class HomeSummaryTests(unittest.TestCase):
         ):
             result = main.home_summary(FakeRequest(), month="2026-10")
 
-        self.assertEqual(result["month_summary"]["so"], 690)
+        self.assertEqual(result["month_summary"]["so"], 290)
         self.assertEqual(result["month_summary"]["actual"], 270)
+        self.assertEqual(result["days"][5]["so"], 100)
         self.assertEqual(result["days"][5]["actual"], 110)
         self.assertEqual(result["days"][7]["actual"], 40)
+
+    def test_home_summary_preserves_zero_actual_from_import_and_forecasts_only_unimported_day(self):
+        database = MemoryHomeSummary(
+            sales_rows=[{
+                "report_date": date(2026, 10, 9),
+                "customer_name": "SETU Customer",
+                "operator": "SETU",
+                "customer_key": "setu-a",
+                "so": 200,
+                "actual": 0,
+                "source_file": "daily-sales.xlsx",
+            }],
+            actual_imported_dates=("2026-10-09",),
+        )
+        sales_orders = {
+            "2026-10-09": [{"customer": "SETU Customer", "so": 900}],
+            "2026-10-10": [{"customer": "KHT Customer", "so": 300}],
+        }
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "get_sales_order_data", return_value=sales_orders),
+        ):
+            result = main.home_summary(FakeRequest(), month="2026-10")
+
+        self.assertEqual(result["month_summary"]["so"], 500)
+        self.assertEqual(result["month_summary"]["actual"], 300)
+        self.assertEqual(result["days"][8]["so"], 200)
+        self.assertEqual(result["days"][8]["actual"], 0)
+        self.assertEqual(result["days"][9]["actual"], 300)
 
     def test_home_summary_rejects_invalid_month(self):
         with self.assertRaises(main.HTTPException) as invalid:

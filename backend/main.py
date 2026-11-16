@@ -3732,12 +3732,17 @@ def home_summary(request: Request, month: str):
         rows = con.execute(
             """
             SELECT s.report_date, c.customer_name, c.operator,
-                   s.customer_key, s.so, s.actual
+                   s.customer_key, s.so, s.actual, s.source_file
             FROM sales s
             JOIN customers c ON c.customer_key = s.customer_key
             WHERE s.report_date BETWEEN %s AND %s
             ORDER BY s.report_date, c.operator, c.customer_key
             """,
+            (year_start.isoformat(), month_end.isoformat()),
+        ).fetchall()
+        actual_import_rows = con.execute(
+            "SELECT report_date FROM daily_actual_imports "
+            "WHERE report_date BETWEEN %s AND %s",
             (year_start.isoformat(), month_end.isoformat()),
         ).fetchall()
         customer_rows = con.execute(
@@ -3748,12 +3753,27 @@ def home_summary(request: Request, month: str):
             (month_start.isoformat(),),
         ).fetchone()
 
+    actual_imported_dates = {
+        row["report_date"].isoformat()
+        if isinstance(row["report_date"], date)
+        else str(row["report_date"])
+        for row in actual_import_rows
+    }
+    actual_imported_dates.update(
+        row["report_date"].isoformat()
+        if isinstance(row["report_date"], date)
+        else str(row["report_date"])
+        for row in rows
+        if float(row["actual"] or 0) != 0
+    )
     rows, _ = overlay_sales_order_forecast(
         rows,
         customer_rows,
         get_sales_order_data(),
         year_start,
         month_end,
+        actual_imported_dates=actual_imported_dates,
+        preserve_imported_so=True,
     )
 
     def empty_totals():
