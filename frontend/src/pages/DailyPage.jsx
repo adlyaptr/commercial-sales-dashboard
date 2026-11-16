@@ -29,6 +29,7 @@ export default function DailyPage() {
         rangeStartDate,
         rangeEndDate,
         refreshDashboard,
+        refreshForecast,
         forecastRefreshKey,
         canEdit,
         canSyncDailySales,
@@ -44,6 +45,8 @@ export default function DailyPage() {
     const [fobForm, setFobForm] = useState({ date: selectedDate ?? '', customer: '', operator: 'SETU', so: '', actual: '' });
     const [monthlySummary, setMonthlySummary] = useState(null);
     const [importPreview, setImportPreview] = useState(null);
+    const [forecastCustomerMappings, setForecastCustomerMappings] = useState({});
+    const [forecastMappingBusy, setForecastMappingBusy] = useState(false);
     const [summaryError, setSummaryError] = useState('');
     const [summaryLoading, setSummaryLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
@@ -331,6 +334,46 @@ export default function DailyPage() {
         }
     }
 
+    async function saveForecastCustomerMappings() {
+        const mappings = unmappedSalesOrderCustomers.map((customer) => ({
+            customer,
+            operator: forecastCustomerMappings[customer] ?? '',
+        }));
+        if (mappings.some((mapping) => !mapping.operator)) {
+            setNotice({ bad: true, text: 'Pilih operator untuk setiap customer baru sebelum menyimpan.' });
+            return;
+        }
+
+        setForecastMappingBusy(true);
+        setNotice(null);
+        try {
+            const result = await api('/api/customer-mapping/bulk', {
+                method: 'POST',
+                body: { mappings },
+            });
+            setForecastCustomerMappings({});
+
+            try {
+                await refreshForecast();
+            } catch (error) {
+                setNotice({
+                    bad: true,
+                    text: `${result.saved} pemetaan berhasil disimpan, tetapi data prognosis gagal diperbarui: ${error.message}`,
+                });
+                return;
+            }
+
+            setNotice({
+                bad: false,
+                text: `${result.saved} pemetaan customer berhasil disimpan dan digunakan untuk prognosis berikutnya.`,
+            });
+        } catch (error) {
+            setNotice({ bad: true, text: error.message });
+        } finally {
+            setForecastMappingBusy(false);
+        }
+    }
+
     async function saveManualFob(event) {
         event.preventDefault();
         if (!fobForm.date) {
@@ -471,10 +514,55 @@ export default function DailyPage() {
                 <div className="notice bad" role="alert">{periodError}</div>
             )}
             {unmappedSalesOrderCustomers.length > 0 && (
-                <div className="notice bad" role="alert">
-                    Customer berikut dari sheet SO belum cocok dengan master customer:
-                    {' '}{unmappedSalesOrderCustomers.join(', ')}.
-                </div>
+                canEdit ? (
+                    <section className="mapping-panel">
+                        <div className="mapping-panel-heading">
+                            <b>Pemetaan Customer Prognosa</b>
+                            <span>{unmappedSalesOrderCustomers.length} customer baru</span>
+                        </div>
+                        <p className="mapping-complete">
+                            Pilih operator untuk customer dari spreadsheet. Pemetaan disimpan ke master dan berlaku untuk prognosis berikutnya.
+                        </p>
+                        <div className="mapping-table-wrap"><table className="mapping-table">
+                            <thead><tr><th>Customer Baru</th><th>Operator</th></tr></thead>
+                            <tbody>{unmappedSalesOrderCustomers.map((customer) => (
+                                <tr key={customer}>
+                                    <td>{customer}</td>
+                                    <td><select
+                                        aria-label={`Operator untuk ${customer}`}
+                                        value={forecastCustomerMappings[customer] ?? ''}
+                                        onChange={(event) => setForecastCustomerMappings((current) => ({
+                                            ...current,
+                                            [customer]: event.target.value,
+                                        }))}
+                                    >
+                                        <option value="">Pilih operator</option>
+                                        <option value="SETU">SETU</option>
+                                        <option value="KHT">KHT</option>
+                                        <option value="BLORA">BLORA</option>
+                                        <option value="WUNUT">WUNUT</option>
+                                        <option value="OFF">OFF (Customer nonaktif)</option>
+                                    </select></td>
+                                </tr>
+                            ))}</tbody>
+                        </table></div>
+                        <button
+                            className="primary"
+                            type="button"
+                            onClick={saveForecastCustomerMappings}
+                            disabled={forecastMappingBusy || unmappedSalesOrderCustomers.some(
+                                (customer) => !forecastCustomerMappings[customer],
+                            )}
+                        >
+                            {forecastMappingBusy ? 'Menyimpan...' : 'Simpan Pemetaan Customer'}
+                        </button>
+                    </section>
+                ) : (
+                    <div className="notice bad" role="alert">
+                        Customer berikut dari sheet SO belum cocok dengan master customer:
+                        {' '}{unmappedSalesOrderCustomers.join(', ')}. Hubungi admin untuk menyimpan pemetaan.
+                    </div>
+                )
             )}
             <section className="monthly-export-panel">
                 <span>Export seluruh data bulan {exportMonth || '—'} sesuai template Excel.</span>

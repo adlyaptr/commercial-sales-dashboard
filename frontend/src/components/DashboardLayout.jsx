@@ -411,6 +411,22 @@ export default function DashboardLayout({ user, onLogout }) {
         }
     }, [latestActualDate, loadDates, selectedDate]);
 
+    const refreshForecast = useCallback(async () => {
+        try {
+            if (selectedDate) {
+                const refreshed = await api(
+                    `/api/dashboard?report_date=${encodeURIComponent(selectedDate)}`
+                );
+                setDashboard(refreshed);
+            }
+            setForecastRefreshKey((key) => key + 1);
+            setDataError('');
+        } catch (error) {
+            setDataError(error?.message || 'Gagal memperbarui data prognosis.');
+            throw error;
+        }
+    }, [selectedDate]);
+
     async function logout() {
         if (loggingOut) return;
 
@@ -451,6 +467,7 @@ export default function DashboardLayout({ user, onLogout }) {
         setAveragePriceMonth,
         dates,
         refreshDashboard,
+        refreshForecast,
         dataError,
         loadingDates,
         setSelectedDate,
