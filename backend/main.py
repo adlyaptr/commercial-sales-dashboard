@@ -82,7 +82,7 @@ SESSION_COOKIE_SECURE = os.getenv(
     "true" if APP_ENV == "production" else "false",
 ).strip().lower() == "true"
 YAHOO_SYNC_ENABLED = os.getenv("YAHOO_SYNC_ENABLED", "false").strip().lower() == "true"
-EMAIL_IMPORT_DATE_FILTER_MARKER = "Daily report two-day Actual / full-sheet SO import:"
+EMAIL_IMPORT_DATE_FILTER_MARKER = "Daily report two-day import:"
 PASSWORD_HASH_ITERATIONS = 310_000
 logger = logging.getLogger(__name__)
 ISSUE_SHEET_ID = os.getenv(
@@ -914,15 +914,6 @@ def overlay_sales_order_forecast(
             dates_with_nonzero_actual.add(enriched["report_date"])
         enriched_by_key[(enriched["report_date"], str(enriched["customer_key"]))] = enriched
 
-    for row in enriched_by_key.values():
-        if (
-            float(row.get("actual") or 0) == 0
-            and row["report_date"] not in dates_with_nonzero_actual
-            and float(row.get("so") or 0) > 0
-        ):
-            row["actual"] = float(row["so"])
-            row["actual_is_forecast"] = True
-
     unmapped = set()
     for report_date, orders in sales_orders_by_date.items():
         day = date.fromisoformat(report_date)
@@ -1315,7 +1306,6 @@ def import_excel(
     path: Path,
     original_filename: str,
     report_dates_filter: Optional[set[date]] = None,
-    include_all_so_targets: bool = False,
 ):
     # data_only=True is important: Daily Sales is formula-based, and Excel's saved
     # cached results are the actual reported figures we want to import.
@@ -1384,51 +1374,37 @@ def import_excel(
                     report_date = parse_date(date_value)
                     if not report_date:
                         continue
-                    import_actual = (
-                        report_date_filter_values is None
-                        or report_date in report_date_filter_values
-                    )
-                    import_so = include_all_so_targets or import_actual
+                    if report_date_filter_values and report_date not in report_date_filter_values:
+                        continue
                     for customer, actual_col in actual_cols:
                         actual_value = ws.cell(r, actual_col).value
-                        target_col = target_cols.get(norm(customer))
-                        target_value = ws.cell(r, target_col).value if target_col else None
-                        has_actual = import_actual and not (
-                            actual_value is None
-                            or isinstance(actual_value, str) and not actual_value.strip()
-                        )
-                        has_so = import_so and not (
-                            target_value is None
-                            or isinstance(target_value, str) and not target_value.strip()
-                        )
-                        if not has_actual and not has_so:
+                        # Do not create rows for blank cells. Explicit numeric zero is valid.
+                        if actual_value is None or isinstance(actual_value, str) and not actual_value.strip():
                             continue
-                        if has_actual:
-                            rows_read += 1
+                        rows_read += 1
                         key = norm(customer)
                         op = find_operator(con, customer)
                         if op not in CUSTOMER_ASSIGNMENTS:
                             unmapped_customers.append(customer)
                             continue
-                        existing = con.execute("SELECT so,actual FROM sales WHERE report_date=%s AND customer_key=%s",
+                        existing = con.execute("SELECT so FROM sales WHERE report_date=%s AND customer_key=%s",
                                                (report_date, key)).fetchone()
-                        if has_so:
-                            so_value = _parse_import_number(
-                                target_value,
-                                customer,
-                                report_date,
-                                "SO",
-                            )
-                        else:
+                        so_value = None
+                        tc = target_cols.get(key)
+                        if tc:
+                            candidate_so = ws.cell(r, tc).value
+                            if candidate_so is not None and str(candidate_so).strip() != "":
+                                so_value = _parse_import_number(
+                                    candidate_so,
+                                    customer,
+                                    report_date,
+                                    "SO",
+                                )
+                        # SO is sourced from the template if available; if this upload is
+                        # a later actual-only file and template SO is absent, preserve DB SO.
+                        if so_value is None:
                             so_value = float(existing["so"]) if existing else 0.0
-                        if has_actual:
-                            actual = _parse_import_actual(
-                                actual_value,
-                                customer,
-                                report_date,
-                            )
-                        else:
-                            actual = float(existing["actual"] or 0) if existing else 0.0
+                        actual = _parse_import_actual(actual_value, customer, report_date)
                         con.execute("INSERT INTO sales(report_date,customer_key,so,actual,source_file,imported_at) "
                                     "VALUES(%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
                                     "so=VALUES(so),actual=VALUES(actual),source_file=VALUES(source_file),imported_at=VALUES(imported_at)",
@@ -1439,46 +1415,31 @@ def import_excel(
                 for record in operator_records:
                     customer = record["customer"]
                     report_date = parse_date(record["report_date"])
-                    import_actual = (
-                        report_date_filter_values is None
-                        or report_date in report_date_filter_values
-                    )
-                    import_so = include_all_so_targets or import_actual
-                    if not import_actual and (
-                        not import_so or record["so"] is None
-                    ):
+                    if report_date_filter_values and report_date not in report_date_filter_values:
                         continue
+                    key = norm(customer)
+                    rows_read += 1
                     op = find_operator(con, customer) or record["operator"]
                     if op not in CUSTOMER_ASSIGNMENTS:
                         unmapped_customers.append(customer)
                         continue
-                    key = norm(customer)
-                    if import_actual:
-                        rows_read += 1
                     con.execute(
                         "INSERT IGNORE INTO customers(customer_key,customer_name,operator) "
                         "VALUES(%s,%s,%s)",
                         (key, customer, op),
                     )
                     existing = con.execute(
-                        "SELECT so,actual FROM sales WHERE report_date=%s AND customer_key=%s",
+                        "SELECT so FROM sales WHERE report_date=%s AND customer_key=%s",
                         (report_date, key),
                     ).fetchone()
-                    if import_so and record["so"] is not None:
-                        so_value = float(record["so"])
-                    else:
+                    so_value = record["so"]
+                    if so_value is None:
                         so_value = float(existing["so"]) if existing else 0.0
-                    if import_actual:
-                        actual_value = float(record["actual"])
-                    else:
-                        actual_value = (
-                            float(existing["actual"] or 0) if existing else 0.0
-                        )
                     con.execute(
                         "INSERT INTO sales(report_date,customer_key,so,actual,source_file,imported_at) "
                         "VALUES(%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
                         "so=VALUES(so),actual=VALUES(actual),source_file=VALUES(source_file),imported_at=VALUES(imported_at)",
-                        (report_date, key, so_value, actual_value, original_filename, now),
+                        (report_date, key, so_value, record["actual"], original_filename, now),
                     )
                     imported_dates.add(report_date)
                     rows_saved += 1
@@ -3431,7 +3392,6 @@ def sync_daily_sales_email(request: Request):
                 destination,
                 filename,
                 report_dates_filter=report_dates,
-                include_all_so_targets=True,
             )
             if result.get("mapping_only") or not result.get("rows_saved"):
                 raise ValueError("Tidak ada baris penjualan yang berhasil disimpan.")
