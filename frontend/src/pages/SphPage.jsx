@@ -56,6 +56,28 @@ const customerObligationOptions = [
     { label: 'Menyediakan ruangan atau tempat untuk operator RCE.', checked: true },
 ];
 
+const paymentTermOptions = [
+    { label: 'Pembayaran akan dilakukan dalam mata uang Rupiah (IDR) sesuai dengan volume penyerapan bulanan.', checked: true },
+    { label: 'Pembayaran dilakukan oleh Pihak Kedua paling lambat 14 (Empat Belas) hari setelah diterimanya tagihan dari Pihak Pertama, untuk setiap 30 (Tiga Puluh) hari atau 1 (Satu) bulan pengambilan CNG.', checked: true },
+    { label: 'Jaminan dengan perhitungan: Volume Bulanan x Harga x Nilai Kurs = Nilai Jaminan.', checked: true },
+];
+
+const advantageOptions = [
+    { label: 'Merupakan salah satu industri energi combine (LNG, CNG & Biomass) terkemuka di nusantara.', checked: true },
+    { label: 'Reethau adalah salah satu industri CNG yang memiliki Mother Station terbanyak (4 Mother Station):\n- MS. KHT - Indramayu (Jawa Barat)\n- MS. SETU - Bekasi (Jawa Barat)\n- MS. ADK - Blora (Jawa Tengah)\n- MS Wunut - Sidoarjo (Jawa Timur)', checked: true },
+    { label: 'Meliliki fasilitas suply atau armada yang lebih banyak serta telah terpasang aplikasi GPS Tracking:\n- Tube Skid 40 ft: 58 Unit, 20 ft: 45 Unit, 10 ft: 15 Unit\n- Head Truck 40 ft: 21 Unit, 20 ft: 21 Unit, 10 ft: 18 Unit', checked: true },
+    { label: 'Memiliki aplikasi smart PRS yaitu Telemetri. Sebuah aplikasi yang bisa melihat load PRS dan data nya real time yang bisa di upload dan di lihat setiap saat.', checked: true },
+    { label: 'Memiliki perizinan yang lengkap serta sesuai dengan kebutuhan industri kemudian memiliki sertifikasi ISO dan K3 yang terdaftar.', checked: true },
+];
+
+const otherTermOptions = [
+    { label: 'Draft PJBG akan didiskusikan 1 bulan setelah penawaran ini disetujui.', checked: true },
+];
+
+const preparationOptions = [
+    { label: '30 hari setelah surat penawaran ini di approved atau sesuai dengan kesepakatan.', checked: true },
+];
+
 function serializeObligations(options, selectedOptions, otherSelected, otherText) {
     const lines = options
         .filter((option) => selectedOptions.includes(option.label))
@@ -68,14 +90,50 @@ function parseObligations(value, options) {
     const selected = [];
     const otherLines = [];
     let otherSelected = false;
+    const raw = String(value || '');
 
-    for (const line of String(value || '').split(/\r?\n/)) {
-        const text = line.trim();
-        if (!text) continue;
-        const option = options.find((item) => item.label === text);
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.every((item) => (
+            item
+            && typeof item.label === 'string'
+            && typeof item.checked === 'boolean'
+        ))) {
+            for (const item of parsed) {
+                if (!item.checked || !item.label.trim()) continue;
+                const option = options.find((candidate) => candidate.label === item.label);
+                if (option) selected.push(option.label);
+                else otherLines.push(item.label.trim());
+            }
+            return {
+                selected,
+                otherSelected: otherLines.length > 0,
+                otherText: otherLines.join('\n'),
+            };
+        }
+    } catch {
+        // Existing proposals store these fields as plain text.
+    }
+
+    const lines = raw.split(/\r?\n/);
+    const orderedOptions = [...options].sort(
+        (left, right) => right.label.split(/\r?\n/).length - left.label.split(/\r?\n/).length,
+    );
+    for (let index = 0; index < lines.length;) {
+        const option = orderedOptions.find((item) => (
+            lines.slice(index, index + item.label.split(/\r?\n/).length).join('\n') === item.label
+        ));
         if (option) {
             selected.push(option.label);
-        } else if (text.startsWith('Lainnya:')) {
+            index += option.label.split(/\r?\n/).length;
+            continue;
+        }
+        const text = lines[index].trim();
+        if (!text) {
+            index += 1;
+            continue;
+        }
+        if (text.startsWith('Lainnya:')) {
             otherSelected = true;
             const essay = text.slice('Lainnya:'.length).trim();
             if (essay) otherLines.push(essay);
@@ -83,6 +141,7 @@ function parseObligations(value, options) {
             otherSelected = true;
             otherLines.push(text);
         }
+        index += 1;
     }
 
     return { selected, otherSelected, otherText: otherLines.join('\n') };
@@ -91,6 +150,7 @@ function parseObligations(value, options) {
 function blankProposal() {
     return {
         proposalNumber: '',
+        templateKey: 'standard',
         customerName: '',
         address: '',
         proposalDate: new Date().toISOString().slice(0, 10),
@@ -101,7 +161,19 @@ function blankProposal() {
         guarantee: 'Cash Deposit',
         dueDay: 20,
         exchangeClause: false,
-        contractYears: 2,
+        contractDuration: 2,
+        contractDurationUnit: 'year',
+        durationDetails: '',
+        attentionTo: '',
+        supplyPattern: '',
+        deliveryPoint: '',
+        startDate: '',
+        volumeDetails: '',
+        priceDetails: '',
+        paymentTerms: serializeObligations(paymentTermOptions, paymentTermOptions.map((option) => option.label), false, ''),
+        advantages: serializeObligations(advantageOptions, advantageOptions.map((option) => option.label), false, ''),
+        otherTerms: serializeObligations(otherTermOptions, otherTermOptions.map((option) => option.label), false, ''),
+        preparation: serializeObligations(preparationOptions, preparationOptions.map((option) => option.label), false, ''),
         reethauObligations: serializeObligations(
             reethauObligationOptions,
             reethauObligationOptions.filter((option) => option.checked).map((option) => option.label),
@@ -120,6 +192,7 @@ function blankProposal() {
 function formFromProposal(proposal) {
     return {
         proposalNumber: proposal.number || '',
+        templateKey: proposal.templateKey || 'standard',
         customerName: proposal.customerName || '',
         address: [proposal.addressLine1, proposal.addressLine2].filter(Boolean).join(' '),
         proposalDate: proposal.proposalDate || '',
@@ -130,7 +203,19 @@ function formFromProposal(proposal) {
         guarantee: proposal.guarantee,
         dueDay: proposal.dueDay,
         exchangeClause: proposal.exchangeClause,
-        contractYears: proposal.contractYears,
+        contractDuration: proposal.contractDuration ?? proposal.contractYears ?? 2,
+        contractDurationUnit: proposal.contractDurationUnit || 'year',
+        durationDetails: proposal.durationDetails || '',
+        attentionTo: proposal.attentionTo || '',
+        supplyPattern: proposal.supplyPattern || '',
+        deliveryPoint: proposal.deliveryPoint || '',
+        startDate: proposal.startDate || '',
+        volumeDetails: proposal.volumeDetails || '',
+        priceDetails: proposal.priceDetails || '',
+        paymentTerms: proposal.paymentTerms || '',
+        advantages: proposal.advantages || '',
+        otherTerms: proposal.otherTerms || '',
+        preparation: proposal.preparation || '',
         reethauObligations: proposal.reethauObligations || '',
         customerObligations: proposal.customerObligations || '',
     };
@@ -162,6 +247,7 @@ function SphPaperPreview({ form }) {
     const previewUrlRef = useRef('');
     const previewPayload = JSON.stringify({
         proposalNumber: form.proposalNumber,
+        templateKey: form.templateKey,
         customerName: form.customerName,
         addressLine1: form.address,
         addressLine2: '',
@@ -173,7 +259,19 @@ function SphPaperPreview({ form }) {
         guarantee: form.guarantee,
         dueDay: form.dueDay,
         exchangeClause: form.exchangeClause,
-        contractYears: form.contractYears,
+        contractDuration: form.contractDuration,
+        contractDurationUnit: form.contractDurationUnit,
+        durationDetails: form.durationDetails,
+        attentionTo: form.attentionTo,
+        supplyPattern: form.supplyPattern,
+        deliveryPoint: form.deliveryPoint,
+        startDate: form.startDate,
+        volumeDetails: form.volumeDetails,
+        priceDetails: form.priceDetails,
+        paymentTerms: form.paymentTerms,
+        advantages: form.advantages,
+        otherTerms: form.otherTerms,
+        preparation: form.preparation,
         reethauObligations: form.reethauObligations,
         customerObligations: form.customerObligations,
     });
@@ -259,7 +357,23 @@ function TextField({ label, className = '', ...props }) {
     );
 }
 
-function ObligationChecklist({ title, value, options, onChange }) {
+function TextAreaField({ label, rows = 3, ...props }) {
+    return (
+        <label className="sph-field">
+            <span>{label}</span>
+            <textarea rows={rows} {...props} />
+        </label>
+    );
+}
+
+function ObligationChecklist({
+    title,
+    value,
+    options,
+    onChange,
+    otherPrompt = 'Jelaskan kewajiban lainnya',
+    otherMaxLength = 10000,
+}) {
     const parsed = parseObligations(value, options);
 
     function updateSelection(label, checked) {
@@ -308,10 +422,10 @@ function ObligationChecklist({ title, value, options, onChange }) {
             </div>
             {parsed.otherSelected && (
                 <label className="sph-field sph-obligation-essay">
-                    <span>Jelaskan kewajiban lainnya</span>
+                    <span>{otherPrompt}</span>
                     <textarea
                         rows="3"
-                        maxLength={10000}
+                        maxLength={otherMaxLength}
                         value={parsed.otherText}
                         onChange={(event) => onChange(serializeObligations(
                             options,
@@ -344,6 +458,7 @@ export default function SphPage({ user, onLogout }) {
 
     const isSales = user.sphRole === 'sales';
     const isCommercialHead = user.sphRole === 'commercial_head';
+    const isTermTemplate = form.templateKey === 'term_description';
     async function loadProposals() {
         setError('');
         try {
@@ -443,7 +558,7 @@ export default function SphPage({ user, onLogout }) {
             priceUsd: Number(form.priceUsd),
             topPercent: Number(form.topPercent),
             dueDay: Number(form.dueDay),
-            contractYears: Number(form.contractYears),
+            contractDuration: Number(form.contractDuration),
         };
         try {
             const saved = proposal
@@ -812,29 +927,105 @@ export default function SphPage({ user, onLogout }) {
                                     <h3>Informasi pelanggan</h3>
                                     <div className="sph-form-grid">
                                         <TextField label="Nomor surat *" name="proposalNumber" value={form.proposalNumber} onChange={updateField} required maxLength={80} placeholder="Contoh: SPH-2026-11-MKT-000" />
-                                        <TextField label="Nama pelanggan *" name="customerName" value={form.customerName} onChange={updateField} required maxLength={255} />
+                                        <label className="sph-field"><span>Template surat</span><select name="templateKey" value={form.templateKey} onChange={updateField}><option value="standard">Template Standar</option><option value="term_description">Template Term / Deskripsi (PDF contoh)</option></select></label>
+                                        <TextField label={isTermTemplate ? 'Pembeli / Kepada Yth *' : 'Nama pelanggan *'} name="customerName" value={form.customerName} onChange={updateField} required maxLength={255} />
                                         <TextField label="Tanggal penawaran *" name="proposalDate" type="date" value={form.proposalDate} onChange={updateField} required />
-                                        <TextField label="Alamat" name="address" value={form.address} onChange={updateField} maxLength={2000} placeholder="Jalan Akses Tol Cibitung No.82, Gandasari, Kecamatan Cikarang Barat, Kabupaten Bekasi, Jawa Barat 17530" />
+                                        <TextField label={isTermTemplate ? 'Alamat penerima' : 'Alamat'} name="address" value={form.address} onChange={updateField} maxLength={2000} placeholder="Jalan Akses Tol Cibitung No.82, Gandasari, Kecamatan Cikarang Barat, Kabupaten Bekasi, Jawa Barat 17530" />
+                                        {isTermTemplate && (
+                                            <TextField label="Perhatian (Up)" name="attentionTo" value={form.attentionTo} onChange={updateField} maxLength={255} placeholder="Nama penerima surat" />
+                                        )}
                                     </div>
                                 </div>
                                 <div className="sph-form-section">
-                                    <h3>Volume dan harga</h3>
+                                    <h3>{isTermTemplate ? 'Volume dan Harga CNG' : 'Volume dan harga'}</h3>
                                     <div className="sph-form-grid">
                                         <TextField label="Volume minimum (MMBTU/hari) *" name="volumeMin" type="number" min="0.01" step="0.01" value={form.volumeMin} onChange={updateField} required />
                                         <TextField label="Volume maksimum (MMBTU/hari) *" name="volumeMax" type="number" min="0.01" step="0.01" value={form.volumeMax} onChange={updateField} required />
                                         <TextField label="Harga (USD/MMBTU) *" name="priceUsd" type="number" min="0.01" step="0.01" value={form.priceUsd} onChange={updateField} required />
                                         <TextField label="Take-or-pay (%)" name="topPercent" type="number" min="0" max="100" step="0.01" value={form.topPercent} onChange={updateField} required />
                                     </div>
-                                    <p className="sph-form-hint">Semua penawaran memerlukan persetujuan Commercial Head.</p>
+                                    <p className="sph-form-hint">
+                                        {isTermTemplate
+                                            ? 'Produk dan penjual pada PDF tetap: CNG dan PT Reethau Cipta Energi.'
+                                            : 'Semua penawaran memerlukan persetujuan Commercial Head.'}
+                                    </p>
                                 </div>
                                 <div className="sph-form-section">
                                     <h3>Ketentuan kontrak</h3>
                                     <div className="sph-form-grid">
                                         <label className="sph-field"><span>Jaminan</span><select name="guarantee" value={form.guarantee} onChange={updateField}><option>Cash Deposit</option><option>Bank Guarantee</option><option>Parent Company Guarantee</option><option>N/A</option></select></label>
                                         <TextField label="Tanggal pembayaran setiap bulan" name="dueDay" type="number" min="1" max="28" value={form.dueDay} onChange={updateField} required />
-                                        <TextField label="Jangka waktu (tahun)" name="contractYears" type="number" min="1" max="15" value={form.contractYears} onChange={updateField} required />
+                                        <label className="sph-field sph-duration-control">
+                                            <span>Jangka waktu</span>
+                                            <div>
+                                                <input
+                                                    aria-label="Nilai jangka waktu"
+                                                    name="contractDuration"
+                                                    type="number"
+                                                    min="1"
+                                                    max={form.contractDurationUnit === 'year' ? 15 : 5475}
+                                                    step="1"
+                                                    value={form.contractDuration}
+                                                    onChange={updateField}
+                                                    required
+                                                />
+                                                <select
+                                                    aria-label="Satuan jangka waktu"
+                                                    name="contractDurationUnit"
+                                                    value={form.contractDurationUnit}
+                                                    onChange={updateField}
+                                                >
+                                                    <option value="year">Tahun</option>
+                                                    <option value="day">Hari</option>
+                                                </select>
+                                            </div>
+                                        </label>
                                         <label className="sph-checkbox"><input type="checkbox" name="exchangeClause" checked={form.exchangeClause} onChange={updateField} /><span>Klausul tukar menukar berlaku</span></label>
                                     </div>
+                                </div>
+                                {isTermTemplate ? (
+                                    <div className="sph-form-section">
+                                        <h3>Term / Deskripsi pada PDF</h3>
+                                        <div className="sph-form-grid sph-form-grid-single">
+                                            <TextAreaField label="Pola Supply" name="supplyPattern" value={form.supplyPattern} onChange={updateField} maxLength={2000} placeholder="Cara dan pola pasokan CNG" />
+                                            <TextAreaField label="Titik Penyerahan" name="deliveryPoint" value={form.deliveryPoint} onChange={updateField} maxLength={2000} placeholder="Lokasi penyerahan gas" />
+                                            <TextField label="Tanggal Dimulai" name="startDate" type="date" value={form.startDate} onChange={updateField} />
+                                            <TextAreaField label="Rincian Volume (lokasi / periode / satuan)" name="volumeDetails" value={form.volumeDetails} onChange={updateField} maxLength={5000} placeholder="Lokasi, jumlah, satuan, atau periode pasokan" />
+                                            <TextAreaField label="Evaluasi / Ketentuan Jangka Waktu" name="durationDetails" value={form.durationDetails} onChange={updateField} maxLength={5000} placeholder="Ketentuan evaluasi selama jangka waktu kontrak" />
+                                            <TextAreaField label="Rincian Harga (komponen / pajak)" name="priceDetails" value={form.priceDetails} onChange={updateField} maxLength={5000} placeholder="Komponen yang termasuk atau belum termasuk dalam harga" />
+                                            <ObligationChecklist
+                                                title="Pembayaran"
+                                                value={form.paymentTerms}
+                                                options={paymentTermOptions}
+                                                otherPrompt="Jelaskan ketentuan pembayaran lainnya"
+                                                otherMaxLength={5000}
+                                                onChange={(value) => setForm((current) => ({ ...current, paymentTerms: value }))}
+                                            />
+                                            <ObligationChecklist
+                                                title="Keunggulan"
+                                                value={form.advantages}
+                                                options={advantageOptions}
+                                                otherPrompt="Jelaskan keunggulan lainnya"
+                                                onChange={(value) => setForm((current) => ({ ...current, advantages: value }))}
+                                            />
+                                            <ObligationChecklist
+                                                title="Ketentuan Lain"
+                                                value={form.otherTerms}
+                                                options={otherTermOptions}
+                                                otherPrompt="Jelaskan ketentuan lainnya"
+                                                onChange={(value) => setForm((current) => ({ ...current, otherTerms: value }))}
+                                            />
+                                            <ObligationChecklist
+                                                title="Preparation"
+                                                value={form.preparation}
+                                                options={preparationOptions}
+                                                otherPrompt="Jelaskan preparation lainnya"
+                                                otherMaxLength={5000}
+                                                onChange={(value) => setForm((current) => ({ ...current, preparation: value }))}
+                                            />
+                                        </div>
+                                    </div>
+                                ) : (
                                     <div className="sph-form-grid sph-form-grid-single">
                                         <ObligationChecklist
                                             title="Kewajiban PT Reethau Cipta Energi (C)"
@@ -849,7 +1040,7 @@ export default function SphPage({ user, onLogout }) {
                                             onChange={(value) => setForm((current) => ({ ...current, customerObligations: value }))}
                                         />
                                     </div>
-                                </div>
+                                )}
                                 <div className="sph-form-actions">
                                     <button className="sph-primary" type="submit" disabled={busy}>{busy ? 'Menyimpan...' : proposal ? 'Simpan perubahan' : 'Simpan draft'}</button>
                                 </div>

@@ -32,6 +32,31 @@ def operator_sheet_workbook():
 
 
 class OperatorSheetImportTests(unittest.TestCase):
+    def test_import_error_exposes_new_customer_names_for_email_mapping(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Daily Sales"
+        sheet.cell(3, 2, "PLATINUM")
+        sheet.cell(4, 3, "ACTUAL")
+        sheet.cell(5, 2, datetime(2026, 11, 9))
+        sheet.cell(5, 3, 123.45)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "daily-sales.xlsx"
+            workbook.save(path)
+            workbook.close()
+            database = MemoryImportDatabase()
+
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", return_value=""),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+                self.assertRaises(main.UnmappedCustomersError) as error,
+            ):
+                main.import_excel(path, path.name)
+
+        self.assertEqual(error.exception.unmapped_customers, ["PLATINUM"])
+
     def test_import_date_filter_leaves_other_daily_sales_dates_untouched(self):
         workbook = Workbook()
         sheet = workbook.active

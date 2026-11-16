@@ -1296,6 +1296,12 @@ def operator_sheet_daily_sales_records(wb):
     return records
 
 
+class UnmappedCustomersError(ValueError):
+    def __init__(self, customers, message):
+        self.unmapped_customers = list(dict.fromkeys(customers))
+        super().__init__(message)
+
+
 def import_excel(
     path: Path,
     original_filename: str,
@@ -1339,7 +1345,8 @@ def import_excel(
                     names = ", ".join(unmapped_customers[:20])
                     remainder = len(unmapped_customers) - 20
                     suffix = f", dan {remainder} lainnya" if remainder > 0 else ""
-                    raise ValueError(
+                    raise UnmappedCustomersError(
+                        unmapped_customers,
                         "Impor dibatalkan. Operator tidak ditemukan otomatis untuk customer: "
                         f"{names}{suffix}. Tambahkan customer ke sheet operator pada file Excel "
                         "atau gunakan mapping yang sudah tersimpan."
@@ -1488,7 +1495,8 @@ def import_excel(
                 names = ", ".join(unmapped_customers[:20])
                 remainder = len(unmapped_customers) - 20
                 suffix = f", dan {remainder} lainnya" if remainder > 0 else ""
-                raise ValueError(
+                raise UnmappedCustomersError(
+                    unmapped_customers,
                     "Impor dibatalkan. Operator tidak ditemukan otomatis untuk customer: "
                     f"{names}{suffix}. Tambahkan mapping ke database atau sheet operator pada file Excel."
                 )
@@ -1756,6 +1764,23 @@ SPH_GUARANTEES = {
     "Parent Company Guarantee",
     "N/A",
 }
+SPH_TEMPLATES = {"standard", "term_description"}
+SPH_DURATION_UNITS = {"year": "tahun", "day": "hari"}
+SPH_YEAR_WORDS = {
+    1: "Satu", 2: "Dua", 3: "Tiga", 4: "Empat", 5: "Lima",
+    6: "Enam", 7: "Tujuh", 8: "Delapan", 9: "Sembilan",
+    10: "Sepuluh", 11: "Sebelas", 12: "Dua Belas",
+    13: "Tiga Belas", 14: "Empat Belas", 15: "Lima Belas",
+}
+
+
+def _sph_contract_duration_label(proposal):
+    duration = proposal.get("contractDuration", proposal.get("contractYears", 2))
+    unit = proposal.get("contractDurationUnit", "year")
+    duration = int(duration)
+    if unit == "year" and duration in SPH_YEAR_WORDS:
+        return f"{duration} ({SPH_YEAR_WORDS[duration]}) tahun"
+    return f"{duration} {SPH_DURATION_UNITS.get(unit, 'tahun')}"
 
 
 def _sph_now():
@@ -1771,6 +1796,38 @@ def _sph_text(value, label, maximum=10000, required=False):
     if len(text) > maximum:
         raise HTTPException(status_code=400, detail=f"{label} terlalu panjang.")
     return text
+
+
+def _sph_parse_term_checklist(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+
+    try:
+        items = json.loads(raw)
+    except json.JSONDecodeError:
+        items = None
+
+    if isinstance(items, list) and all(
+        isinstance(item, dict)
+        and isinstance(item.get("label"), str)
+        and isinstance(item.get("checked"), bool)
+        for item in items
+    ):
+        return [
+            {"label": item["label"].strip(), "checked": item["checked"]}
+            for item in items
+            if item["label"].strip()
+        ]
+
+    parsed_lines = []
+    for line in raw.splitlines():
+        label = line.strip()
+        if label.startswith("Lainnya:"):
+            label = label[len("Lainnya:"):].strip()
+        if label:
+            parsed_lines.append({"label": label, "checked": True})
+    return parsed_lines
 
 
 def _sph_validate_proposal(payload):
@@ -1795,11 +1852,20 @@ def _sph_validate_proposal(payload):
             Decimal(str(value)) for value in numeric_fields
         )
         due_value = payload.get("dueDay", 20)
-        years_value = payload.get("contractYears", 2)
-        if isinstance(due_value, bool) or isinstance(years_value, bool):
+        duration_value = payload.get("contractDuration", payload.get("contractYears", 2))
+        duration_unit = payload.get("contractDurationUnit", "year")
+        if (
+            isinstance(due_value, bool)
+            or isinstance(duration_value, bool)
+            or not isinstance(duration_unit, str)
+            or duration_unit not in SPH_DURATION_UNITS
+        ):
             raise ValueError
-        due_day, contract_years = int(due_value), int(years_value)
-        if Decimal(str(due_value)) != due_day or Decimal(str(years_value)) != contract_years:
+        due_day, duration = int(due_value), int(duration_value)
+        if (
+            Decimal(str(due_value)) != due_day
+            or Decimal(str(duration_value)) != duration
+        ):
             raise ValueError
     except (InvalidOperation, TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Tanggal dan angka pada SPH harus valid.")
@@ -1815,7 +1881,7 @@ def _sph_validate_proposal(payload):
         or price_usd > Decimal("9999999999.99")
         or not 0 <= top_percent <= 100
         or not 1 <= due_day <= 28
-        or not 1 <= contract_years <= 15
+        or not 1 <= duration <= (15 if duration_unit == "year" else 5475)
     ):
         raise HTTPException(status_code=400, detail="Nilai volume, harga, TOP, atau termin di luar batas.")
     guarantee_value = payload.get("guarantee", "Cash Deposit")
@@ -1827,8 +1893,21 @@ def _sph_validate_proposal(payload):
     exchange_clause = payload.get("exchangeClause", False)
     if not isinstance(exchange_clause, bool):
         raise HTTPException(status_code=400, detail="Klausul tukar menukar tidak valid.")
+    template_key = payload.get("templateKey", "standard")
+    if not isinstance(template_key, str) or template_key not in SPH_TEMPLATES:
+        raise HTTPException(status_code=400, detail="Template surat tidak valid.")
+    start_date_value = payload.get("startDate")
+    try:
+        start_date = (
+            date.fromisoformat(start_date_value)
+            if start_date_value
+            else None
+        )
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Tanggal mulai tidak valid.")
     return {
         "proposal_number": proposal_number,
+        "template_key": template_key,
         "customer_key": customer_key,
         "customer_name": customer_name,
         "address_line1": _sph_text(payload.get("addressLine1"), "Alamat pelanggan", 2000),
@@ -1841,7 +1920,19 @@ def _sph_validate_proposal(payload):
         "guarantee": guarantee,
         "due_day": due_day,
         "exchange_clause": exchange_clause,
-        "contract_years": contract_years,
+        "contract_duration_value": duration,
+        "contract_duration_unit": duration_unit,
+        "duration_details": _sph_text(payload.get("durationDetails"), "Detail jangka waktu", 5000),
+        "attention_to": _sph_text(payload.get("attentionTo"), "Perhatian", 255),
+        "supply_pattern": _sph_text(payload.get("supplyPattern"), "Pola supply", 2000),
+        "delivery_point": _sph_text(payload.get("deliveryPoint"), "Titik penyerahan", 2000),
+        "start_date": start_date,
+        "volume_details": _sph_text(payload.get("volumeDetails"), "Rincian volume", 5000),
+        "price_details": _sph_text(payload.get("priceDetails"), "Rincian harga", 5000),
+        "payment_terms": _sph_text(payload.get("paymentTerms"), "Ketentuan pembayaran", 5000),
+        "advantages": _sph_text(payload.get("advantages"), "Keunggulan", 10000),
+        "other_terms": _sph_text(payload.get("otherTerms"), "Ketentuan lain", 10000),
+        "preparation": _sph_text(payload.get("preparation"), "Preparation", 5000),
         "reethau_obligations": _sph_text(payload.get("reethauObligations"), "Kewajiban Reethau"),
         "customer_obligations": _sph_text(payload.get("customerObligations"), "Kewajiban pelanggan"),
     }
@@ -1858,10 +1949,19 @@ def _sph_proposal_row(con, proposal_id):
         "c.address_line2 AS addressLine2,p.proposal_date AS proposalDate,"
         "p.volume_min AS volumeMin,p.volume_max AS volumeMax,p.price_usd AS priceUsd,"
         "p.status,p.version,p.top_percent AS topPercent,p.guarantee,p.due_day AS dueDay,"
-        "p.exchange_clause AS exchangeClause,p.contract_years AS contractYears,"
+        "p.exchange_clause AS exchangeClause,"
+        "p.contract_duration_value AS contractDuration,"
+        "p.contract_duration_unit AS contractDurationUnit,"
+        "p.duration_details AS durationDetails,"
+        "p.attention_to AS attentionTo,p.supply_pattern AS supplyPattern,"
+        "p.delivery_point AS deliveryPoint,p.start_date AS startDate,"
+        "p.volume_details AS volumeDetails,p.price_details AS priceDetails,"
+        "p.payment_terms AS paymentTerms,p.advantages,p.other_terms AS otherTerms,"
+        "p.preparation,"
         "p.reethau_obligations AS reethauObligations,"
         "p.customer_obligations AS customerObligations,p.approvals,p.sent_date AS sentDate,"
-        "p.approved_at AS approvedAt,p.actual_volume AS actualVolume,p.created_by AS createdBy,"
+        "p.template_key AS templateKey,p.approved_at AS approvedAt,"
+        "p.actual_volume AS actualVolume,p.created_by AS createdBy,"
         "p.updated_at AS updatedAt FROM sph_proposals p "
         "JOIN sph_customers c ON c.customer_key=p.customer_key WHERE p.id=%s",
         (proposal_id,),
@@ -1878,7 +1978,7 @@ def _sph_proposal_json(row):
     result["version"] = int(result["version"])
     result["exchangeClause"] = bool(result["exchangeClause"])
     result["approvals"] = json.loads(result["approvals"] or "[]")
-    for key in ("proposalDate", "sentDate", "approvedAt"):
+    for key in ("proposalDate", "startDate", "sentDate", "approvedAt"):
         if result[key] is not None:
             result[key] = result[key].isoformat()
     if result["updatedAt"] is not None:
@@ -1984,16 +2084,26 @@ async def sph_create_proposal(request: Request):
             cursor = con.execute(
                 "INSERT INTO sph_proposals(proposal_number,customer_key,proposal_date,"
                 "volume_min,volume_max,price_usd,status,version,top_percent,guarantee,"
-                "due_day,exchange_clause,contract_years,reethau_obligations,"
-                "customer_obligations,approvals,created_by,updated_at) "
-                "VALUES(%s,%s,%s,%s,%s,%s,'draft',0,%s,%s,%s,%s,%s,%s,%s,'[]',%s,%s)",
+                "due_day,exchange_clause,contract_duration_value,contract_duration_unit,"
+                "duration_details,attention_to,supply_pattern,delivery_point,start_date,volume_details,"
+                "price_details,payment_terms,advantages,other_terms,preparation,"
+                "reethau_obligations,customer_obligations,template_key,approvals,"
+                "created_by,updated_at) "
+                "VALUES(%s,%s,%s,%s,%s,%s,'draft',0,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'[]',%s,%s)",
                 (
                     proposal["proposal_number"], proposal["customer_key"], proposal["proposal_date"],
                     proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
                     proposal["top_percent"], proposal["guarantee"], proposal["due_day"],
-                    proposal["exchange_clause"], proposal["contract_years"],
+                    proposal["exchange_clause"], proposal["contract_duration_value"],
+                    proposal["contract_duration_unit"], proposal["duration_details"],
+                    proposal["attention_to"], proposal["supply_pattern"],
+                    proposal["delivery_point"], proposal["start_date"],
+                    proposal["volume_details"], proposal["price_details"],
+                    proposal["payment_terms"], proposal["advantages"],
+                    proposal["other_terms"], proposal["preparation"],
                     proposal["reethau_obligations"], proposal["customer_obligations"],
-                    request.session["username"], now,
+                    proposal["template_key"], request.session["username"], now,
                 ),
             )
         except pymysql.err.IntegrityError as exc:
@@ -2037,16 +2147,26 @@ async def sph_update_proposal(proposal_id: int, request: Request):
             update_result = con.execute(
                 "UPDATE sph_proposals SET proposal_number=%s,customer_key=%s,proposal_date=%s,status='draft',"
                 "volume_min=%s,volume_max=%s,price_usd=%s,top_percent=%s,guarantee=%s,"
-                "due_day=%s,exchange_clause=%s,contract_years=%s,reethau_obligations=%s,"
-                "customer_obligations=%s,version=version+%s,approvals='[]',"
+                "due_day=%s,exchange_clause=%s,contract_duration_value=%s,"
+                "contract_duration_unit=%s,duration_details=%s,attention_to=%s,supply_pattern=%s,"
+                "delivery_point=%s,start_date=%s,volume_details=%s,price_details=%s,"
+                "payment_terms=%s,advantages=%s,other_terms=%s,preparation=%s,"
+                "reethau_obligations=%s,"
+                "customer_obligations=%s,template_key=%s,version=version+%s,approvals='[]',"
                 "approved_at=NULL,sent_date=NULL,updated_at=%s WHERE id=%s AND status <> 'active'",
                 (
                     proposal["proposal_number"], proposal["customer_key"], proposal["proposal_date"],
                     proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
                     proposal["top_percent"], proposal["guarantee"], proposal["due_day"],
-                    proposal["exchange_clause"], proposal["contract_years"],
+                    proposal["exchange_clause"], proposal["contract_duration_value"],
+                    proposal["contract_duration_unit"], proposal["duration_details"],
+                    proposal["attention_to"], proposal["supply_pattern"],
+                    proposal["delivery_point"], proposal["start_date"],
+                    proposal["volume_details"], proposal["price_details"],
+                    proposal["payment_terms"], proposal["advantages"],
+                    proposal["other_terms"], proposal["preparation"],
                     proposal["reethau_obligations"], proposal["customer_obligations"],
-                    int(was_submitted), now, proposal_id,
+                    proposal["template_key"], int(was_submitted), now, proposal_id,
                 ),
             )
         except pymysql.err.IntegrityError as exc:
@@ -2204,6 +2324,8 @@ def sph_proposal_pdf(proposal_id: int, request: Request):
 
 
 def _sph_generate_proposal_pdf(proposal, inline=False):
+    if proposal.get("templateKey", "standard") == "term_description":
+        return _sph_generate_term_description_pdf(proposal, inline=inline)
     try:
         from reportlab.lib import colors
         from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -2317,12 +2439,6 @@ def _sph_generate_proposal_pdf(proposal, inline=False):
         for part in (proposal["addressLine1"], proposal["addressLine2"])
         if part.strip()
     ]
-    contract_year_words = {
-        1: "Satu", 2: "Dua", 3: "Tiga", 4: "Empat", 5: "Lima",
-        6: "Enam", 7: "Tujuh", 8: "Delapan", 9: "Sembilan",
-        10: "Sepuluh", 11: "Sebelas", 12: "Dua Belas",
-        13: "Tiga Belas", 14: "Empat Belas", 15: "Lima Belas",
-    }
     def format_volume(value):
         formatted = f"{value:,.2f}".rstrip("0").rstrip(".")
         return formatted.replace(",", "\0").replace(".", ",").replace("\0", ".")
@@ -2431,8 +2547,7 @@ def _sph_generate_proposal_pdf(proposal, inline=False):
         Paragraph("B. Detail Penawaran", styles["SphSection"]),
         numbered_item(
             1,
-            f"Masa kontrak {proposal['contractYears']} "
-            f"({contract_year_words[proposal['contractYears']]}) tahun.",
+            f"Masa kontrak {_sph_contract_duration_label(proposal)}.",
         ),
         numbered_item(2, "Garansi supply atau garansi kelangsungan pasokan CNG."),
         numbered_item(
@@ -2571,15 +2686,343 @@ def _sph_generate_proposal_pdf(proposal, inline=False):
     )
 
 
+def _sph_generate_term_description_pdf(proposal, inline=False):
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.lib.utils import ImageReader
+        from reportlab.platypus import (
+            PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+        )
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail="Generator PDF SPH belum tersedia.") from exc
+
+    sph_pdf_logo = BASE_DIR / "static" / "reethau-sph.png"
+    if not sph_pdf_logo.is_file():
+        raise HTTPException(status_code=503, detail="Logo template PDF SPH tidak tersedia.")
+    output = BytesIO()
+    document = SimpleDocTemplate(
+        output, pagesize=A4, rightMargin=20 * mm, leftMargin=20 * mm,
+        topMargin=36 * mm, bottomMargin=22 * mm,
+        title=f"Surat Penawaran Harga {proposal['number']}",
+        author="Reethau",
+    )
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name="SphTermsBody", parent=styles["BodyText"], fontName="Times-Roman",
+        fontSize=10, leading=12, alignment=TA_LEFT, spaceBefore=0, spaceAfter=0,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphTermsHeading", parent=styles["BodyText"], fontName="Times-Bold",
+        fontSize=10, leading=12, alignment=TA_CENTER, spaceBefore=0, spaceAfter=0,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphTermsLabel", parent=styles["BodyText"], fontName="Times-Bold",
+        fontSize=10, leading=12, spaceBefore=0, spaceAfter=0,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphTermsIntro", parent=styles["BodyText"], fontName="Times-Roman",
+        fontSize=10, leading=13, alignment=TA_LEFT, spaceBefore=0, spaceAfter=0,
+    ))
+    styles.add(ParagraphStyle(
+        name="SphTermsSignature", parent=styles["BodyText"], fontName="Times-Roman",
+        fontSize=10, leading=13, alignment=TA_CENTER, spaceBefore=0, spaceAfter=0,
+    ))
+    safe = lambda value: (
+        str(value or "").replace("&", "&amp;").replace("<", "&lt;")
+        .replace(">", "&gt;").replace("\n", "<br/>")
+    )
+    def paragraph(value, style="SphTermsBody"):
+        return Paragraph(safe(value) or "-", styles[style])
+
+    def checklist_description(value, fallback=None):
+        selected = [
+            item["label"]
+            for item in _sph_parse_term_checklist(value)
+            if item["checked"]
+        ]
+        return "\n".join(selected) or fallback or "-"
+
+    proposal_date = date.fromisoformat(proposal["proposalDate"])
+    weekdays = ("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+    months = (
+        "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+        "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+    )
+    date_label = (
+        f"{weekdays[proposal_date.weekday()]}, {proposal_date.day} "
+        f"{months[proposal_date.month - 1]} {proposal_date.year}"
+    )
+    start_date_value = proposal.get("startDate")
+    if start_date_value:
+        start_date = (
+            start_date_value
+            if isinstance(start_date_value, date)
+            else date.fromisoformat(str(start_date_value))
+        )
+        start_date_label = (
+            f"{start_date.day} {months[start_date.month - 1]} {start_date.year}"
+        )
+    else:
+        start_date_label = "Sesuai kesepakatan para pihak."
+    address = ", ".join(
+        part.strip()
+        for part in (proposal.get("addressLine1"), proposal.get("addressLine2"))
+        if part and part.strip()
+    )
+    def format_volume(value):
+        formatted = f"{value:,.2f}".rstrip("0").rstrip(".")
+        return formatted.replace(",", "\0").replace(".", ",").replace("\0", ".")
+
+    volume = (
+        f"{format_volume(proposal['volumeMin'])}–{format_volume(proposal['volumeMax'])} "
+        "MMBTU per hari"
+    )
+    if proposal.get("volumeDetails"):
+        volume += f"\n{proposal['volumeDetails']}"
+    price = f"USD {proposal['priceUsd']:.2f} / MMBTU"
+    price += f"; TOP {proposal['topPercent']:g}% dari volume minimum."
+    if proposal.get("priceDetails"):
+        price += f"\n{proposal['priceDetails']}"
+    payment_fallback = (
+        f"Pembayaran paling lambat tanggal {proposal['dueDay']} setiap bulan. "
+        f"Jaminan pembayaran berupa {proposal['guarantee']}."
+    )
+    exchange_clause = (
+        "Klausul tukar-menukar berlaku."
+        if proposal.get("exchangeClause")
+        else "Klausul tukar-menukar tidak berlaku."
+    )
+    other_terms = _sph_parse_term_checklist(proposal.get("otherTerms"))
+    other_terms.append({"label": exchange_clause, "checked": True})
+    duration_description = f"{_sph_contract_duration_label(proposal)}."
+    if proposal.get("durationDetails"):
+        duration_description += f"\n{proposal['durationDetails']}"
+    terms = [
+        ("Produk", "Compressed Natural Gas (CNG)"),
+        ("Penjual", "PT Reethau Cipta Energi"),
+        ("Pembeli", proposal["customerName"]),
+        (
+            "Pola Supply",
+            proposal.get("supplyPattern") or "Sesuai kesepakatan para pihak.",
+        ),
+        (
+            "Titik Penyerahan",
+            proposal.get("deliveryPoint") or "Sesuai kesepakatan para pihak.",
+        ),
+        ("Tanggal Dimulai", start_date_label),
+        (
+            "Jangka Waktu",
+            duration_description,
+        ),
+        ("Volume", volume),
+        ("Harga CNG", price),
+        ("Pembayaran", checklist_description(proposal.get("paymentTerms"), payment_fallback)),
+        ("Keunggulan", checklist_description(proposal.get("advantages"))),
+        ("Ketentuan Lain", checklist_description(json.dumps(other_terms))),
+        ("Preparation", checklist_description(proposal.get("preparation"))),
+    ]
+    def make_term_table(table_terms, include_header):
+        rows = []
+        if include_header:
+            rows.append([
+                Paragraph("TERM", styles["SphTermsHeading"]),
+                Paragraph("DESKRIPSI", styles["SphTermsHeading"]),
+            ])
+        rows.extend([
+            [
+                Paragraph(safe(label), styles["SphTermsLabel"]),
+                paragraph(description),
+            ]
+            for label, description in table_terms
+        ])
+        table = Table(
+            rows,
+            colWidths=[35 * mm, document.width - 35 * mm],
+            repeatRows=1 if include_header else 0,
+            splitByRow=1,
+            hAlign="LEFT",
+        )
+        table_style = [
+            ("GRID", (0, 0), (-1, -1), .5, colors.black),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]
+        if include_header:
+            table_style.append(
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8cc63f"))
+            )
+        table.setStyle(TableStyle(table_style))
+        return table
+
+    term_table = make_term_table(terms[:10], include_header=True)
+    continuation_table = make_term_table(terms[10:], include_header=False)
+    story = [
+        Table(
+            [
+                ["No", ":", paragraph(proposal["number"])],
+                ["Hari/Tanggal", ":", paragraph(date_label)],
+            ],
+            colWidths=[25 * mm, 3 * mm, document.width - 28 * mm],
+            style=TableStyle([
+                ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]),
+        ),
+        Spacer(1, 5 * mm),
+        paragraph("Perihal: Penawaran Harga Compressed Natural Gas (CNG)"),
+        Spacer(1, 5 * mm),
+        paragraph("Kepada Yth."),
+        paragraph(proposal["customerName"], "SphTermsLabel"),
+        paragraph(address),
+        *(
+            [paragraph(f"Up: {proposal['attentionTo']}")]
+            if proposal.get("attentionTo")
+            else []
+        ),
+        Spacer(1, 4 * mm),
+        paragraph("Dengan hormat,"),
+        Spacer(1, 2 * mm),
+        paragraph(
+            "Kami PT Reethau Cipta Energi merupakan perusahaan yang bergerak di "
+            "bidang penyaluran Compressed Natural Gas (CNG). Dengan ini kami "
+            "bermaksud menyampaikan penawaran harga CNG dengan kondisi sebagai "
+            "berikut:",
+            "SphTermsIntro",
+        ),
+        Spacer(1, 3 * mm),
+        term_table,
+        PageBreak(),
+        continuation_table,
+        Spacer(1, 5 * mm),
+        paragraph(
+            "Kami berharap surat penawaran ini mendapat tanggapan yang baik. "
+            "Jika berkenan, mohon menyampaikan surat minat dan persetujuan atas "
+            "rincian penawaran tersebut.",
+            "SphTermsIntro",
+        ),
+        Spacer(1, 3 * mm),
+        paragraph(
+            "Demikian penawaran ini kami sampaikan. Atas perhatian dan kerja sama "
+            "Anda, kami ucapkan terima kasih.",
+            "SphTermsIntro",
+        ),
+        Spacer(1, 8 * mm),
+        Table(
+            [[
+                [
+                    Paragraph("Hormat kami,<br/><b>PT Reethau Cipta Energi</b>", styles["SphTermsBody"]),
+                    Spacer(1, 26 * mm),
+                    Paragraph(
+                        "<u><b>Sahrul Astrurrachman</b></u><br/>"
+                        "<i>Commercial &amp; Marketing Head</i>",
+                        styles["SphTermsBody"],
+                    ),
+                ],
+                Table(
+                    [
+                        [Paragraph("Approval Customer", styles["SphTermsHeading"])],
+                        [""],
+                        [Paragraph(
+                            "Manager / GM / Direktur / Direktur Utama",
+                            styles["SphTermsSignature"],
+                        )],
+                    ],
+                    colWidths=[58 * mm],
+                    rowHeights=[8 * mm, 18 * mm, 8 * mm],
+                    style=TableStyle([
+                        ("BOX", (0, 0), (-1, -1), .5, colors.black),
+                        ("LINEBELOW", (0, 0), (-1, 0), .5, colors.black),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                        ("TOPPADDING", (0, 0), (-1, -1), 0),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ]),
+                ),
+            ]],
+            colWidths=[document.width - 63 * mm, 58 * mm],
+            style=TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]),
+        ),
+    ]
+    is_draft = proposal["status"] == "draft"
+
+    def page_footer(canvas, _document):
+        canvas.saveState()
+        logo_width = 62 * mm
+        logo_image = ImageReader(str(sph_pdf_logo))
+        logo_pixel_width, logo_pixel_height = logo_image.getSize()
+        logo_height = logo_width * logo_pixel_height / logo_pixel_width
+        canvas.drawImage(
+            logo_image, 11.5 * mm, A4[1] - 2 * mm - logo_height,
+            width=logo_width, height=logo_height, mask="auto",
+        )
+        if is_draft:
+            canvas.setFillColor(colors.Color(.8, .2, .2, alpha=.12))
+            canvas.setFont("Helvetica-Bold", 34)
+            canvas.translate(A4[0] / 2, A4[1] / 2)
+            canvas.rotate(35)
+            canvas.drawCentredString(0, 0, "DRAFT")
+            canvas.rotate(-35)
+            canvas.translate(-A4[0] / 2, -A4[1] / 2)
+        canvas.setFillColor(colors.HexColor("#4f5551"))
+        canvas.setFont("Helvetica-Bold", 5.5)
+        canvas.drawString(20 * mm, 19 * mm, "OFFICE")
+        canvas.setFont("Helvetica", 5.5)
+        canvas.drawString(20 * mm, 16 * mm, "PT Reethau Cipta Energi")
+        canvas.drawString(20 * mm, 13 * mm, "Jl. Darmawangsa Raya No. 8,")
+        canvas.drawString(20 * mm, 10 * mm, "Kebayoran Baru - Jakarta Selatan 12160")
+        canvas.drawCentredString(A4[0] * .64, 13 * mm, "P: +62 21 723 1238   |   +62 21 720 7130")
+        canvas.drawRightString(A4[0] - 20 * mm, 13 * mm, "www.reethau.com")
+        canvas.restoreState()
+
+    document.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
+    output.seek(0)
+    filename = f"{proposal['number'].replace('/', '-')}.pdf"
+    disposition = "inline" if inline else "attachment"
+    return StreamingResponse(
+        output, media_type="application/pdf",
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
+    )
+
+
 @app.post("/api/sph/proposals/preview/pdf")
 async def sph_proposal_pdf_preview(request: Request):
     require_sph_access(request)
     validated = _sph_validate_proposal(await request.json())
     preview = {
         "number": validated["proposal_number"],
+        "templateKey": validated["template_key"],
         "customerName": validated["customer_name"],
         "addressLine1": validated["address_line1"],
         "addressLine2": validated["address_line2"],
+        "attentionTo": validated["attention_to"],
+        "supplyPattern": validated["supply_pattern"],
+        "deliveryPoint": validated["delivery_point"],
+        "startDate": validated["start_date"].isoformat() if validated["start_date"] else None,
+        "volumeDetails": validated["volume_details"],
+        "priceDetails": validated["price_details"],
+        "paymentTerms": validated["payment_terms"],
+        "advantages": validated["advantages"],
+        "otherTerms": validated["other_terms"],
+        "preparation": validated["preparation"],
         "proposalDate": validated["proposal_date"].isoformat(),
         "volumeMin": validated["volume_min"],
         "volumeMax": validated["volume_max"],
@@ -2588,7 +3031,9 @@ async def sph_proposal_pdf_preview(request: Request):
         "guarantee": validated["guarantee"],
         "dueDay": validated["due_day"],
         "exchangeClause": validated["exchange_clause"],
-        "contractYears": validated["contract_years"],
+        "contractDuration": validated["contract_duration_value"],
+        "contractDurationUnit": validated["contract_duration_unit"],
+        "durationDetails": validated["duration_details"],
         "reethauObligations": validated["reethau_obligations"],
         "customerObligations": validated["customer_obligations"],
         "status": "draft",
@@ -2991,7 +3436,11 @@ def sync_daily_sales_email(request: Request):
                 filename,
                 message=failure_message,
             )
-            failed.append({"subject": subject, "message": failure_message})
+            failed.append({
+                "subject": subject,
+                "message": failure_message,
+                "unmapped_customers": getattr(exc, "unmapped_customers", []),
+            })
 
     if imported:
         message = f"{len(imported)} email Planner berhasil diimpor."

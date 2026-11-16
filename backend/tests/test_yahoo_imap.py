@@ -5,6 +5,7 @@ from datetime import datetime
 from email.message import EmailMessage
 from io import BytesIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -375,6 +376,53 @@ class YahooDailySalesSyncTests(unittest.TestCase):
         self.assertFalse(result["enabled"])
         self.assertEqual(result["imported"], [])
         fetch.assert_not_called()
+
+    def test_sync_returns_unmapped_customer_names_for_daily_page(self):
+        report_date = main.date(2026, 11, 9)
+        email_item = {
+            "message_id": "<unmapped-customer@example.com>",
+            "subject": "Daily Report Tanggal 09 November 2026",
+            "attachments": [{
+                "filename": "daily-sales.xlsx",
+                "content": b"workbook",
+            }],
+        }
+        connection = SimpleNamespace(
+            execute=lambda *_args: SimpleNamespace(fetchall=lambda: []),
+        )
+        error = main.UnmappedCustomersError(
+            ["PLATINUM"],
+            "Operator tidak ditemukan untuk customer: PLATINUM.",
+        )
+
+        with TemporaryDirectory() as directory:
+            with (
+                patch.object(main, "require_admin"),
+                patch.object(main, "YAHOO_SYNC_ENABLED", True),
+                patch.object(main, "db", side_effect=lambda: nullcontext(connection)),
+                patch.object(main, "fetch_daily_sales_emails", return_value=[email_item]),
+                patch.object(main, "_claim_email_import", return_value="message-hash"),
+                patch.object(main, "_finish_email_import"),
+                patch.object(main, "INPUT_DIR", Path(directory)),
+                patch.object(
+                    main,
+                    "validate_email_daily_sales_workbook",
+                    return_value={
+                        "start_date": "2026-11-09",
+                        "end_date": "2026-11-09",
+                    },
+                ),
+                patch.object(main, "daily_report_date_from_subject", return_value=report_date),
+                patch.object(main, "daily_report_import_dates", return_value={report_date}),
+                patch.object(main, "import_excel", side_effect=error),
+                patch.object(main.logger, "exception"),
+            ):
+                result = main.sync_daily_sales_email(SimpleNamespace())
+
+        self.assertEqual(
+            result["failed"][0]["unmapped_customers"],
+            ["PLATINUM"],
+        )
 
     def test_validates_daily_sales_workbook_and_date_range(self):
         workbook = Workbook()

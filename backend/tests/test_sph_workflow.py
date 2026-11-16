@@ -34,6 +34,7 @@ class MemorySphDatabase:
             "customerName": "Customer A",
             "addressLine1": "",
             "addressLine2": "",
+            "templateKey": "standard",
             "proposalDate": date(2026, 11, 1),
             "volumeMin": 100.0,
             "volumeMax": 200.0,
@@ -45,6 +46,19 @@ class MemorySphDatabase:
             "dueDay": 20,
             "exchangeClause": False,
             "contractYears": 2,
+            "contractDuration": 2,
+            "contractDurationUnit": "year",
+            "durationDetails": "",
+            "attentionTo": "",
+            "supplyPattern": "",
+            "deliveryPoint": "",
+            "startDate": None,
+            "volumeDetails": "",
+            "priceDetails": "",
+            "paymentTerms": "",
+            "advantages": "",
+            "otherTerms": "",
+            "preparation": "",
             "reethauObligations": "",
             "customerObligations": "",
             "approvals": "[]",
@@ -88,11 +102,24 @@ class MemorySphDatabase:
             self.row["guarantee"] = parameters[7]
             self.row["dueDay"] = parameters[8]
             self.row["exchangeClause"] = parameters[9]
-            self.row["contractYears"] = parameters[10]
-            self.row["reethauObligations"] = parameters[11]
-            self.row["customerObligations"] = parameters[12]
-            self.row["version"] += parameters[13]
-            self.row["updatedAt"] = parameters[14]
+            self.row["contractDuration"] = parameters[10]
+            self.row["contractDurationUnit"] = parameters[11]
+            self.row["durationDetails"] = parameters[12]
+            self.row["attentionTo"] = parameters[13]
+            self.row["supplyPattern"] = parameters[14]
+            self.row["deliveryPoint"] = parameters[15]
+            self.row["startDate"] = parameters[16]
+            self.row["volumeDetails"] = parameters[17]
+            self.row["priceDetails"] = parameters[18]
+            self.row["paymentTerms"] = parameters[19]
+            self.row["advantages"] = parameters[20]
+            self.row["otherTerms"] = parameters[21]
+            self.row["preparation"] = parameters[22]
+            self.row["reethauObligations"] = parameters[23]
+            self.row["customerObligations"] = parameters[24]
+            self.row["templateKey"] = parameters[25]
+            self.row["version"] += parameters[26]
+            self.row["updatedAt"] = parameters[27]
             self.row["status"] = "draft"
             self.row["approvals"] = "[]"
             self.row["approvedAt"] = None
@@ -162,12 +189,14 @@ class SphWorkflowTests(unittest.TestCase):
             "topPercent": 90,
             "guarantee": "Cash Deposit",
             "dueDay": 20,
-            "contractYears": 2,
+            "contractDuration": 2,
+            "contractDurationUnit": "year",
             "exchangeClause": False,
         }
         validated = main._sph_validate_proposal(proposal)
         self.assertEqual(validated["proposal_number"], "SPH-2026-11-MKT-002")
         self.assertEqual(validated["price_usd"], 14.5)
+        self.assertEqual(validated["template_key"], "standard")
 
         proposal["proposalNumber"] = ""
         with self.assertRaises(main.HTTPException) as error:
@@ -217,6 +246,7 @@ class SphWorkflowTests(unittest.TestCase):
         proposal = {
             "proposalNumber": "SPH-2026-11-MKT-003",
             "customerName": "Customer A Revised",
+            "templateKey": "term_description",
             "addressLine1": "New address",
             "addressLine2": "",
             "proposalDate": "2026-11-06",
@@ -227,7 +257,19 @@ class SphWorkflowTests(unittest.TestCase):
             "guarantee": "Bank Guarantee",
             "dueDay": 25,
             "exchangeClause": False,
-            "contractYears": 3,
+            "contractDuration": 45,
+            "contractDurationUnit": "day",
+            "durationDetails": "Evaluasi supply setiap tahun.",
+            "attentionTo": "Bapak Setiadi",
+            "supplyPattern": "Pengiriman sesuai jadwal operasional.",
+            "deliveryPoint": "Lokasi pabrik customer.",
+            "startDate": "2026-12-01",
+            "volumeDetails": "10.000 SM3 per hari.",
+            "priceDetails": "Termasuk delivery CNG.",
+            "paymentTerms": "Pembayaran maksimal 14 hari setelah tagihan.",
+            "advantages": "Pasokan dan layanan monitoring.",
+            "otherTerms": "Evaluasi setiap tahun.",
+            "preparation": "30 hari setelah penawaran disetujui.",
             "reethauObligations": "New obligations",
             "customerObligations": "",
         }
@@ -243,8 +285,93 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertIsNone(updated["approvedAt"])
         self.assertIsNone(updated["sentDate"])
         self.assertEqual(updated["priceUsd"], 15)
+        self.assertEqual(updated["contractDuration"], 45)
+        self.assertEqual(updated["contractDurationUnit"], "day")
+        self.assertEqual(updated["durationDetails"], "Evaluasi supply setiap tahun.")
+        self.assertEqual(updated["attentionTo"], "Bapak Setiadi")
+        self.assertEqual(updated["supplyPattern"], "Pengiriman sesuai jadwal operasional.")
+        self.assertEqual(updated["deliveryPoint"], "Lokasi pabrik customer.")
+        self.assertEqual(updated["startDate"], "2026-12-01")
+        self.assertEqual(updated["volumeDetails"], "10.000 SM3 per hari.")
+        self.assertEqual(updated["paymentTerms"], "Pembayaran maksimal 14 hari setelah tagihan.")
+        self.assertEqual(updated["preparation"], "30 hari setelah penawaran disetujui.")
+        self.assertEqual(updated["templateKey"], "term_description")
         self.assertEqual(updated["reethauObligations"], "New obligations")
         self.assertIn("versi baru", self.database.logs[-1]["message"])
+
+    def test_proposal_validation_accepts_term_description_template_and_rejects_unknown(self):
+        proposal = {
+            "proposalNumber": "SPH-2026-11-MKT-002",
+            "customerName": "Customer A",
+            "proposalDate": "2026-11-06",
+            "volumeMin": 100,
+            "volumeMax": 200,
+            "priceUsd": 14.5,
+            "topPercent": 90,
+            "guarantee": "Cash Deposit",
+            "dueDay": 20,
+            "contractDuration": 45,
+            "contractDurationUnit": "day",
+            "durationDetails": "Evaluasi setiap tahun.",
+            "exchangeClause": False,
+            "templateKey": "term_description",
+        }
+        self.assertEqual(
+            main._sph_validate_proposal(proposal)["template_key"],
+            "term_description",
+        )
+        proposal["templateKey"] = "unknown"
+        with self.assertRaises(main.HTTPException) as error:
+            main._sph_validate_proposal(proposal)
+        self.assertEqual(error.exception.status_code, 400)
+
+    def test_term_checklist_accepts_structured_and_legacy_text_values(self):
+        structured = '[{"label":"Tunai","checked":true},{"label":"Transfer","checked":false}]'
+        self.assertEqual(
+            main._sph_parse_term_checklist(structured),
+            [
+                {"label": "Tunai", "checked": True},
+                {"label": "Transfer", "checked": False},
+            ],
+        )
+        self.assertEqual(
+            main._sph_parse_term_checklist("Maksimal 14 hari.\nDibayar melalui transfer."),
+            [
+                {"label": "Maksimal 14 hari.", "checked": True},
+                {"label": "Dibayar melalui transfer.", "checked": True},
+            ],
+        )
+        self.assertEqual(
+            main._sph_parse_term_checklist("Lainnya: Syarat tambahan."),
+            [{"label": "Syarat tambahan.", "checked": True}],
+        )
+
+    def test_proposal_validation_accepts_duration_in_days_and_enforces_unit_limits(self):
+        proposal = {
+            "proposalNumber": "SPH-2026-11-MKT-020",
+            "customerName": "Customer A",
+            "proposalDate": "2026-11-06",
+            "volumeMin": 100,
+            "volumeMax": 200,
+            "priceUsd": 14.5,
+            "dueDay": 20,
+            "contractDuration": 30,
+            "contractDurationUnit": "day",
+        }
+        validated = main._sph_validate_proposal(proposal)
+        self.assertEqual(validated["contract_duration_value"], 30)
+        self.assertEqual(validated["contract_duration_unit"], "day")
+
+        proposal["contractDuration"] = 5476
+        with self.assertRaises(main.HTTPException) as error:
+            main._sph_validate_proposal(proposal)
+        self.assertEqual(error.exception.status_code, 400)
+
+        proposal["contractDuration"] = 16
+        proposal["contractDurationUnit"] = "year"
+        with self.assertRaises(main.HTTPException) as error:
+            main._sph_validate_proposal(proposal)
+        self.assertEqual(error.exception.status_code, 400)
 
     def test_active_proposal_cannot_be_edited(self):
         self.database.user["sph_role"] = "sales"
@@ -263,6 +390,8 @@ class SphWorkflowTests(unittest.TestCase):
                     "guarantee": "Cash Deposit",
                     "dueDay": 20,
                     "contractYears": 2,
+                    "contractDuration": 45,
+                    "contractDurationUnit": "day",
                     "exchangeClause": False,
                 }),
             ))
@@ -330,8 +459,19 @@ class SphWorkflowTests(unittest.TestCase):
         request = SphRequest("commercial_head", {
             "proposalNumber": "SPH-2026-11-MKT-009",
             "customerName": "Preview Customer",
+            "templateKey": "term_description",
             "addressLine1": "Preview Street 10",
             "addressLine2": "",
+            "attentionTo": "Bapak Setiadi",
+            "supplyPattern": "Pasokan mengikuti jadwal operasional.",
+            "deliveryPoint": "Plant customer.",
+            "startDate": "2026-12-01",
+            "volumeDetails": "10.000 SM3 per hari.",
+            "priceDetails": "Harga belum termasuk pajak.",
+            "paymentTerms": "Maksimal 14 hari setelah tagihan.\nDibayar melalui transfer.",
+            "advantages": "Layanan pasokan CNG.\nFasilitas armada tersedia.",
+            "otherTerms": "Evaluasi dilakukan setiap tahun.\nLainnya: Syarat tambahan.",
+            "preparation": "30 hari setelah penawaran disetujui.",
             "proposalDate": "2026-11-13",
             "volumeMin": 8000,
             "volumeMax": 10000,
@@ -339,7 +479,8 @@ class SphWorkflowTests(unittest.TestCase):
             "topPercent": 90,
             "guarantee": "Cash Deposit",
             "dueDay": 20,
-            "contractYears": 2,
+            "contractDuration": 45,
+            "contractDurationUnit": "day",
             "exchangeClause": False,
             "reethauObligations": "Mengirim CNG.",
             "customerObligations": "Menyediakan area.",
@@ -353,6 +494,10 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertEqual(response.media_type, "application/pdf")
         self.assertIn("inline;", response.headers["content-disposition"])
         self.assertTrue(content.startswith(b"%PDF-"))
+        self.assertEqual(
+            main._sph_validate_proposal(request.payload)["template_key"],
+            "term_description",
+        )
         self.assertEqual(self.database.row, original_row)
         self.assertEqual(self.database.logs, original_logs)
 
@@ -377,12 +522,90 @@ class SphWorkflowTests(unittest.TestCase):
             "<br/>Kecamatan Cikarang Barat, Kabupaten Bekasi, Jawa Barat 17530",
             paragraph_texts,
         )
+        self.assertIn("Masa kontrak 2 (Dua) tahun.", paragraph_texts)
         self.assertIn("Approval Penawaran", paragraph_texts)
         self.assertIn("PT Green Pulse Dynamics", paragraph_texts)
         self.assertIn(
             "<u><b>Sahrul Asturrachman</b></u><br/><i>Commercial Head</i>",
             paragraph_texts,
         )
+
+    def test_term_description_pdf_uses_the_selected_templates_structure_and_data(self):
+        from reportlab.platypus import Paragraph
+
+        proposal = {
+            "number": "SPH-2026-11-MKT-010",
+            "templateKey": "term_description",
+            "customerName": "Preview Customer",
+            "addressLine1": "Preview Street 10",
+            "addressLine2": "",
+            "proposalDate": "2026-11-13",
+            "volumeMin": 8000,
+            "volumeMax": 10000,
+            "priceUsd": 15,
+            "topPercent": 90,
+            "guarantee": "Cash Deposit",
+            "dueDay": 20,
+            "exchangeClause": False,
+            "contractDuration": 30,
+            "contractDurationUnit": "day",
+            "durationDetails": "Evaluasi supply setiap tahun.",
+            "attentionTo": "Bapak Setiadi",
+            "supplyPattern": "Pasokan mengikuti jadwal operasional.",
+            "deliveryPoint": "Plant customer.",
+            "startDate": "2026-12-01",
+            "volumeDetails": "10.000 SM3 per hari.",
+            "priceDetails": "Harga belum termasuk pajak.",
+            "paymentTerms": "Maksimal 14 hari setelah tagihan.\nDibayar melalui transfer.",
+            "advantages": "Layanan pasokan CNG.\nFasilitas armada tersedia.",
+            "otherTerms": "Evaluasi dilakukan setiap tahun.\nLainnya: Syarat tambahan.",
+            "preparation": "30 hari setelah penawaran disetujui.",
+            "reethauObligations": "Mengirim CNG.",
+            "customerObligations": "Menyediakan area.",
+            "status": "draft",
+        }
+        paragraph_texts = []
+
+        def capture_paragraph(text, style=None, *args, **kwargs):
+            paragraph_texts.append(text)
+            return Paragraph(text, style, *args, **kwargs)
+
+        with patch("reportlab.platypus.Paragraph", side_effect=capture_paragraph):
+            response = main._sph_generate_proposal_pdf(proposal, inline=True)
+
+        async def read_response():
+            return b"".join([chunk async for chunk in response.body_iterator])
+
+        content = asyncio.run(read_response())
+        self.assertTrue(content.startswith(b"%PDF-"))
+        for expected in (
+            "TERM",
+            "DESKRIPSI",
+            "Penjual",
+            "Preview Customer",
+            "8.000–10.000 MMBTU per hari",
+            "USD 15.00 / MMBTU",
+            "30 hari.",
+            "Evaluasi supply setiap tahun.",
+            "Bapak Setiadi",
+            "Plant customer.",
+            "10.000 SM3 per hari.",
+            "Harga belum termasuk pajak.",
+            "Maksimal 14 hari setelah tagihan.",
+            "Dibayar melalui transfer.",
+            "Layanan pasokan CNG.",
+            "Fasilitas armada tersedia.",
+            "Evaluasi dilakukan setiap tahun.",
+            "Syarat tambahan.",
+            "30 hari setelah penawaran disetujui.",
+            "Approval Customer",
+            "Sahrul Astrurrachman",
+        ):
+            with self.subTest(expected=expected):
+                self.assertTrue(
+                    any(expected in text for text in paragraph_texts),
+                    f"{expected!r} was not rendered in the terms template",
+                )
 
     def test_sph_pdf_list_numbers_match_body_font_and_indentation(self):
         from reportlab.pdfbase.pdfmetrics import stringWidth
