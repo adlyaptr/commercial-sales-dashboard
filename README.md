@@ -27,7 +27,7 @@ Halaman ini tidak mengubah spreadsheet. Perubahan data dilakukan langsung di Goo
 
 Tabel Harian membaca rencana per customer dari tab `SO` pada spreadsheet Volume CNG 2026 (`SALES_ORDER_SHEET_ID` dan `SALES_ORDER_SHEET_GID`, default GID `694583576`). Sheet dibaca dari endpoint Google Visualization publik menggunakan nilai mentah agar pecahan angka tidak dibulatkan oleh format tampilan, lalu disegarkan setiap lima menit. Nama customer dicocokkan dengan master customer; nama dengan nilai SO yang belum cocok ditampilkan sebagai peringatan.
 
-Nilai SO dari sheet menjadi SO di tabel Harian. Actual non-zero yang sudah diimpor tetap digunakan. Pada halaman Harian, jika Actual suatu customer/tanggal belum tersedia (Actual 0), nilai SO customer/tanggal tersebut menjadi prognosa dan diberi penanda `P`. Pastikan sheet dapat dibaca secara publik agar backend dapat mengakses datanya.
+Nilai SO dari sheet menjadi SO di tabel Harian. Actual non-zero yang sudah diimpor tetap digunakan. Jika dalam satu tanggal belum ada Actual non-zero, nilai Actual 0 pada tanggal tersebut mengikuti SO sebagai prognosa dan diberi penanda `P`. Pastikan sheet dapat dibaca secara publik agar backend dapat mengakses datanya.
 
 Saat halaman Harian terbuka, data dashboard dan rentang tanggal diperbarui otomatis setiap sekitar lima menit (selama tab browser aktif), mengikuti cache sheet SO lima menit. Perubahan spreadsheet mungkin memerlukan waktu hingga satu siklus refresh untuk tampil.
 

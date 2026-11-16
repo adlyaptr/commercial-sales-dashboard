@@ -141,6 +141,7 @@ class OperatorSheetImportTests(unittest.TestCase):
             (5, 14, 500, 100),
             (6, 15, 600, 999),
             (7, 16, 700, None),
+            (8, 17, 800, None),
         ):
             sheet.cell(row_number, 2, datetime(2026, 11, day))
             sheet.cell(row_number, 3, target)
@@ -173,6 +174,10 @@ class OperatorSheetImportTests(unittest.TestCase):
             "so": 700.0,
             "actual": 0.0,
         })
+        self.assertEqual(database.sales[("2026-11-17", "platinum")], {
+            "so": 800.0,
+            "actual": 0.0,
+        })
         sales_rows = [
             {
                 "report_date": report_date,
@@ -200,20 +205,16 @@ class OperatorSheetImportTests(unittest.TestCase):
             }],
             {},
             main.date(2026, 11, 14),
-            main.date(2026, 11, 16),
-            per_customer_forecast=True,
+            main.date(2026, 11, 17),
         )
         by_customer_date = {
             (row["customer_key"], row["report_date"]): row
             for row in forecast_rows
         }
-        self.assertEqual(
-            by_customer_date[("platinum", "2026-11-16")]["actual"],
-            700.0,
-        )
-        self.assertTrue(
-            by_customer_date[("platinum", "2026-11-16")]["actual_is_forecast"]
-        )
+        self.assertEqual(by_customer_date[("platinum", "2026-11-16")]["actual"], 0)
+        self.assertFalse(by_customer_date[("platinum", "2026-11-16")]["actual_is_forecast"])
+        self.assertEqual(by_customer_date[("platinum", "2026-11-17")]["actual"], 800.0)
+        self.assertTrue(by_customer_date[("platinum", "2026-11-17")]["actual_is_forecast"])
 
     def test_selects_populated_duplicate_actual_column_and_skips_total_labels(self):
         workbook = operator_sheet_workbook()
