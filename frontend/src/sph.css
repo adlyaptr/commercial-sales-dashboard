@@ -349,7 +349,16 @@
   font: inherit;
 }
 
-.sph-dashboard { display: grid; gap: 18px; }
+.sph-dashboard {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+.sph-dashboard > .sph-panel,
+.sph-table-wrap { min-width: 0; }
+.sph-page-heading .sph-primary { white-space: nowrap; }
 .sph-list-heading { margin-bottom: 4px; }
 .sph-list-heading h2 { margin: 0; color: #234837; font-size: 15px; letter-spacing: .5px; }
 .sph-list-heading p { margin: 6px 0 0; color: #75857d; font-size: 12px; }
