@@ -14,7 +14,7 @@ WORKDIR /app
 
 COPY backend/requirements.txt backend/requirements.txt
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-liberation2 \
+    && apt-get install -y --no-install-recommends fonts-roboto-unhinted \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir -r backend/requirements.txt
 

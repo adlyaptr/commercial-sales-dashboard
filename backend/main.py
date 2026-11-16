@@ -2937,6 +2937,15 @@ def _sph_register_term_description_fonts():
             ),
         ),
         (
+            Path("/usr/share/fonts/truetype/roboto/unhinted"),
+            (
+                "RobotoCondensed-Regular.ttf",
+                "RobotoCondensed-Bold.ttf",
+                "RobotoCondensed-Italic.ttf",
+                "RobotoCondensed-BoldItalic.ttf",
+            ),
+        ),
+        (
             Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts",
             ("ARIALN.TTF", "ARIALNB.TTF", "ARIALNI.TTF", "ARIALNBI.TTF"),
         ),

@@ -17,7 +17,7 @@ SPH memakai tabel MySQL `sph_customers`, `sph_sequences`, `sph_proposals`, dan `
 
 Editor SPH menyediakan daftar ceklis kewajiban Reethau dan Customer. Opsi **Lainnya** membuka kolom esai untuk mencatat kewajiban tambahan; kewajiban yang dipilih dan catatan tambahan disimpan bersama draft dan ditampilkan pada PDF SPH.
 
-PDF Template Term / Deskripsi mengikuti ukuran Letter, posisi isi, lebar kolom, jarak baris, serta penekanan tebal dan miring dari contoh. Font narrow menggunakan Arial Narrow pada Windows dan Liberation Sans Narrow pada Linux agar hasil tetap konsisten di aplikasi lokal dan produksi.
+PDF Template Term / Deskripsi mengikuti ukuran Letter, posisi isi, lebar kolom, jarak baris, serta penekanan tebal dan miring dari contoh. Font narrow menggunakan Arial Narrow pada Windows dan Roboto Condensed pada Linux agar hasil tetap konsisten di aplikasi lokal dan produksi.
 
 ## Issue Management
 

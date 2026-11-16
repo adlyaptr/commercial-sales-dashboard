@@ -30,7 +30,7 @@ jobs:
       - name: Install PDF font
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fonts-liberation2
+          sudo apt-get install -y --no-install-recommends fonts-roboto-unhinted
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -s tests -v
 

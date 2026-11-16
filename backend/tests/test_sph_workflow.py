@@ -626,11 +626,13 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertIn(b"/MediaBox [ 0 0 612 792 ]", content)
         font_resources = re.findall(rb"/BaseFont /([^\s/]+)", content)
         self.assertTrue(any(
-            b"ArialNarrow" in name or b"LiberationSansNarrow" in name
+            b"ArialNarrow" in name
+            or b"LiberationSansNarrow" in name
+            or b"RobotoCondensed" in name
             for name in font_resources
         ))
         self.assertTrue(any(
-            b"Narrow-Bold" in name
+            b"Narrow-Bold" in name or b"RobotoCondensed-Bold" in name
             for name in font_resources
         ))
         for expected in (
