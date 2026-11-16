@@ -127,7 +127,7 @@ class MemoryCustomerMappings:
 
 
 class MemoryDashboard:
-    def __init__(self, actual_imported=False, sales_rows=None):
+    def __init__(self, actual_imported=True, sales_rows=None):
         self.actual_imported = actual_imported
         self.sales_rows = sales_rows or [
             {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU", "so": 100, "actual": 120, "id": 1, "source_file": "daily.xlsx", "manual_fob": False},
@@ -193,7 +193,11 @@ class MemoryMonthlySummary:
 
 
 class MemoryHomeSummary:
-    def __init__(self, sales_rows=None, actual_imported_dates=()):
+    def __init__(
+        self,
+        sales_rows=None,
+        actual_imported_dates=("2026-10-05", "2026-10-06", "2026-10-07"),
+    ):
         self.sales_rows = sales_rows or [
             {"report_date": date(2026, 10, 5), "customer_name": "SETU Customer", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 80},
             {"report_date": date(2026, 10, 6), "customer_name": "SETU Customer", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 90},
@@ -598,6 +602,40 @@ class DashboardApiTests(unittest.TestCase):
         self.assertEqual(forecast_customer["actual"], 0)
         self.assertFalse(forecast_customer["actual_is_forecast"])
 
+    def test_dashboard_forecasts_stale_actual_when_date_has_no_actual_import(self):
+        database = MemoryDashboard(
+            actual_imported=False,
+            sales_rows=[{
+                "customer_key": "pelangganforecast",
+                "customer_name": "Pelanggan Forecast",
+                "operator": "WUNUT",
+                "so": 500,
+                "actual": 120,
+                "id": 7,
+                "source_file": "planner.xlsx",
+                "manual_fob": False,
+            }],
+        )
+        sales_orders = {
+            "2026-10-14": [
+                {"customer": "Pelanggan Forecast", "so": 700},
+            ],
+        }
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "get_sales_order_data", return_value=sales_orders),
+        ):
+            result = main.dashboard(
+                FakeRequest(),
+                report_date="2026-10-14",
+                trend_period="monthly",
+            )
+
+        forecast_customer = result["operators"]["WUNUT"][0]
+        self.assertEqual(forecast_customer["so"], 500)
+        self.assertEqual(forecast_customer["actual"], 500)
+        self.assertTrue(forecast_customer["actual_is_forecast"])
+
     def test_dashboard_rejects_unknown_trend_period(self):
         with self.assertRaises(main.HTTPException) as invalid:
             main.dashboard(
@@ -692,20 +730,32 @@ class HomeSummaryTests(unittest.TestCase):
 
     def test_home_summary_preserves_zero_actual_from_import_and_forecasts_only_unimported_day(self):
         database = MemoryHomeSummary(
-            sales_rows=[{
-                "report_date": date(2026, 10, 9),
-                "customer_name": "SETU Customer",
-                "operator": "SETU",
-                "customer_key": "setu-a",
-                "so": 200,
-                "actual": 0,
-                "source_file": "daily-sales.xlsx",
-            }],
+            sales_rows=[
+                {
+                    "report_date": date(2026, 10, 9),
+                    "customer_name": "SETU Customer",
+                    "operator": "SETU",
+                    "customer_key": "setu-a",
+                    "so": 200,
+                    "actual": 0,
+                    "source_file": "daily-sales.xlsx",
+                },
+                {
+                    "report_date": date(2026, 10, 10),
+                    "customer_name": "KHT Customer",
+                    "operator": "KHT",
+                    "customer_key": "kht-a",
+                    "so": 150,
+                    "actual": 12,
+                    "source_file": "planner.xlsx",
+                },
+            ],
             actual_imported_dates=("2026-10-09",),
         )
         sales_orders = {
             "2026-10-09": [{"customer": "SETU Customer", "so": 900}],
             "2026-10-10": [{"customer": "KHT Customer", "so": 300}],
+            "2026-10-11": [{"customer": "KHT Customer", "so": 400}],
         }
         with (
             patch.object(main, "db", return_value=database),
@@ -713,11 +763,13 @@ class HomeSummaryTests(unittest.TestCase):
         ):
             result = main.home_summary(FakeRequest(), month="2026-10")
 
-        self.assertEqual(result["month_summary"]["so"], 500)
-        self.assertEqual(result["month_summary"]["actual"], 300)
+        self.assertEqual(result["month_summary"]["so"], 750)
+        self.assertEqual(result["month_summary"]["actual"], 550)
         self.assertEqual(result["days"][8]["so"], 200)
         self.assertEqual(result["days"][8]["actual"], 0)
-        self.assertEqual(result["days"][9]["actual"], 300)
+        self.assertEqual(result["days"][9]["so"], 150)
+        self.assertEqual(result["days"][9]["actual"], 150)
+        self.assertEqual(result["days"][10]["actual"], 400)
 
     def test_home_summary_rejects_invalid_month(self):
         with self.assertRaises(main.HTTPException) as invalid:

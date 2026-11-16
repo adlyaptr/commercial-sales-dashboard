@@ -884,6 +884,7 @@ def overlay_sales_order_forecast(
     end_date,
     actual_imported_dates=None,
     preserve_imported_so=False,
+    forecast_only_unimported_dates=False,
 ):
     actual_imported_dates = actual_imported_dates or set()
     customers_by_key = {}
@@ -942,10 +943,19 @@ def overlay_sales_order_forecast(
                     or existing["source_file"] == "manual-fob"
                 ):
                     existing["so"] = order["so"]
+                can_forecast = report_date not in actual_imported_dates and (
+                    forecast_only_unimported_dates
+                    or (
+                        float(existing.get("actual") or 0) == 0
+                        and report_date not in dates_with_nonzero_actual
+                    )
+                )
                 if (
-                    float(existing.get("actual") or 0) == 0
-                    and report_date not in actual_imported_dates
-                    and report_date not in dates_with_nonzero_actual
+                    can_forecast
+                    and not (
+                        forecast_only_unimported_dates
+                        and existing.get("manual_fob")
+                    )
                     and order["so"] > 0
                 ):
                     forecast_so = (
@@ -972,10 +982,18 @@ def overlay_sales_order_forecast(
             }
 
     for row in enriched_by_key.values():
+        can_forecast = row["report_date"] not in actual_imported_dates and (
+            forecast_only_unimported_dates
+            or (
+                float(row.get("actual") or 0) == 0
+                and row["report_date"] not in dates_with_nonzero_actual
+            )
+        )
         if (
-            float(row.get("actual") or 0) == 0
-            and row["report_date"] not in actual_imported_dates
-            and row["report_date"] not in dates_with_nonzero_actual
+            can_forecast
+            and not (
+                forecast_only_unimported_dates and row.get("manual_fob")
+            )
             and float(row.get("so") or 0) > 0
         ):
             row["actual"] = float(row["so"])
@@ -3381,7 +3399,7 @@ def daily_report_import_dates(report_date, start_date, end_date):
 
 @app.post("/api/email/daily-sales/sync")
 def sync_daily_sales_email(request: Request):
-    require_admin(request)
+    require_login(request)
     if not YAHOO_SYNC_ENABLED:
         return {
             "enabled": False,
@@ -3759,13 +3777,6 @@ def home_summary(request: Request, month: str):
         else str(row["report_date"])
         for row in actual_import_rows
     }
-    actual_imported_dates.update(
-        row["report_date"].isoformat()
-        if isinstance(row["report_date"], date)
-        else str(row["report_date"])
-        for row in rows
-        if float(row["actual"] or 0) != 0
-    )
     rows, _ = overlay_sales_order_forecast(
         rows,
         customer_rows,
@@ -3774,6 +3785,7 @@ def home_summary(request: Request, month: str):
         month_end,
         actual_imported_dates=actual_imported_dates,
         preserve_imported_so=True,
+        forecast_only_unimported_dates=True,
     )
 
     def empty_totals():
@@ -5652,11 +5664,6 @@ def dashboard(
             "SELECT 1 FROM daily_actual_imports WHERE report_date=%s",
             (report_date,),
         ).fetchone()
-        if actual_imported is None:
-            actual_imported = any(
-                float(row["actual"] or 0) != 0 and not row["manual_fob"]
-                for row in rows
-            )
         customer_rows = con.execute(
             "SELECT customer_key, customer_name, operator FROM customers"
         ).fetchall()
@@ -5668,6 +5675,7 @@ def dashboard(
             selected_date,
             actual_imported_dates={report_date} if actual_imported else set(),
             preserve_imported_so=True,
+            forecast_only_unimported_dates=True,
         )
         operator_data = {op: [] for op in (*OPERATORS, "OFF")}
         operator_totals = {

@@ -199,7 +199,7 @@ class SalesOrderForecastTests(unittest.TestCase):
             "customer_name": "PLATINUM",
             "operator": "WUNUT",
             "so": 4020000,
-            "actual": 0,
+            "actual": 120,
             "source_file": "planner.xlsx",
         }]
         customers = [
@@ -229,6 +229,7 @@ class SalesOrderForecastTests(unittest.TestCase):
             date(2026, 11, 17),
             actual_imported_dates={"2026-11-15"},
             preserve_imported_so=True,
+            forecast_only_unimported_dates=True,
         )
         by_customer_date = {
             (row["customer_key"], row["report_date"]): row

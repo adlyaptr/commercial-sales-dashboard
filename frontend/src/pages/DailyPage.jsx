@@ -31,6 +31,7 @@ export default function DailyPage() {
         refreshDashboard,
         forecastRefreshKey,
         canEdit,
+        canSyncDailySales,
     } = useOutletContext();
     const [file, setFile] = useState(null);
     const [fileInputKey, setFileInputKey] = useState(0);
@@ -72,7 +73,7 @@ export default function DailyPage() {
     }, [refreshDashboard]);
 
     useEffect(() => {
-        if (!canEdit) return undefined;
+        if (!canSyncDailySales) return undefined;
 
         let active = true;
         let syncInFlight = false;
@@ -149,7 +150,7 @@ export default function DailyPage() {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             window.clearInterval(timer);
         };
-    }, [canEdit]);
+    }, [canSyncDailySales]);
 
     useEffect(() => {
         const reportDate = dashboard?.report_date;

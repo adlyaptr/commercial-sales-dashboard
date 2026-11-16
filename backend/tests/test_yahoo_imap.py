@@ -367,11 +367,12 @@ class YahooDailySalesSyncTests(unittest.TestCase):
     def test_disabled_sync_does_not_connect_to_mailbox(self):
         request = SimpleNamespace()
         with (
-            patch.object(main, "require_admin"),
+            patch.object(main, "require_login") as require_login,
             patch.object(main, "YAHOO_SYNC_ENABLED", False),
             patch.object(main, "fetch_daily_sales_emails") as fetch,
         ):
             result = main.sync_daily_sales_email(request)
+        require_login.assert_called_once_with(request)
 
         self.assertFalse(result["enabled"])
         self.assertEqual(result["imported"], [])
