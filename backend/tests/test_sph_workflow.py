@@ -261,6 +261,7 @@ class SphWorkflowTests(unittest.TestCase):
             "contractDurationUnit": "day",
             "durationDetails": "Evaluasi supply setiap tahun.",
             "attentionTo": "Bapak Setiadi",
+            "motherStation": "Wunut - Sidoarjo, Jawa Timur",
             "supplyPattern": "Pengiriman sesuai jadwal operasional.",
             "deliveryPoint": "Lokasi pabrik customer.",
             "startDate": "2026-12-01",
@@ -289,6 +290,7 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertEqual(updated["contractDurationUnit"], "day")
         self.assertEqual(updated["durationDetails"], "Evaluasi supply setiap tahun.")
         self.assertEqual(updated["attentionTo"], "Bapak Setiadi")
+        self.assertEqual(updated["motherStation"], "Wunut - Sidoarjo, Jawa Timur")
         self.assertEqual(updated["supplyPattern"], "Pengiriman sesuai jadwal operasional.")
         self.assertEqual(updated["deliveryPoint"], "Lokasi pabrik customer.")
         self.assertEqual(updated["startDate"], "2026-12-01")
@@ -315,11 +317,11 @@ class SphWorkflowTests(unittest.TestCase):
             "durationDetails": "Evaluasi setiap tahun.",
             "exchangeClause": False,
             "templateKey": "term_description",
+            "motherStation": "Wunut - Sidoarjo, Jawa Timur",
         }
-        self.assertEqual(
-            main._sph_validate_proposal(proposal)["template_key"],
-            "term_description",
-        )
+        validated = main._sph_validate_proposal(proposal)
+        self.assertEqual(validated["template_key"], "term_description")
+        self.assertEqual(validated["mother_station"], "Wunut - Sidoarjo, Jawa Timur")
         proposal["templateKey"] = "unknown"
         with self.assertRaises(main.HTTPException) as error:
             main._sph_validate_proposal(proposal)
@@ -463,6 +465,7 @@ class SphWorkflowTests(unittest.TestCase):
             "addressLine1": "Preview Street 10",
             "addressLine2": "",
             "attentionTo": "Bapak Setiadi",
+            "motherStation": "Wunut - Sidoarjo, Jawa Timur",
             "supplyPattern": "Pasokan mengikuti jadwal operasional.",
             "deliveryPoint": "Plant customer.",
             "startDate": "2026-12-01",
@@ -551,6 +554,7 @@ class SphWorkflowTests(unittest.TestCase):
             "contractDurationUnit": "day",
             "durationDetails": "Evaluasi supply setiap tahun.",
             "attentionTo": "Bapak Setiadi",
+            "motherStation": "Wunut - Sidoarjo, Jawa Timur",
             "supplyPattern": "Pasokan mengikuti jadwal operasional.",
             "deliveryPoint": "Plant customer.",
             "startDate": "2026-12-01",
@@ -583,8 +587,8 @@ class SphWorkflowTests(unittest.TestCase):
             "DESKRIPSI",
             "Penjual",
             "Preview Customer",
-            "8.000–10.000 MMBTU per hari",
-            "USD 15.00 / MMBTU",
+            "Wunut - Sidoarjo, Jawa Timur",
+            "USD 15,00 / MMBTU",
             "30 hari.",
             "Evaluasi supply setiap tahun.",
             "Bapak Setiadi",
@@ -606,6 +610,11 @@ class SphWorkflowTests(unittest.TestCase):
                     any(expected in text for text in paragraph_texts),
                     f"{expected!r} was not rendered in the terms template",
                 )
+        self.assertFalse(any("TOP" in text for text in paragraph_texts))
+        self.assertFalse(any(
+            "Klausul tukar-menukar tidak berlaku" in text
+            for text in paragraph_texts
+        ))
 
     def test_sph_pdf_list_numbers_match_body_font_and_indentation(self):
         from reportlab.pdfbase.pdfmetrics import stringWidth

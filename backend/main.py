@@ -1961,6 +1961,33 @@ def _sph_text(value, label, maximum=10000, required=False):
     return text
 
 
+def _sph_pack_supply_pattern(pattern, mother_station):
+    if not mother_station:
+        return pattern
+    return json.dumps(
+        {
+            "format": "rce_supply_details_v1",
+            "motherStation": mother_station,
+            "pattern": pattern,
+        },
+        ensure_ascii=False,
+    )
+
+
+def _sph_unpack_supply_pattern(value):
+    raw = str(value or "")
+    try:
+        packed = json.loads(raw)
+    except json.JSONDecodeError:
+        return "", raw
+    if (
+        isinstance(packed, dict)
+        and packed.get("format") == "rce_supply_details_v1"
+    ):
+        return str(packed.get("motherStation") or ""), str(packed.get("pattern") or "")
+    return "", raw
+
+
 def _sph_parse_term_checklist(value):
     raw = str(value or "").strip()
     if not raw:
@@ -2059,6 +2086,11 @@ def _sph_validate_proposal(payload):
     template_key = payload.get("templateKey", "standard")
     if not isinstance(template_key, str) or template_key not in SPH_TEMPLATES:
         raise HTTPException(status_code=400, detail="Template surat tidak valid.")
+    mother_station = _sph_text(
+        payload.get("motherStation"),
+        "Lokasi Mother Station",
+        500,
+    )
     start_date_value = payload.get("startDate")
     try:
         start_date = (
@@ -2087,6 +2119,7 @@ def _sph_validate_proposal(payload):
         "contract_duration_unit": duration_unit,
         "duration_details": _sph_text(payload.get("durationDetails"), "Detail jangka waktu", 5000),
         "attention_to": _sph_text(payload.get("attentionTo"), "Perhatian", 255),
+        "mother_station": mother_station,
         "supply_pattern": _sph_text(payload.get("supplyPattern"), "Pola supply", 2000),
         "delivery_point": _sph_text(payload.get("deliveryPoint"), "Titik penyerahan", 2000),
         "start_date": start_date,
@@ -2135,6 +2168,9 @@ def _sph_proposal_json(row):
     if not row:
         return None
     result = dict(row)
+    result["motherStation"], result["supplyPattern"] = _sph_unpack_supply_pattern(
+        result.get("supplyPattern")
+    )
     if result["status"] == "pjbg":
         result["status"] = "customer_approved"
     result["id"] = int(result["id"])
@@ -2260,7 +2296,9 @@ async def sph_create_proposal(request: Request):
                     proposal["top_percent"], proposal["guarantee"], proposal["due_day"],
                     proposal["exchange_clause"], proposal["contract_duration_value"],
                     proposal["contract_duration_unit"], proposal["duration_details"],
-                    proposal["attention_to"], proposal["supply_pattern"],
+                    proposal["attention_to"], _sph_pack_supply_pattern(
+                        proposal["supply_pattern"], proposal["mother_station"]
+                    ),
                     proposal["delivery_point"], proposal["start_date"],
                     proposal["volume_details"], proposal["price_details"],
                     proposal["payment_terms"], proposal["advantages"],
@@ -2323,7 +2361,9 @@ async def sph_update_proposal(proposal_id: int, request: Request):
                     proposal["top_percent"], proposal["guarantee"], proposal["due_day"],
                     proposal["exchange_clause"], proposal["contract_duration_value"],
                     proposal["contract_duration_unit"], proposal["duration_details"],
-                    proposal["attention_to"], proposal["supply_pattern"],
+                    proposal["attention_to"], _sph_pack_supply_pattern(
+                        proposal["supply_pattern"], proposal["mother_station"]
+                    ),
                     proposal["delivery_point"], proposal["start_date"],
                     proposal["volume_details"], proposal["price_details"],
                     proposal["payment_terms"], proposal["advantages"],
@@ -2945,9 +2985,8 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         "MMBTU per hari"
     )
     if proposal.get("volumeDetails"):
-        volume += f"\n{proposal['volumeDetails']}"
-    price = f"USD {proposal['priceUsd']:.2f} / MMBTU"
-    price += f"; TOP {proposal['topPercent']:g}% dari volume minimum."
+        volume = proposal["volumeDetails"]
+    price = f"USD {proposal['priceUsd']:.2f}".replace(".", ",") + " / MMBTU"
     if proposal.get("priceDetails"):
         price += f"\n{proposal['priceDetails']}"
     payment_fallback = (
@@ -2960,7 +2999,8 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         else "Klausul tukar-menukar tidak berlaku."
     )
     other_terms = _sph_parse_term_checklist(proposal.get("otherTerms"))
-    other_terms.append({"label": exchange_clause, "checked": True})
+    if proposal.get("exchangeClause"):
+        other_terms.append({"label": exchange_clause, "checked": True})
     duration_description = f"{_sph_contract_duration_label(proposal)}."
     if proposal.get("durationDetails"):
         duration_description += f"\n{proposal['durationDetails']}"
@@ -3059,8 +3099,15 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         Spacer(1, 2 * mm),
         paragraph(
             "Kami PT Reethau Cipta Energi merupakan perusahaan yang bergerak di "
-            "bidang penyaluran Compressed Natural Gas (CNG). Dengan ini kami "
-            "bermaksud menyampaikan penawaran harga CNG dengan kondisi sebagai "
+            "bidang penyaluran Compressed Natural Gas (CNG)"
+            + (
+                f" yang memiliki mother station berlokasi di "
+                f"{safe(proposal['motherStation'])}"
+                if proposal.get("motherStation")
+                else ""
+            )
+            + f", untuk supply di plant {safe(proposal['customerName'])}, "
+            "bermaksud memberikan penawaran harga CNG dengan kondisi sebagai "
             "berikut:",
             "SphTermsIntro",
         ),
@@ -3070,15 +3117,16 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         continuation_table,
         Spacer(1, 5 * mm),
         paragraph(
-            "Kami berharap surat penawaran ini mendapat tanggapan yang baik. "
-            "Jika berkenan, mohon menyampaikan surat minat dan persetujuan atas "
-            "rincian penawaran tersebut.",
+            f"Besar harapan kami bahwa surat penawaran ini mendapat respon yang "
+            f"baik dari {safe(proposal['customerName'])}, dengan mengirimkan "
+            "surat minat dan persetujuan atas perincian penawaran tersebut di atas.",
             "SphTermsIntro",
         ),
         Spacer(1, 3 * mm),
         paragraph(
-            "Demikian penawaran ini kami sampaikan. Atas perhatian dan kerja sama "
-            "Anda, kami ucapkan terima kasih.",
+            "Demikian surat penawaran harga Compressed Natural Gas (CNG) ini yang "
+            "dapat kami sampaikan. Atas perhatian dan kerja sama Anda, kami "
+            "ucapkan terima kasih.",
             "SphTermsIntro",
         ),
         Spacer(1, 8 * mm),
@@ -3177,6 +3225,7 @@ async def sph_proposal_pdf_preview(request: Request):
         "addressLine1": validated["address_line1"],
         "addressLine2": validated["address_line2"],
         "attentionTo": validated["attention_to"],
+        "motherStation": validated["mother_station"],
         "supplyPattern": validated["supply_pattern"],
         "deliveryPoint": validated["delivery_point"],
         "startDate": validated["start_date"].isoformat() if validated["start_date"] else None,

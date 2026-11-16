@@ -165,6 +165,7 @@ function blankProposal() {
         contractDurationUnit: 'year',
         durationDetails: '',
         attentionTo: '',
+        motherStation: '',
         supplyPattern: '',
         deliveryPoint: '',
         startDate: '',
@@ -207,6 +208,7 @@ function formFromProposal(proposal) {
         contractDurationUnit: proposal.contractDurationUnit || 'year',
         durationDetails: proposal.durationDetails || '',
         attentionTo: proposal.attentionTo || '',
+        motherStation: proposal.motherStation || '',
         supplyPattern: proposal.supplyPattern || '',
         deliveryPoint: proposal.deliveryPoint || '',
         startDate: proposal.startDate || '',
@@ -263,6 +265,7 @@ function SphPaperPreview({ form }) {
         contractDurationUnit: form.contractDurationUnit,
         durationDetails: form.durationDetails,
         attentionTo: form.attentionTo,
+        motherStation: form.motherStation,
         supplyPattern: form.supplyPattern,
         deliveryPoint: form.deliveryPoint,
         startDate: form.startDate,
@@ -930,7 +933,9 @@ export default function SphPage({ user, onLogout }) {
                                         <label className="sph-field"><span>Template surat</span><select name="templateKey" value={form.templateKey} onChange={updateField}><option value="standard">Template Standar</option><option value="term_description">Template Term / Deskripsi (PDF contoh)</option></select></label>
                                         <TextField label={isTermTemplate ? 'Pembeli / Kepada Yth *' : 'Nama pelanggan *'} name="customerName" value={form.customerName} onChange={updateField} required maxLength={255} />
                                         <TextField label="Tanggal penawaran *" name="proposalDate" type="date" value={form.proposalDate} onChange={updateField} required />
-                                        <TextField label={isTermTemplate ? 'Alamat penerima' : 'Alamat'} name="address" value={form.address} onChange={updateField} maxLength={2000} placeholder="Jalan Akses Tol Cibitung No.82, Gandasari, Kecamatan Cikarang Barat, Kabupaten Bekasi, Jawa Barat 17530" />
+                                        {isTermTemplate
+                                            ? <TextAreaField label="Alamat penerima" name="address" rows={3} value={form.address} onChange={updateField} maxLength={2000} placeholder="Nama jalan, kota, dan provinsi" />
+                                            : <TextField label="Alamat" name="address" value={form.address} onChange={updateField} maxLength={2000} placeholder="Jalan Akses Tol Cibitung No.82, Gandasari, Kecamatan Cikarang Barat, Kabupaten Bekasi, Jawa Barat 17530" />}
                                         {isTermTemplate && (
                                             <TextField label="Perhatian (Up)" name="attentionTo" value={form.attentionTo} onChange={updateField} maxLength={255} placeholder="Nama penerima surat" />
                                         )}
@@ -939,22 +944,26 @@ export default function SphPage({ user, onLogout }) {
                                 <div className="sph-form-section">
                                     <h3>{isTermTemplate ? 'Volume dan Harga CNG' : 'Volume dan harga'}</h3>
                                     <div className="sph-form-grid">
-                                        <TextField label="Volume minimum (MMBTU/hari) *" name="volumeMin" type="number" min="0.01" step="0.01" value={form.volumeMin} onChange={updateField} required />
-                                        <TextField label="Volume maksimum (MMBTU/hari) *" name="volumeMax" type="number" min="0.01" step="0.01" value={form.volumeMax} onChange={updateField} required />
+                                        <TextField label={isTermTemplate ? 'Volume minimum internal (MMBTU/hari) *' : 'Volume minimum (MMBTU/hari) *'} name="volumeMin" type="number" min="0.01" step="0.01" value={form.volumeMin} onChange={updateField} required />
+                                        <TextField label={isTermTemplate ? 'Volume maksimum internal (MMBTU/hari) *' : 'Volume maksimum (MMBTU/hari) *'} name="volumeMax" type="number" min="0.01" step="0.01" value={form.volumeMax} onChange={updateField} required />
                                         <TextField label="Harga (USD/MMBTU) *" name="priceUsd" type="number" min="0.01" step="0.01" value={form.priceUsd} onChange={updateField} required />
-                                        <TextField label="Take-or-pay (%)" name="topPercent" type="number" min="0" max="100" step="0.01" value={form.topPercent} onChange={updateField} required />
+                                        {!isTermTemplate && <TextField label="Take-or-pay (%)" name="topPercent" type="number" min="0" max="100" step="0.01" value={form.topPercent} onChange={updateField} required />}
                                     </div>
                                     <p className="sph-form-hint">
                                         {isTermTemplate
-                                            ? 'Produk dan penjual pada PDF tetap: CNG dan PT Reethau Cipta Energi.'
+                                            ? 'PDF memakai Rincian Volume dan Rincian Harga di bawah; angka volume minimum/maksimum tetap disimpan untuk data proposal. Produk dan penjual tetap.'
                                             : 'Semua penawaran memerlukan persetujuan Commercial Head.'}
                                     </p>
                                 </div>
                                 <div className="sph-form-section">
                                     <h3>Ketentuan kontrak</h3>
                                     <div className="sph-form-grid">
-                                        <label className="sph-field"><span>Jaminan</span><select name="guarantee" value={form.guarantee} onChange={updateField}><option>Cash Deposit</option><option>Bank Guarantee</option><option>Parent Company Guarantee</option><option>N/A</option></select></label>
-                                        <TextField label="Tanggal pembayaran setiap bulan" name="dueDay" type="number" min="1" max="28" value={form.dueDay} onChange={updateField} required />
+                                        {!isTermTemplate && (
+                                            <>
+                                                <label className="sph-field"><span>Jaminan</span><select name="guarantee" value={form.guarantee} onChange={updateField}><option>Cash Deposit</option><option>Bank Guarantee</option><option>Parent Company Guarantee</option><option>N/A</option></select></label>
+                                                <TextField label="Tanggal pembayaran setiap bulan" name="dueDay" type="number" min="1" max="28" value={form.dueDay} onChange={updateField} required />
+                                            </>
+                                        )}
                                         <label className="sph-field sph-duration-control">
                                             <span>Jangka waktu</span>
                                             <div>
@@ -987,12 +996,13 @@ export default function SphPage({ user, onLogout }) {
                                     <div className="sph-form-section">
                                         <h3>Term / Deskripsi pada PDF</h3>
                                         <div className="sph-form-grid sph-form-grid-single">
+                                            <TextField label="Lokasi Mother Station" name="motherStation" value={form.motherStation} onChange={updateField} maxLength={500} placeholder="Contoh: Wunut - Sidoarjo, Jawa Timur" />
                                             <TextAreaField label="Pola Supply" name="supplyPattern" value={form.supplyPattern} onChange={updateField} maxLength={2000} placeholder="Cara dan pola pasokan CNG" />
                                             <TextAreaField label="Titik Penyerahan" name="deliveryPoint" value={form.deliveryPoint} onChange={updateField} maxLength={2000} placeholder="Lokasi penyerahan gas" />
                                             <TextField label="Tanggal Dimulai" name="startDate" type="date" value={form.startDate} onChange={updateField} />
                                             <TextAreaField label="Rincian Volume (lokasi / periode / satuan)" name="volumeDetails" value={form.volumeDetails} onChange={updateField} maxLength={5000} placeholder="Lokasi, jumlah, satuan, atau periode pasokan" />
                                             <TextAreaField label="Evaluasi / Ketentuan Jangka Waktu" name="durationDetails" value={form.durationDetails} onChange={updateField} maxLength={5000} placeholder="Ketentuan evaluasi selama jangka waktu kontrak" />
-                                            <TextAreaField label="Rincian Harga (komponen / pajak)" name="priceDetails" value={form.priceDetails} onChange={updateField} maxLength={5000} placeholder="Komponen yang termasuk atau belum termasuk dalam harga" />
+                                            <TextAreaField label="Rincian Harga (terbilang / komponen / pajak)" name="priceDetails" value={form.priceDetails} onChange={updateField} maxLength={5000} placeholder="Contoh: harga terbilang, fasilitas yang termasuk, serta pajak yang belum termasuk" />
                                             <ObligationChecklist
                                                 title="Pembayaran"
                                                 value={form.paymentTerms}
