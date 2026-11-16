@@ -3999,7 +3999,9 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
     with db() as con:
         rows = con.execute(
             """
-            SELECT s.report_date,c.customer_name,c.operator,s.customer_key,s.so,s.actual
+            SELECT s.report_date,c.customer_name,c.operator,s.customer_key,
+                   s.so,s.actual,s.source_file,
+                   c.customer_key LIKE 'manualfob-%%' AS manual_fob
             FROM sales s
             JOIN customers c ON c.customer_key=s.customer_key
             WHERE s.report_date BETWEEN %s AND %s
@@ -4007,10 +4009,35 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             """,
             (start.isoformat(), end.isoformat()),
         ).fetchall()
+        actual_import_rows = con.execute(
+            "SELECT report_date FROM daily_actual_imports "
+            "WHERE report_date BETWEEN %s AND %s",
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
+        customer_rows = con.execute(
+            "SELECT customer_key,customer_name,operator FROM customers"
+        ).fetchall()
         target_rows = con.execute(
             "SELECT month_start,so FROM monthly_so_targets WHERE month_start BETWEEN %s AND %s",
             (first_month.isoformat(), last_month.isoformat()),
         ).fetchall()
+
+    actual_imported_dates = {
+        row["report_date"].isoformat()
+        if isinstance(row["report_date"], date)
+        else str(row["report_date"])
+        for row in actual_import_rows
+    }
+    rows, _ = overlay_sales_order_forecast(
+        rows,
+        customer_rows,
+        get_sales_order_data(),
+        start,
+        end,
+        actual_imported_dates=actual_imported_dates,
+        preserve_imported_so=True,
+        forecast_only_unimported_dates=True,
+    )
 
     monthly_targets = {
         str(row["month_start"])[:7]: float(row["so"] or 0)

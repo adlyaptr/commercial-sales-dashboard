@@ -236,6 +236,29 @@ class MemoryHomeSummary:
 
 
 class MemoryHomeSummaryRange:
+    def __init__(self, sales_rows=None, actual_imported_dates=None):
+        self.sales_rows = sales_rows or [
+            {"report_date": date(2026, 8, 5), "customer_name": "Customer Contoh", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 80, "source_file": "daily.xlsx"},
+            {"report_date": date(2026, 10, 5), "customer_name": "Customer Contoh", "operator": "SETU", "customer_key": "setu-a", "so": 200, "actual": 180, "source_file": "daily.xlsx"},
+            {"report_date": date(2026, 10, 6), "customer_name": "Customer Belum Dipetakan", "operator": "KHT", "customer_key": "kht-a", "so": 50, "actual": 40, "source_file": "daily.xlsx"},
+            {"report_date": date(2026, 10, 7), "customer_name": "KTN", "operator": "KHT", "customer_key": "ktn", "so": 0, "actual": 10, "source_file": "daily.xlsx"},
+            {"report_date": date(2026, 10, 8), "customer_name": "Blora Customer", "operator": "BLORA", "customer_key": "blora-a", "so": 0, "actual": 20, "source_file": "daily.xlsx"},
+            {"report_date": date(2026, 10, 9), "customer_name": "Wunut Customer", "operator": "WUNUT", "customer_key": "wunut-a", "so": 0, "actual": 30, "source_file": "daily.xlsx"},
+        ]
+        if actual_imported_dates is None:
+            actual_imported_dates = (
+                "2026-08-05",
+                "2026-10-05",
+                "2026-10-06",
+                "2026-10-07",
+                "2026-10-08",
+                "2026-10-09",
+            )
+        self.actual_imported_dates = {
+            date.fromisoformat(value) if isinstance(value, str) else value
+            for value in actual_imported_dates
+        }
+
     def __enter__(self):
         return self
 
@@ -243,14 +266,20 @@ class MemoryHomeSummaryRange:
         return False
 
     def execute(self, statement, parameters=None):
-        if "SELECT s.report_date,c.customer_name,c.operator,s.customer_key,s.so,s.actual" in statement:
+        if "FROM sales s" in statement and "WHERE s.report_date BETWEEN" in statement:
+            return SimpleNamespace(fetchall=lambda: self.sales_rows)
+        if statement.startswith("SELECT report_date FROM daily_actual_imports"):
             return SimpleNamespace(fetchall=lambda: [
-                {"report_date": date(2026, 8, 5), "customer_name": "Customer Contoh", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 80},
-                {"report_date": date(2026, 10, 5), "customer_name": "Customer Contoh", "operator": "SETU", "customer_key": "setu-a", "so": 200, "actual": 180},
-                {"report_date": date(2026, 10, 6), "customer_name": "Customer Belum Dipetakan", "operator": "KHT", "customer_key": "kht-a", "so": 50, "actual": 40},
-                {"report_date": date(2026, 10, 7), "customer_name": "KTN", "operator": "KHT", "customer_key": "ktn", "so": 0, "actual": 10},
-                {"report_date": date(2026, 10, 8), "customer_name": "Blora Customer", "operator": "BLORA", "customer_key": "blora-a", "so": 0, "actual": 20},
-                {"report_date": date(2026, 10, 9), "customer_name": "Wunut Customer", "operator": "WUNUT", "customer_key": "wunut-a", "so": 0, "actual": 30},
+                {"report_date": report_date}
+                for report_date in self.actual_imported_dates
+            ])
+        if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
+            return SimpleNamespace(fetchall=lambda: [
+                {"customer_key": "setu-a", "customer_name": "SETU Customer", "operator": "SETU"},
+                {"customer_key": "kht-a", "customer_name": "KHT Customer", "operator": "KHT"},
+                {"customer_key": "ktn", "customer_name": "KTN", "operator": "KHT"},
+                {"customer_key": "blora-a", "customer_name": "Blora Customer", "operator": "BLORA"},
+                {"customer_key": "wunut-a", "customer_name": "Wunut Customer", "operator": "WUNUT"},
             ])
         if statement.startswith("SELECT month_start,so FROM monthly_so_targets"):
             return SimpleNamespace(fetchall=lambda: [
@@ -661,7 +690,7 @@ class HomeSummaryTests(unittest.TestCase):
     def test_home_summary_range_uses_imported_actuals_for_regional_volumes(self):
         with (
             patch.object(main, "db", return_value=MemoryHomeSummaryRange()),
-            patch.object(main, "get_sales_order_data") as get_sales_order_data,
+            patch.object(main, "get_sales_order_data", return_value={}) as get_sales_order_data,
         ):
             result = main.home_summary_range(
                 FakeRequest(),
@@ -686,7 +715,52 @@ class HomeSummaryTests(unittest.TestCase):
             - sum(row["actual_sm3"] for row in result["regional_volumes"]),
             0,
         )
-        get_sales_order_data.assert_not_called()
+        get_sales_order_data.assert_called_once()
+
+    def test_home_summary_range_forecasts_unimported_actuals_only(self):
+        database = MemoryHomeSummaryRange(
+            sales_rows=[
+                {
+                    "report_date": date(2026, 10, 5),
+                    "customer_name": "SETU Customer",
+                    "operator": "SETU",
+                    "customer_key": "setu-a",
+                    "so": 200,
+                    "actual": 100,
+                    "source_file": "daily.xlsx",
+                    "manual_fob": False,
+                },
+                {
+                    "report_date": date(2026, 10, 6),
+                    "customer_name": "KHT Customer",
+                    "operator": "KHT",
+                    "customer_key": "kht-a",
+                    "so": 100,
+                    "actual": 40,
+                    "manual_fob": False,
+                },
+            ],
+            actual_imported_dates=("2026-10-05",),
+        )
+        sales_orders = {
+            "2026-10-05": [{"customer": "SETU Customer", "so": 900}],
+            "2026-10-06": [{"customer": "KHT Customer", "so": 300}],
+            "2026-10-07": [{"customer": "SETU Customer", "so": 400}],
+        }
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "get_sales_order_data", return_value=sales_orders),
+        ):
+            result = main.home_summary_range(
+                FakeRequest(),
+                start_date="2026-10-05",
+                end_date="2026-10-07",
+            )
+
+        self.assertEqual(result["summary_report"], {"so": 900.0, "actual": 800.0})
+        self.assertEqual([day["actual"] for day in result["days"]], [100.0, 300.0, 400.0])
+        self.assertEqual(result["days"][0]["so"], 200.0)
+        self.assertEqual(result["month_summary"]["actual"], 800.0)
 
     def test_home_summary_builds_daily_weekly_monthly_and_yearly_totals(self):
         with (
