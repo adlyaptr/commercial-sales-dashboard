@@ -372,8 +372,8 @@ class YahooDailySalesSyncTests(unittest.TestCase):
             patch.object(main, "fetch_daily_sales_emails") as fetch,
         ):
             result = main.sync_daily_sales_email(request)
-        require_login.assert_called_once_with(request)
 
+        require_login.assert_called_once_with(request)
         self.assertFalse(result["enabled"])
         self.assertEqual(result["imported"], [])
         fetch.assert_not_called()

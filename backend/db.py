@@ -12,53 +12,6 @@ def initialize_database(connection_factory, app_username, app_password):
             if statement.strip():
                 con.execute(statement)
 
-        sph_proposal_columns = con.execute(
-            """
-            SELECT COLUMN_NAME FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sph_proposals'
-            """
-        ).fetchall()
-        sph_proposal_column_names = {
-            column["COLUMN_NAME"] for column in sph_proposal_columns
-        }
-        if "contract_duration_value" not in sph_proposal_column_names:
-            con.execute(
-                "ALTER TABLE sph_proposals ADD COLUMN contract_duration_value "
-                "SMALLINT UNSIGNED NOT NULL DEFAULT 2 AFTER contract_years"
-            )
-            con.execute(
-                "UPDATE sph_proposals SET contract_duration_value=contract_years"
-            )
-        if "contract_duration_unit" not in sph_proposal_column_names:
-            con.execute(
-                "ALTER TABLE sph_proposals ADD COLUMN contract_duration_unit "
-                "VARCHAR(8) NOT NULL DEFAULT 'year' AFTER contract_duration_value"
-            )
-        sph_template_columns = {
-            "duration_details": "TEXT NULL",
-            "attention_to": "VARCHAR(255) NULL",
-            "supply_pattern": "TEXT NULL",
-            "delivery_point": "TEXT NULL",
-            "start_date": "DATE NULL",
-            "volume_details": "TEXT NULL",
-            "price_details": "TEXT NULL",
-            "payment_terms": "TEXT NULL",
-            "advantages": "TEXT NULL",
-            "other_terms": "TEXT NULL",
-            "preparation": "TEXT NULL",
-        }
-        for column_name, column_definition in sph_template_columns.items():
-            if column_name not in sph_proposal_column_names:
-                con.execute(
-                    f"ALTER TABLE sph_proposals ADD COLUMN "
-                    f"{column_name} {column_definition}"
-                )
-        if "template_key" not in sph_proposal_column_names:
-            con.execute(
-                "ALTER TABLE sph_proposals ADD COLUMN template_key VARCHAR(32) "
-                "NOT NULL DEFAULT 'standard' AFTER customer_obligations"
-            )
-
         con.execute(
             "UPDATE sph_proposals SET status='approved',"
             "approved_at=COALESCE(approved_at,CURRENT_DATE),updated_at=CURRENT_TIMESTAMP "
