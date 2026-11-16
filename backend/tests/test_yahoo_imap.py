@@ -414,11 +414,16 @@ class YahooDailySalesSyncTests(unittest.TestCase):
                 ),
                 patch.object(main, "daily_report_date_from_subject", return_value=report_date),
                 patch.object(main, "daily_report_import_dates", return_value={report_date}),
-                patch.object(main, "import_excel", side_effect=error),
+                patch.object(main, "import_excel", side_effect=error) as import_excel,
                 patch.object(main.logger, "exception"),
             ):
                 result = main.sync_daily_sales_email(SimpleNamespace())
 
+        self.assertEqual(
+            import_excel.call_args.kwargs["report_dates_filter"],
+            {report_date},
+        )
+        self.assertTrue(import_excel.call_args.kwargs["include_all_so_targets"])
         self.assertEqual(
             result["failed"][0]["unmapped_customers"],
             ["PLATINUM"],

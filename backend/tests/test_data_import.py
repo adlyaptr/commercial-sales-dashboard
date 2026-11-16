@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from openpyxl import Workbook
@@ -105,6 +106,114 @@ class OperatorSheetImportTests(unittest.TestCase):
             ["2026-11-10", "2026-11-11"],
         )
         self.assertEqual([row[1][3] for row in sales], [100.0, 110.0])
+
+    def test_planner_import_keeps_other_dates_actuals_and_loads_all_so_targets(self):
+        class FakeImportDatabase:
+            def __init__(self):
+                self.sales = {
+                    ("2026-11-15", "platinum"): {"so": 550.0, "actual": 45.0},
+                }
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, statement, parameters=None):
+                if statement.startswith("SELECT so,actual FROM sales"):
+                    row = self.sales.get((parameters[0], parameters[1]))
+                    return SimpleNamespace(fetchone=lambda: row)
+                if statement.startswith("INSERT INTO sales"):
+                    self.sales[(parameters[0], parameters[1])] = {
+                        "so": parameters[2],
+                        "actual": parameters[3],
+                    }
+                return SimpleNamespace(rowcount=1)
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Daily Sales"
+        sheet.cell(3, 2, "PLATINUM")
+        sheet.cell(4, 3, "TARGET")
+        sheet.cell(4, 4, "ACTUAL")
+        for row_number, day, target, actual in (
+            (5, 14, 500, 100),
+            (6, 15, 600, 999),
+            (7, 16, 700, None),
+        ):
+            sheet.cell(row_number, 2, datetime(2026, 11, day))
+            sheet.cell(row_number, 3, target)
+            sheet.cell(row_number, 4, actual)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "planner-daily-sales.xlsx"
+            workbook.save(path)
+            workbook.close()
+            database = FakeImportDatabase()
+
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", return_value="WUNUT"),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+            ):
+                result = main.import_excel(
+                    path,
+                    path.name,
+                    report_dates_filter={main.date(2026, 11, 14)},
+                    include_all_so_targets=True,
+                )
+
+        self.assertEqual(result["rows_read"], 1)
+        self.assertEqual(database.sales[("2026-11-15", "platinum")], {
+            "so": 600.0,
+            "actual": 45.0,
+        })
+        self.assertEqual(database.sales[("2026-11-16", "platinum")], {
+            "so": 700.0,
+            "actual": 0.0,
+        })
+        sales_rows = [
+            {
+                "report_date": report_date,
+                "customer_key": "platinum",
+                "customer_name": "PLATINUM",
+                "operator": "WUNUT",
+                **values,
+            }
+            for (report_date, _customer_key), values in database.sales.items()
+        ]
+        sales_rows.append({
+            "report_date": "2026-11-16",
+            "customer_key": "another-customer",
+            "customer_name": "ANOTHER CUSTOMER",
+            "operator": "WUNUT",
+            "so": 300.0,
+            "actual": 50.0,
+        })
+        forecast_rows, _ = main.overlay_sales_order_forecast(
+            sales_rows,
+            [{
+                "customer_key": "platinum",
+                "customer_name": "PLATINUM",
+                "operator": "WUNUT",
+            }],
+            {},
+            main.date(2026, 11, 14),
+            main.date(2026, 11, 16),
+            per_customer_forecast=True,
+        )
+        by_customer_date = {
+            (row["customer_key"], row["report_date"]): row
+            for row in forecast_rows
+        }
+        self.assertEqual(
+            by_customer_date[("platinum", "2026-11-16")]["actual"],
+            700.0,
+        )
+        self.assertTrue(
+            by_customer_date[("platinum", "2026-11-16")]["actual_is_forecast"]
+        )
 
     def test_selects_populated_duplicate_actual_column_and_skips_total_labels(self):
         workbook = operator_sheet_workbook()
@@ -248,8 +357,10 @@ class MemoryImportDatabase:
         return False
 
     def execute(self, statement, parameters=None):
-        if "SELECT so FROM sales" in statement:
-            return type("Result", (), {"fetchone": lambda self: {"so": 4500.0}})()
+        if "SELECT so,actual FROM sales" in statement:
+            return type("Result", (), {
+                "fetchone": lambda self: {"so": 4500.0, "actual": 100.0},
+            })()
         self.saved.append((statement, parameters))
         return type("Result", (), {"rowcount": 0})()
 
