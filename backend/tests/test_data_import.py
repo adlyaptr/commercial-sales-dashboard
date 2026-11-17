@@ -125,6 +125,54 @@ class OperatorSheetImportTests(unittest.TestCase):
             ["2026-11-10", "2026-11-11"],
         )
 
+    def test_reimport_updates_existing_customer_date_instead_of_adding_duplicate(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Daily Sales"
+        sheet.cell(3, 2, "PLATINUM")
+        sheet.cell(4, 3, "TARGET")
+        sheet.cell(4, 4, "ACTUAL")
+        sheet.cell(5, 2, datetime(2026, 11, 15))
+        sheet.cell(5, 3, 500)
+        sheet.cell(5, 4, 100)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "daily-sales.xlsx"
+            database = MemoryImportDatabase()
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", return_value="WUNUT"),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+            ):
+                workbook.save(path)
+                first_import = main.import_excel(
+                    path,
+                    path.name,
+                    report_dates_filter={main.date(2026, 11, 15)},
+                )
+                sheet.cell(5, 3, 650)
+                sheet.cell(5, 4, 250)
+                workbook.save(path)
+                second_import = main.import_excel(
+                    path,
+                    path.name,
+                    report_dates_filter={main.date(2026, 11, 15)},
+                )
+            workbook.close()
+
+        self.assertEqual(first_import["rows_saved"], 1)
+        self.assertEqual(second_import["rows_saved"], 1)
+        self.assertEqual(len(database.imported_sales), 1)
+        self.assertEqual(
+            database.imported_sales[("2026-11-15", "platinum")]["so"],
+            650.0,
+        )
+        self.assertEqual(
+            database.imported_sales[("2026-11-15", "platinum")]["actual"],
+            250.0,
+        )
+        self.assertEqual(len(database.imported_actual_dates), 1)
+
     def test_full_sheet_so_import_preserves_actuals_outside_email_date_filter(self):
         workbook = Workbook()
         sheet = workbook.active
@@ -467,6 +515,8 @@ class MemoryImportDatabase:
     def __init__(self):
         self.saved = []
         self.existing_sales = {}
+        self.imported_sales = {}
+        self.imported_actual_dates = {}
 
     def __enter__(self):
         return self
@@ -476,9 +526,10 @@ class MemoryImportDatabase:
 
     def execute(self, statement, parameters=None):
         if "SELECT so,actual FROM sales" in statement:
-            existing = self.existing_sales.get(
-                tuple(parameters),
-                {"so": 4500.0, "actual": 0.0},
+            key = tuple(parameters)
+            existing = self.imported_sales.get(
+                key,
+                self.existing_sales.get(key, {"so": 4500.0, "actual": 0.0}),
             )
             return type("Result", (), {"fetchone": lambda self: existing})()
         if "SELECT so FROM sales" in statement:
@@ -488,6 +539,16 @@ class MemoryImportDatabase:
             )
             return type("Result", (), {"fetchone": lambda self: existing})()
         self.saved.append((statement, parameters))
+        if statement.startswith("INSERT INTO sales("):
+            report_date, customer_key, so, actual, source_file, imported_at = parameters
+            self.imported_sales[(report_date, customer_key)] = {
+                "so": so,
+                "actual": actual,
+                "source_file": source_file,
+                "imported_at": imported_at,
+            }
+        elif statement.startswith("INSERT INTO daily_actual_imports"):
+            self.imported_actual_dates[parameters[0]] = parameters
         return type("Result", (), {"rowcount": 0})()
 
 
