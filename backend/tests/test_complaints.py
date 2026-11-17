@@ -254,6 +254,7 @@ class MemoryHomeSummary:
                 {"customer_key": "setu-a", "customer_name": "SETU Customer", "operator": "SETU"},
                 {"customer_key": "kht-a", "customer_name": "KHT Customer", "operator": "KHT"},
                 {"customer_key": "off-a", "customer_name": "OFF Customer", "operator": "OFF"},
+                {"customer_key": "new-a", "customer_name": "New Customer", "operator": "WUNUT"},
                 {"customer_key": "manualfob-blora-test", "customer_name": "KANAKA", "operator": "BLORA"},
             ])
         if statement.startswith(
@@ -974,7 +975,10 @@ class HomeSummaryTests(unittest.TestCase):
             expected_range_end="2026-11-30",
         )
         sales_orders = {
-            "2026-11-02": [{"customer": "KHT Customer", "so": 500000}],
+            "2026-11-02": [
+                {"customer": "KHT Customer", "so": 500000},
+                {"customer": "New Customer", "so": 79000},
+            ],
         }
         with (
             patch.object(main, "db", return_value=database),

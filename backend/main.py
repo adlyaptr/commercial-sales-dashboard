@@ -907,6 +907,7 @@ def overlay_sales_order_forecast(
     actual_imported_dates=None,
     preserve_imported_so=False,
     forecast_only_unimported_dates=False,
+    complete_import_matrix_dates=False,
 ):
     actual_imported_dates = {
         value.date().isoformat()
@@ -945,12 +946,19 @@ def overlay_sales_order_forecast(
 
     enriched_by_key = {}
     dates_with_nonzero_actual = set()
+    imported_sales_order_dates = set()
     for row in sales_rows:
         enriched = dict(row)
         report_date = enriched.get("report_date", start_date)
         if isinstance(report_date, date):
             report_date = report_date.isoformat()
         enriched["report_date"] = str(report_date)
+        if complete_import_matrix_dates and (
+            enriched.get("source_file")
+            and enriched["source_file"] != "manual-fob"
+            and not enriched.get("manual_fob")
+        ):
+            imported_sales_order_dates.add(enriched["report_date"])
         if forecast_only_unimported_dates:
             enriched["actual_is_forecast"] = False
             if (
@@ -977,7 +985,10 @@ def overlay_sales_order_forecast(
         day = date.fromisoformat(report_date)
         if day < start_date or day > end_date:
             continue
-        if report_date in actual_imported_dates:
+        if report_date in actual_imported_dates or (
+            complete_import_matrix_dates
+            and report_date in imported_sales_order_dates
+        ):
             continue
         for order in orders:
             customer = resolve_customer(order["customer"])
@@ -4180,6 +4191,7 @@ def home_summary(request: Request, month: str):
         actual_imported_dates=actual_imported_dates,
         preserve_imported_so=True,
         forecast_only_unimported_dates=True,
+        complete_import_matrix_dates=True,
     )
 
     def empty_totals():
@@ -4428,6 +4440,7 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
         actual_imported_dates=actual_imported_dates,
         preserve_imported_so=True,
         forecast_only_unimported_dates=True,
+        complete_import_matrix_dates=True,
     )
 
     monthly_targets = {
@@ -5642,6 +5655,7 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
         actual_imported_dates=actual_imported_dates,
         preserve_imported_so=True,
         forecast_only_unimported_dates=True,
+        complete_import_matrix_dates=True,
     )
     grouped_rows = {}
     for row in rows:
