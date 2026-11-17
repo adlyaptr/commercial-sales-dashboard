@@ -931,12 +931,12 @@ class HomeSummaryTests(unittest.TestCase):
         ):
             result = main.home_summary(FakeRequest(), month="2026-10")
 
-        self.assertEqual(result["month_summary"]["so"], 750)
-        self.assertEqual(result["month_summary"]["actual"], 550)
+        self.assertEqual(result["month_summary"]["so"], 900)
+        self.assertEqual(result["month_summary"]["actual"], 700)
         self.assertEqual(result["days"][8]["so"], 200)
         self.assertEqual(result["days"][8]["actual"], 0)
-        self.assertEqual(result["days"][9]["so"], 150)
-        self.assertEqual(result["days"][9]["actual"], 150)
+        self.assertEqual(result["days"][9]["so"], 300)
+        self.assertEqual(result["days"][9]["actual"], 300)
         self.assertEqual(result["days"][10]["actual"], 400)
 
     def test_november_summary_matches_sales_order_and_actual_totals(self):
@@ -988,6 +988,44 @@ class HomeSummaryTests(unittest.TestCase):
 
         self.assertEqual(result["month_summary"]["so"], 6193148)
         self.assertEqual(result["month_summary"]["actual"], 5957832)
+
+    def test_previous_month_summary_keeps_legacy_so_and_manual_fob_totals(self):
+        database = MemoryHomeSummary(
+            sales_rows=[
+                {
+                    "report_date": date(2026, 10, 1),
+                    "customer_name": "SETU Customer",
+                    "operator": "SETU",
+                    "customer_key": "setu-a",
+                    "so": 300,
+                    "actual": 120,
+                    "source_file": "daily-sales.xlsx",
+                },
+                {
+                    "report_date": date(2026, 10, 1),
+                    "customer_name": "KANAKA",
+                    "operator": "BLORA",
+                    "customer_key": "manualfob-blora-test",
+                    "so": 100,
+                    "actual": 50,
+                    "source_file": "manual-fob",
+                    "manual_fob": True,
+                },
+            ],
+            actual_imported_dates=(),
+            expected_range_end="2026-10-31",
+        )
+        sales_orders = {
+            "2026-10-01": [{"customer": "SETU Customer", "so": 500}],
+        }
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "get_sales_order_data", return_value=sales_orders),
+        ):
+            result = main.home_summary(FakeRequest(), month="2026-10")
+
+        self.assertEqual(result["month_summary"]["so"], 600)
+        self.assertEqual(result["month_summary"]["actual"], 550)
 
     def test_home_summary_rejects_invalid_month(self):
         with self.assertRaises(main.HTTPException) as invalid:

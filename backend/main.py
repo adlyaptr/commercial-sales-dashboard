@@ -118,7 +118,7 @@ SALES_ORDER_SHEET_ID = os.getenv(
 ).strip()
 SALES_ORDER_SHEET_GID = os.getenv("SALES_ORDER_SHEET_GID", "694583576").strip()
 SALES_ORDER_CACHE_SECONDS = 300
-SUMMARY_IMPORT_MATRIX_MONTHS = frozenset({"2026-11"})
+NOVEMBER_SUMMARY_OVERRIDE_MONTHS = frozenset({"2026-11"})
 _sales_order_cache = {"expires_at": 0.0, "data": None}
 _sales_order_lock = threading.Lock()
 BUDGET_TARGET_SHEET_GID = os.getenv("BUDGET_TARGET_SHEET_GID", "737662524").strip()
@@ -908,9 +908,11 @@ def overlay_sales_order_forecast(
     actual_imported_dates=None,
     preserve_imported_so=False,
     forecast_only_unimported_dates=False,
-    complete_import_matrix_months=None,
+    summary_override_months=None,
 ):
-    complete_import_matrix_months = set(complete_import_matrix_months or ())
+    summary_override_months = (
+        None if summary_override_months is None else set(summary_override_months)
+    )
     actual_imported_dates = {
         value.date().isoformat()
         if isinstance(value, datetime)
@@ -955,8 +957,10 @@ def overlay_sales_order_forecast(
         if isinstance(report_date, date):
             report_date = report_date.isoformat()
         enriched["report_date"] = str(report_date)
-        if enriched["report_date"][:7] in complete_import_matrix_months and (
-            enriched.get("source_file")
+        if (
+            summary_override_months is not None
+            and enriched["report_date"][:7] in summary_override_months
+            and enriched.get("source_file")
             and enriched["source_file"] != "manual-fob"
             and not enriched.get("manual_fob")
         ):
@@ -967,13 +971,20 @@ def overlay_sales_order_forecast(
                 enriched["report_date"] not in actual_imported_dates
                 and not enriched.get("manual_fob")
             ):
-                imported_so = float(enriched.get("so") or 0)
-                has_imported_so = (
-                    enriched.get("source_file")
-                    and enriched["source_file"] != "manual-fob"
-                    and imported_so > 0
+                use_november_summary_override = (
+                    summary_override_months is None
+                    or enriched["report_date"][:7] in summary_override_months
                 )
-                if not has_imported_so:
+                if use_november_summary_override:
+                    imported_so = float(enriched.get("so") or 0)
+                    has_imported_so = (
+                        enriched.get("source_file")
+                        and enriched["source_file"] != "manual-fob"
+                        and imported_so > 0
+                    )
+                    if not has_imported_so:
+                        enriched["so"] = 0.0
+                else:
                     enriched["so"] = 0.0
                 enriched["actual"] = 0.0
         else:
@@ -988,7 +999,8 @@ def overlay_sales_order_forecast(
         if day < start_date or day > end_date:
             continue
         if report_date in actual_imported_dates or (
-            report_date[:7] in complete_import_matrix_months
+            summary_override_months is not None
+            and report_date[:7] in summary_override_months
             and report_date in imported_sales_order_dates
         ):
             continue
@@ -1005,7 +1017,11 @@ def overlay_sales_order_forecast(
                 existing_so = float(existing.get("so") or 0)
                 preserve_existing_so = False
                 if forecast_only_unimported_dates:
-                    preserve_existing_so = (
+                    use_november_summary_override = (
+                        summary_override_months is None
+                        or report_date[:7] in summary_override_months
+                    )
+                    preserve_existing_so = use_november_summary_override and (
                         existing.get("source_file")
                         and existing["source_file"] != "manual-fob"
                         and existing_so > 0
@@ -4193,7 +4209,7 @@ def home_summary(request: Request, month: str):
         actual_imported_dates=actual_imported_dates,
         preserve_imported_so=True,
         forecast_only_unimported_dates=True,
-        complete_import_matrix_months=SUMMARY_IMPORT_MATRIX_MONTHS,
+        summary_override_months=NOVEMBER_SUMMARY_OVERRIDE_MONTHS,
     )
 
     def empty_totals():
@@ -4235,7 +4251,11 @@ def home_summary(request: Request, month: str):
             month_key,
             {"totals": empty_totals(), "operators": empty_operators()},
         )
-        if not row.get("manual_fob"):
+        exclude_manual_fob = (
+            month_key in NOVEMBER_SUMMARY_OVERRIDE_MONTHS
+            and row.get("manual_fob")
+        )
+        if not exclude_manual_fob:
             add_values(month_row["totals"], row)
             add_values(month_row["operators"][operator], row)
         add_values(year_totals, row)
@@ -4245,7 +4265,7 @@ def home_summary(request: Request, month: str):
             float(row["so"] or 0) != 0 or float(row["actual"] or 0) != 0
         )
         if is_active:
-            if not row.get("manual_fob"):
+            if not exclude_manual_fob:
                 month_customer_set = monthly_customers.setdefault(month_key, set())
                 month_customer_set.add(customer_key)
                 monthly_operator_customers.setdefault((month_key, operator), set()).add(customer_key)
@@ -4442,7 +4462,7 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
         actual_imported_dates=actual_imported_dates,
         preserve_imported_so=True,
         forecast_only_unimported_dates=True,
-        complete_import_matrix_months=SUMMARY_IMPORT_MATRIX_MONTHS,
+        summary_override_months=NOVEMBER_SUMMARY_OVERRIDE_MONTHS,
     )
 
     monthly_targets = {
@@ -5657,7 +5677,7 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
         actual_imported_dates=actual_imported_dates,
         preserve_imported_so=True,
         forecast_only_unimported_dates=True,
-        complete_import_matrix_months=SUMMARY_IMPORT_MATRIX_MONTHS,
+        summary_override_months=NOVEMBER_SUMMARY_OVERRIDE_MONTHS,
     )
     grouped_rows = {}
     for row in rows:

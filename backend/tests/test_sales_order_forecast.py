@@ -340,7 +340,7 @@ class SalesOrderForecastTests(unittest.TestCase):
             date(2026, 11, 16),
             preserve_imported_so=True,
             forecast_only_unimported_dates=True,
-            complete_import_matrix_months={"2026-11"},
+            summary_override_months={"2026-11"},
         )
 
         self.assertEqual(rows[0]["so"], 300)
@@ -375,14 +375,14 @@ class SalesOrderForecastTests(unittest.TestCase):
             date(2026, 11, 16),
             preserve_imported_so=True,
             forecast_only_unimported_dates=True,
-            complete_import_matrix_months={"2026-11"},
+            summary_override_months={"2026-11"},
         )
 
         self.assertEqual(rows[0]["so"], 0)
         self.assertEqual(rows[0]["actual"], 0)
         self.assertFalse(rows[0]["actual_is_forecast"])
 
-    def test_import_matrix_override_is_limited_to_configured_months(self):
+    def test_summary_override_is_limited_to_configured_months(self):
         sales_rows = [
             {
                 "report_date": "2026-10-16",
@@ -416,8 +416,14 @@ class SalesOrderForecastTests(unittest.TestCase):
             },
         ]
         sales_orders = {
-            "2026-10-16": [{"customer": "NEW", "so": 700}],
-            "2026-11-16": [{"customer": "NEW", "so": 700}],
+            "2026-10-16": [
+                {"customer": "PLATINUM", "so": 500},
+                {"customer": "NEW", "so": 700},
+            ],
+            "2026-11-16": [
+                {"customer": "PLATINUM", "so": 500},
+                {"customer": "NEW", "so": 700},
+            ],
         }
 
         rows, _ = main.overlay_sales_order_forecast(
@@ -428,14 +434,22 @@ class SalesOrderForecastTests(unittest.TestCase):
             date(2026, 11, 16),
             preserve_imported_so=True,
             forecast_only_unimported_dates=True,
-            complete_import_matrix_months={"2026-11"},
+            summary_override_months={"2026-11"},
         )
+        by_customer_date = {
+            (row["customer_key"], row["report_date"]): row
+            for row in rows
+        }
         new_customer_dates = {
             row["report_date"]
             for row in rows
             if row["customer_key"] == "new"
         }
 
+        self.assertEqual(by_customer_date[("platinum", "2026-10-16")]["so"], 500)
+        self.assertEqual(by_customer_date[("platinum", "2026-10-16")]["actual"], 500)
+        self.assertEqual(by_customer_date[("platinum", "2026-11-16")]["so"], 300)
+        self.assertEqual(by_customer_date[("platinum", "2026-11-16")]["actual"], 300)
         self.assertIn("2026-10-16", new_customer_dates)
         self.assertNotIn("2026-11-16", new_customer_dates)
 
