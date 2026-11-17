@@ -957,7 +957,14 @@ def overlay_sales_order_forecast(
                 enriched["report_date"] not in actual_imported_dates
                 and not enriched.get("manual_fob")
             ):
-                enriched["so"] = 0.0
+                imported_so = float(enriched.get("so") or 0)
+                has_imported_so = (
+                    enriched.get("source_file")
+                    and enriched["source_file"] != "manual-fob"
+                    and imported_so > 0
+                )
+                if not has_imported_so:
+                    enriched["so"] = 0.0
                 enriched["actual"] = 0.0
         else:
             enriched.setdefault("actual_is_forecast", False)
@@ -985,7 +992,13 @@ def overlay_sales_order_forecast(
                 existing_so = float(existing.get("so") or 0)
                 preserve_existing_so = False
                 if forecast_only_unimported_dates:
-                    existing["so"] = order["so"]
+                    preserve_existing_so = (
+                        existing.get("source_file")
+                        and existing["source_file"] != "manual-fob"
+                        and existing_so > 0
+                    )
+                    if not preserve_existing_so:
+                        existing["so"] = order["so"]
                 else:
                     preserve_existing_so = (
                         preserve_imported_so
@@ -4208,8 +4221,9 @@ def home_summary(request: Request, month: str):
             month_key,
             {"totals": empty_totals(), "operators": empty_operators()},
         )
-        add_values(month_row["totals"], row)
-        add_values(month_row["operators"][operator], row)
+        if not row.get("manual_fob"):
+            add_values(month_row["totals"], row)
+            add_values(month_row["operators"][operator], row)
         add_values(year_totals, row)
         add_values(year_operators[operator], row)
 
@@ -4217,9 +4231,10 @@ def home_summary(request: Request, month: str):
             float(row["so"] or 0) != 0 or float(row["actual"] or 0) != 0
         )
         if is_active:
-            month_customer_set = monthly_customers.setdefault(month_key, set())
-            month_customer_set.add(customer_key)
-            monthly_operator_customers.setdefault((month_key, operator), set()).add(customer_key)
+            if not row.get("manual_fob"):
+                month_customer_set = monthly_customers.setdefault(month_key, set())
+                month_customer_set.add(customer_key)
+                monthly_operator_customers.setdefault((month_key, operator), set()).add(customer_key)
             year_customers.add(customer_key)
             year_operator_customers[operator].add(customer_key)
 

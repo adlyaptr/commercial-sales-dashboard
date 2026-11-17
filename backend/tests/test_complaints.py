@@ -254,6 +254,7 @@ class MemoryHomeSummary:
                 {"customer_key": "setu-a", "customer_name": "SETU Customer", "operator": "SETU"},
                 {"customer_key": "kht-a", "customer_name": "KHT Customer", "operator": "KHT"},
                 {"customer_key": "off-a", "customer_name": "OFF Customer", "operator": "OFF"},
+                {"customer_key": "manualfob-blora-test", "customer_name": "KANAKA", "operator": "BLORA"},
             ])
         if statement.startswith(
             "SELECT report_date, imported_at FROM daily_actual_imports"
@@ -709,8 +710,8 @@ class DashboardApiTests(unittest.TestCase):
             )
 
         forecast_customer = result["operators"]["WUNUT"][0]
-        self.assertEqual(forecast_customer["so"], 700)
-        self.assertEqual(forecast_customer["actual"], 700)
+        self.assertEqual(forecast_customer["so"], 500)
+        self.assertEqual(forecast_customer["actual"], 500)
         self.assertTrue(forecast_customer["actual_is_forecast"])
 
     def test_dashboard_forecasts_same_day_actual_import(self):
@@ -929,12 +930,12 @@ class HomeSummaryTests(unittest.TestCase):
         ):
             result = main.home_summary(FakeRequest(), month="2026-10")
 
-        self.assertEqual(result["month_summary"]["so"], 900)
-        self.assertEqual(result["month_summary"]["actual"], 700)
+        self.assertEqual(result["month_summary"]["so"], 750)
+        self.assertEqual(result["month_summary"]["actual"], 550)
         self.assertEqual(result["days"][8]["so"], 200)
         self.assertEqual(result["days"][8]["actual"], 0)
-        self.assertEqual(result["days"][9]["so"], 300)
-        self.assertEqual(result["days"][9]["actual"], 300)
+        self.assertEqual(result["days"][9]["so"], 150)
+        self.assertEqual(result["days"][9]["actual"], 150)
         self.assertEqual(result["days"][10]["actual"], 400)
 
     def test_november_summary_matches_sales_order_and_actual_totals(self):
@@ -954,16 +955,26 @@ class HomeSummaryTests(unittest.TestCase):
                     "customer_name": "KHT Customer",
                     "operator": "KHT",
                     "customer_key": "kht-a",
-                    "so": 100,
+                    "so": 3193148,
                     "actual": 10,
                     "source_file": "planner.xlsx",
+                },
+                {
+                    "report_date": date(2026, 11, 1),
+                    "customer_name": "KANAKA",
+                    "operator": "BLORA",
+                    "customer_key": "manualfob-blora-test",
+                    "so": 1000,
+                    "actual": 0,
+                    "source_file": "manual-fob",
+                    "manual_fob": True,
                 },
             ],
             actual_imported_dates=("2026-11-01",),
             expected_range_end="2026-11-30",
         )
         sales_orders = {
-            "2026-11-02": [{"customer": "KHT Customer", "so": 3193148}],
+            "2026-11-02": [{"customer": "KHT Customer", "so": 500000}],
         }
         with (
             patch.object(main, "db", return_value=database),
