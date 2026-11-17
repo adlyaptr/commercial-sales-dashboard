@@ -1396,11 +1396,51 @@ def operator_sheet_daily_sales_records(wb):
     return records
 
 
+def _replacement_month_range(month, operator_records):
+    try:
+        month_start = date.fromisoformat(f"{month}-01")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Bulan replace harus berformat YYYY-MM.") from exc
+    if len(month) != 7 or month_start.strftime("%Y-%m") != month:
+        raise ValueError("Bulan replace harus berformat YYYY-MM.")
+
+    month_end = date(
+        month_start.year,
+        month_start.month,
+        calendar.monthrange(month_start.year, month_start.month)[1],
+    )
+    if month_end > _business_today():
+        raise ValueError("Replace hanya diizinkan untuk bulan yang sudah selesai.")
+
+    expected_dates = {
+        date(month_start.year, month_start.month, day).isoformat()
+        for day in range(1, month_end.day + 1)
+    }
+    workbook_dates = {record["report_date"] for record in operator_records}
+    if workbook_dates != expected_dates:
+        raise ValueError(
+            "Workbook replace harus berisi data sheet operator untuk setiap tanggal "
+            f"{month_start.isoformat()} s.d. {month_end.isoformat()}."
+        )
+    customers_by_date = {}
+    for record in operator_records:
+        customers_by_date.setdefault(record["report_date"], set()).add(
+            norm(record["customer"])
+        )
+    expected_customers = set().union(*customers_by_date.values())
+    if any(customers != expected_customers for customers in customers_by_date.values()):
+        raise ValueError(
+            "Workbook replace harus memuat matriks customer lengkap untuk setiap tanggal."
+        )
+    return month_start.isoformat(), month_end.isoformat()
+
+
 def import_excel(
     path: Path,
     original_filename: str,
     report_dates_filter: Optional[set[date]] = None,
     include_all_so_targets: bool = False,
+    replace_month: Optional[str] = None,
 ):
     # data_only=True is important: Daily Sales is formula-based, and Excel's saved
     # cached results are the actual reported figures we want to import.
@@ -1440,14 +1480,34 @@ def import_excel(
     try:
         wb = load_workbook(path, data_only=True, read_only=False)
         daily = next((ws for ws in wb.worksheets if norm(ws.title) == "dailysales"), None)
+        operator_records = (
+            operator_sheet_daily_sales_records(wb)
+            if daily is None
+            else []
+        )
+        replacement_range = None
+        if replace_month is not None:
+            if daily is not None or not operator_records:
+                raise ValueError(
+                    "Replace bulan hanya mendukung workbook dengan sheet operator."
+                )
+            replacement_range = _replacement_month_range(
+                replace_month,
+                operator_records,
+            )
         with db() as con:
             # If the uploaded workbook contains operator sheets, use them as a mapping source.
             mapping_saved = _mapping_from_operator_sheets(wb, con)
-            operator_records = (
-                operator_sheet_daily_sales_records(wb)
-                if daily is None
-                else []
-            )
+            if replacement_range:
+                con.execute(
+                    "DELETE FROM sales WHERE report_date BETWEEN %s AND %s",
+                    replacement_range,
+                )
+                con.execute(
+                    "DELETE FROM daily_actual_imports "
+                    "WHERE report_date BETWEEN %s AND %s",
+                    replacement_range,
+                )
             if daily is not None:
                 ws = daily
                 # Horizontal layout used by the October 2026 master template:
@@ -3649,6 +3709,29 @@ async def upload_excel(request: Request, file: UploadFile = File(...)):
     try:
         result = import_excel(destination, filename)
         return {"ok": True, **result, "filename": filename}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/import/replace-month")
+async def replace_month_import(
+    request: Request,
+    month: str,
+    file: UploadFile = File(...),
+):
+    require_admin(request)
+    filename = Path(file.filename or "upload.xlsx").name
+    if Path(filename).suffix.lower() not in {".xlsx", ".xlsm"}:
+        raise HTTPException(status_code=400, detail="Gunakan file Excel .xlsx atau .xlsm.")
+    content = await file.read()
+    if len(content) > 30 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Ukuran file maksimal 30 MB.")
+
+    destination = INPUT_DIR / filename
+    destination.write_bytes(content)
+    try:
+        result = import_excel(destination, filename, replace_month=month)
+        return {"ok": True, "replaced_month": month, **result, "filename": filename}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

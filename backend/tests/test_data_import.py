@@ -341,6 +341,127 @@ class OperatorSheetImportTests(unittest.TestCase):
         self.assertEqual(sales[0][1][2:4], (4500.0, 3905.617))
         self.assertEqual(sales[1][1][2:4], (4500.0, 0))
 
+    def test_replace_month_deletes_existing_rows_and_import_markers_before_import(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "BLORA"
+        sheet.cell(12, 2, "DATE")
+        sheet.cell(12, 7, "HSK (KSO GAS)")
+        for column, value in ((7, "SO"), (8, "ACTUAL")):
+            sheet.cell(13, column, value)
+        for day in range(1, 29):
+            row = 13 + day
+            sheet.cell(row, 2, datetime(2026, 2, day))
+            sheet.cell(row, 7, 4500)
+            sheet.cell(row, 8, day)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "february.xlsx"
+            workbook.save(path)
+            workbook.close()
+            database = MemoryImportDatabase()
+
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", return_value="BLORA"),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+            ):
+                result = main.import_excel(
+                    path,
+                    path.name,
+                    replace_month="2026-02",
+                )
+
+        delete_statements = [
+            row[0] for row in database.saved
+            if row[0].startswith("DELETE FROM")
+        ]
+        self.assertEqual(
+            delete_statements,
+            [
+                "DELETE FROM sales WHERE report_date BETWEEN %s AND %s",
+                "DELETE FROM daily_actual_imports WHERE report_date BETWEEN %s AND %s",
+            ],
+        )
+        self.assertEqual(result["rows_saved"], 28)
+        self.assertEqual(
+            [row[1][0] for row in database.saved if row[0].startswith("INSERT INTO sales")][0],
+            "2026-02-01",
+        )
+
+    def test_replace_month_rejects_partial_workbook_before_deleting_rows(self):
+        workbook = operator_sheet_workbook()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "partial-february.xlsx"
+            workbook.save(path)
+            workbook.close()
+            database = MemoryImportDatabase()
+
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", return_value="BLORA"),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+            ):
+                with self.assertRaisesRegex(ValueError, "setiap tanggal"):
+                    main.import_excel(
+                        path,
+                        path.name,
+                        replace_month="2026-02",
+                    )
+
+        self.assertFalse(any(
+            statement.startswith("DELETE FROM")
+            for statement, _ in database.saved
+        ))
+
+    def test_replace_month_rejects_incomplete_customer_matrix(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "BLORA"
+        sheet.cell(12, 2, "DATE")
+        sheet.cell(12, 7, "HSK (KSO GAS)")
+        sheet.cell(13, 7, "SO")
+        sheet.cell(13, 8, "ACTUAL")
+        for day in range(1, 29):
+            row = 13 + day
+            sheet.cell(row, 2, datetime(2026, 2, day))
+            sheet.cell(row, 7, 4500)
+            sheet.cell(row, 8, day)
+
+        other_sheet = workbook.create_sheet("SETU")
+        other_sheet.cell(12, 2, "DATE")
+        other_sheet.cell(12, 7, "PLATINUM")
+        other_sheet.cell(13, 7, "SO")
+        other_sheet.cell(13, 8, "ACTUAL")
+        for day in range(1, 28):
+            row = 13 + day
+            other_sheet.cell(row, 2, datetime(2026, 2, day))
+            other_sheet.cell(row, 7, 5000)
+            other_sheet.cell(row, 8, day)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "incomplete-february.xlsx"
+            workbook.save(path)
+            workbook.close()
+            database = MemoryImportDatabase()
+
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", side_effect=["BLORA", "SETU"]),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+            ):
+                with self.assertRaisesRegex(ValueError, "matriks customer lengkap"):
+                    main.import_excel(
+                        path,
+                        path.name,
+                        replace_month="2026-02",
+                    )
+
+        self.assertFalse(any(
+            statement.startswith("DELETE FROM")
+            for statement, _ in database.saved
+        ))
+
 
 class MemoryImportDatabase:
     def __init__(self):
