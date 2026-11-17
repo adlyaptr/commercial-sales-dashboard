@@ -169,7 +169,7 @@ export default function DailyPage() {
         setSummaryError('');
         setMonthlySummary(null);
 
-        api(`/api/home-summary?month=${encodeURIComponent(reportDate.slice(0, 7))}`)
+        api(`/api/home-summary?month=${encodeURIComponent(reportDate.slice(0, 7))}&through_date=${encodeURIComponent(reportDate)}`)
             .then((summary) => {
                 if (active) setMonthlySummary(summary.month_summary);
             })

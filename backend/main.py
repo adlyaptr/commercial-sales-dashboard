@@ -4217,7 +4217,7 @@ def delete_manual_fob_sale(sale_id: int, request: Request):
 
 
 @app.get("/api/home-summary")
-def home_summary(request: Request, month: str):
+def home_summary(request: Request, month: str, through_date: Optional[str] = None):
     require_home_access(request)
     try:
         month_start = date.fromisoformat(f"{month}-01")
@@ -4225,6 +4225,21 @@ def home_summary(request: Request, month: str):
         raise HTTPException(status_code=400, detail="Bulan harus berformat YYYY-MM.") from exc
     if len(month) != 7 or month_start.strftime("%Y-%m") != month:
         raise HTTPException(status_code=400, detail="Bulan harus berformat YYYY-MM.")
+    if through_date is not None:
+        try:
+            through_day = date.fromisoformat(through_date)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Tanggal laporan harus berformat YYYY-MM-DD.",
+            ) from exc
+        if through_day.isoformat() != through_date or through_day.strftime("%Y-%m") != month:
+            raise HTTPException(
+                status_code=400,
+                detail="Tanggal laporan harus berada pada bulan yang dipilih.",
+            )
+    else:
+        through_day = None
 
     if month_start.month == 12:
         next_month = date(month_start.year + 1, 1, 1)
@@ -4261,6 +4276,13 @@ def home_summary(request: Request, month: str):
         ).fetchone()
 
     actual_imported_dates = _confirmed_actual_import_dates(actual_import_rows)
+    if through_day is not None:
+        through_date_key = through_day.isoformat()
+        actual_imported_dates = {
+            report_date
+            for report_date in actual_imported_dates
+            if report_date <= through_date_key
+        }
     rows, _ = overlay_sales_order_forecast(
         rows,
         customer_rows,
