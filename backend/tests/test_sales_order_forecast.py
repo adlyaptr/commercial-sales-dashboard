@@ -298,10 +298,10 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertFalse(by_customer_date[("other", "2026-11-15")]["actual_is_forecast"])
         self.assertNotIn(("new", "2026-11-15"), by_customer_date)
 
-        unimported_forecast = by_customer_date[("platinum", "2026-11-16")]
-        self.assertEqual(unimported_forecast["so"], 999999)
-        self.assertEqual(unimported_forecast["actual"], 999999)
-        self.assertTrue(unimported_forecast["actual_is_forecast"])
+        imported_platinum_later = by_customer_date[("platinum", "2026-11-16")]
+        self.assertEqual(imported_platinum_later["so"], 999999)
+        self.assertEqual(imported_platinum_later["actual"], 999999)
+        self.assertTrue(imported_platinum_later["actual_is_forecast"])
         stale_customer = by_customer_date[("other", "2026-11-16")]
         self.assertEqual(stale_customer["so"], 0)
         self.assertEqual(stale_customer["actual"], 0)
@@ -311,6 +311,40 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertEqual(sheet_forecast["so"], 4030000)
         self.assertEqual(sheet_forecast["actual"], 4030000)
         self.assertTrue(sheet_forecast["actual_is_forecast"])
+
+    def test_forecast_uses_sheet_so_when_unconfirmed_import_has_values(self):
+        sales_rows = [{
+            "report_date": "2026-11-16",
+            "customer_key": "platinum",
+            "customer_name": "PLATINUM",
+            "operator": "WUNUT",
+            "so": 300,
+            "actual": 0,
+            "source_file": "daily-sales.xlsx",
+            "manual_fob": False,
+        }]
+        customers = [{
+            "customer_key": "platinum",
+            "customer_name": "PLATINUM",
+            "operator": "WUNUT",
+        }]
+        sales_orders = {
+            "2026-11-16": [{"customer": "PLATINUM", "so": 500}],
+        }
+
+        rows, _ = main.overlay_sales_order_forecast(
+            sales_rows,
+            customers,
+            sales_orders,
+            date(2026, 11, 16),
+            date(2026, 11, 16),
+            preserve_imported_so=True,
+            forecast_only_unimported_dates=True,
+        )
+
+        self.assertEqual(rows[0]["so"], 500)
+        self.assertEqual(rows[0]["actual"], 500)
+        self.assertTrue(rows[0]["actual_is_forecast"])
 
     def test_forecast_falls_back_to_sheet_when_stored_so_is_zero(self):
         sales_rows = [{

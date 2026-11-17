@@ -1001,9 +1001,13 @@ def overlay_sales_order_forecast(
                     ):
                         existing["so"] = order["so"]
                 can_forecast = report_date not in actual_imported_dates and (
-                    forecast_only_unimported_dates
+                    (
+                        forecast_only_unimported_dates
+                        and float(existing.get("actual") or 0) == 0
+                    )
                     or (
-                        float(existing.get("actual") or 0) == 0
+                        not forecast_only_unimported_dates
+                        and float(existing.get("actual") or 0) == 0
                         and report_date not in dates_with_nonzero_actual
                     )
                 )
@@ -1035,9 +1039,13 @@ def overlay_sales_order_forecast(
 
     for row in enriched_by_key.values():
         can_forecast = row["report_date"] not in actual_imported_dates and (
-            forecast_only_unimported_dates
+            (
+                forecast_only_unimported_dates
+                and float(row.get("actual") or 0) == 0
+            )
             or (
-                float(row.get("actual") or 0) == 0
+                not forecast_only_unimported_dates
+                and float(row.get("actual") or 0) == 0
                 and row["report_date"] not in dates_with_nonzero_actual
             )
         )
@@ -1048,7 +1056,7 @@ def overlay_sales_order_forecast(
             )
             and float(row.get("so") or 0) > 0
         ):
-            row["actual"] = float(row["so"])
+            row["actual"] = float(row.get("so"))
             row["actual_is_forecast"] = True
 
     rows = list(enriched_by_key.values())
