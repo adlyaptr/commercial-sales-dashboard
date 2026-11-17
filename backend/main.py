@@ -118,6 +118,7 @@ SALES_ORDER_SHEET_ID = os.getenv(
 ).strip()
 SALES_ORDER_SHEET_GID = os.getenv("SALES_ORDER_SHEET_GID", "694583576").strip()
 SALES_ORDER_CACHE_SECONDS = 300
+SUMMARY_IMPORT_MATRIX_MONTHS = frozenset({"2026-11"})
 _sales_order_cache = {"expires_at": 0.0, "data": None}
 _sales_order_lock = threading.Lock()
 BUDGET_TARGET_SHEET_GID = os.getenv("BUDGET_TARGET_SHEET_GID", "737662524").strip()
@@ -907,8 +908,9 @@ def overlay_sales_order_forecast(
     actual_imported_dates=None,
     preserve_imported_so=False,
     forecast_only_unimported_dates=False,
-    complete_import_matrix_dates=False,
+    complete_import_matrix_months=None,
 ):
+    complete_import_matrix_months = set(complete_import_matrix_months or ())
     actual_imported_dates = {
         value.date().isoformat()
         if isinstance(value, datetime)
@@ -953,7 +955,7 @@ def overlay_sales_order_forecast(
         if isinstance(report_date, date):
             report_date = report_date.isoformat()
         enriched["report_date"] = str(report_date)
-        if complete_import_matrix_dates and (
+        if enriched["report_date"][:7] in complete_import_matrix_months and (
             enriched.get("source_file")
             and enriched["source_file"] != "manual-fob"
             and not enriched.get("manual_fob")
@@ -986,7 +988,7 @@ def overlay_sales_order_forecast(
         if day < start_date or day > end_date:
             continue
         if report_date in actual_imported_dates or (
-            complete_import_matrix_dates
+            report_date[:7] in complete_import_matrix_months
             and report_date in imported_sales_order_dates
         ):
             continue
@@ -4191,7 +4193,7 @@ def home_summary(request: Request, month: str):
         actual_imported_dates=actual_imported_dates,
         preserve_imported_so=True,
         forecast_only_unimported_dates=True,
-        complete_import_matrix_dates=True,
+        complete_import_matrix_months=SUMMARY_IMPORT_MATRIX_MONTHS,
     )
 
     def empty_totals():
@@ -4440,7 +4442,7 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
         actual_imported_dates=actual_imported_dates,
         preserve_imported_so=True,
         forecast_only_unimported_dates=True,
-        complete_import_matrix_dates=True,
+        complete_import_matrix_months=SUMMARY_IMPORT_MATRIX_MONTHS,
     )
 
     monthly_targets = {
@@ -5655,7 +5657,7 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
         actual_imported_dates=actual_imported_dates,
         preserve_imported_so=True,
         forecast_only_unimported_dates=True,
-        complete_import_matrix_dates=True,
+        complete_import_matrix_months=SUMMARY_IMPORT_MATRIX_MONTHS,
     )
     grouped_rows = {}
     for row in rows:
