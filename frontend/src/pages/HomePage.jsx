@@ -13,7 +13,7 @@ const complaintColors = ['#16845b', '#e5a12c', '#3885b8', '#8a6bb8', '#d45f62', 
 const formatNumber = (value, maximumFractionDigits = 2) =>
     new Intl.NumberFormat('id-ID', { maximumFractionDigits }).format(Number(value ?? 0));
 const formatVolume = (value) =>
-    new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(Number(value ?? 0));
+    new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value ?? 0));
 const formatAveragePrice = (value) =>
     `Rp ${new Intl.NumberFormat('id-ID', {
         minimumFractionDigits: 2,
