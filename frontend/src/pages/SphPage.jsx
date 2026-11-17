@@ -4,10 +4,7 @@ import logoImage from '../assets/reethau.png';
 import '../sph.css';
 
 const roleLabels = {
-    sales: 'Sales',
-    commercial_head: 'Commercial Head',
-    director: 'Direksi',
-    legal: 'Legal',
+    admin: 'Admin',
 };
 
 const statusLabels = {
@@ -370,15 +367,18 @@ function SphPaperPreview({ form }) {
 }
 
 function nextAction(proposal) {
-    if (proposal.status === 'draft') return { action: 'submit', role: 'sales', label: 'Kirim untuk review' };
+    if (proposal.status === 'draft') return { action: 'submit', label: 'Kirim untuk persetujuan Admin' };
     if (proposal.status === 'review') {
-        const role = proposal.approvalRoute?.[proposal.approvals?.length || 0];
-        return role ? { action: 'approve', role, label: `Setujui sebagai ${roleLabels[role]}` } : null;
+        const role = proposal.approvalRoute?.includes('admin')
+            && !proposal.approvals?.includes('admin')
+            ? 'admin'
+            : null;
+        return role ? { action: 'approve', label: `Setujui sebagai ${roleLabels[role]}` } : null;
     }
-    if (proposal.status === 'approved') return { action: 'mark_sent', role: 'sales', label: 'Tandai telah dikirim' };
-    if (proposal.status === 'sent') return { action: 'customer_approved', role: 'sales', label: 'Pelanggan menyetujui' };
-    if (proposal.status === 'negotiation') return { action: 'revise', role: 'sales', label: 'Buat revisi' };
-    if (proposal.status === 'customer_approved') return { action: 'activate', role: 'admin', label: 'Aktifkan pelanggan (Admin)' };
+    if (proposal.status === 'approved') return { action: 'mark_sent', label: 'Tandai telah dikirim' };
+    if (proposal.status === 'sent') return { action: 'customer_approved', label: 'Pelanggan menyetujui' };
+    if (proposal.status === 'negotiation') return { action: 'revise', label: 'Buat revisi' };
+    if (proposal.status === 'customer_approved') return { action: 'activate', label: 'Aktifkan pelanggan' };
     return null;
 }
 
@@ -481,8 +481,6 @@ function ObligationChecklist({
 export default function SphPage({ user, onLogout }) {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [proposals, setProposals] = useState([]);
-    const [sphUsers, setSphUsers] = useState([]);
-    const [usersLoading, setUsersLoading] = useState(false);
     const [proposal, setProposal] = useState(null);
     const [form, setForm] = useState(blankProposal);
     const [search, setSearch] = useState('');
@@ -494,8 +492,7 @@ export default function SphPage({ user, onLogout }) {
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
 
-    const isSales = user.sphRole === 'sales';
-    const isCommercialHead = user.sphRole === 'commercial_head';
+    const isAdmin = user.role === 'admin';
     const isTermTemplate = form.templateKey === 'term_description';
     async function loadProposals() {
         setError('');
@@ -505,45 +502,6 @@ export default function SphPage({ user, onLogout }) {
             setError(requestError.message || 'Daftar SPH gagal dimuat.');
         } finally {
             setLoading(false);
-        }
-    }
-
-    async function loadSphUsers() {
-        setUsersLoading(true);
-        setError('');
-        try {
-            setSphUsers(await api('/api/sph/users'));
-        } catch (requestError) {
-            setError(requestError.message || 'Daftar pengguna SPH gagal dimuat.');
-        } finally {
-            setUsersLoading(false);
-        }
-    }
-
-    async function openTab(tab) {
-        setActiveTab(tab);
-        if (tab === 'access') await loadSphUsers();
-    }
-
-    async function updateSphRole(targetUsername, sphRole) {
-        setBusy(true);
-        setError('');
-        setNotice('');
-        try {
-            await api(`/api/sph/users/${encodeURIComponent(targetUsername)}/role`, {
-                method: 'PUT',
-                body: { sphRole: sphRole || null },
-            });
-            setNotice(
-                sphRole
-                    ? `Role SPH ${roleLabels[sphRole]} diberikan kepada "${targetUsername}".`
-                    : `Akses SPH CNG untuk "${targetUsername}" dinonaktifkan.`,
-            );
-            await loadSphUsers();
-        } catch (requestError) {
-            setError(requestError.message || 'Role SPH gagal diperbarui.');
-        } finally {
-            setBusy(false);
         }
     }
 
@@ -679,7 +637,9 @@ export default function SphPage({ user, onLogout }) {
         : 0;
     const action = proposal ? nextAction(proposal) : null;
     const canApprove = proposal?.status === 'review'
-        && proposal.approvalRoute?.[proposal.approvals?.length || 0] === user.sphRole;
+        && isAdmin
+        && proposal.approvalRoute?.includes('admin')
+        && !proposal.approvals?.includes('admin');
 
     return (
         <main className="sph-app">
@@ -690,11 +650,7 @@ export default function SphPage({ user, onLogout }) {
                 <div className="sph-topbar-right">
                     <span className="sph-user-chip">
                         <strong>{user.username}</strong>
-                        <small>
-                            {user.role === 'admin' && !user.sphRole
-                                ? 'Admin · akses lihat'
-                                : `${user.role === 'admin' ? 'Admin · ' : ''}${roleLabels[user.sphRole]}`}
-                        </small>
+                        <small>Admin</small>
                     </span>
                     <button className="sph-logout" type="button" onClick={logout} disabled={busy}>Keluar</button>
                 </div>
@@ -707,7 +663,7 @@ export default function SphPage({ user, onLogout }) {
                         <h1>SPH CNG Reethau</h1>
                         <p>Pengelolaan penawaran harga, persetujuan, dan proses kontrak pelanggan.</p>
                     </div>
-                    {isSales && (
+                    {isAdmin && (
                         <button className="sph-primary" type="button" onClick={startNewProposal}>
                             <span aria-hidden="true">＋</span> Buat SPH baru
                         </button>
@@ -719,13 +675,12 @@ export default function SphPage({ user, onLogout }) {
                         ['dashboard', 'Dashboard'],
                         ['editor', 'Editor SPH'],
                         ['process', 'Alur proses'],
-                        ...(user.role === 'admin' ? [['access', 'Akses pengguna']] : []),
                     ].map(([tab, label]) => (
                         <button
                             key={tab}
                             type="button"
                             className={activeTab === tab ? 'active' : ''}
-                            onClick={() => openTab(tab)}
+                            onClick={() => setActiveTab(tab)}
                         >
                             {label}
                         </button>
@@ -734,51 +689,6 @@ export default function SphPage({ user, onLogout }) {
 
                 {error && <div className="sph-alert error" role="alert">{error}</div>}
                 {notice && <div className="sph-alert success" role="status">{notice}</div>}
-
-                {activeTab === 'access' && user.role === 'admin' && (
-                    <section className="sph-panel">
-                        <div className="sph-panel-heading">
-                            <div>
-                                <h2>Pengaturan akses SPH</h2>
-                                <p>Tetapkan role proses atau nonaktifkan akses SPH untuk akun Admin dan User.</p>
-                            </div>
-                        </div>
-                        {usersLoading ? (
-                            <p className="sph-empty">Memuat daftar pengguna...</p>
-                        ) : sphUsers.length === 0 ? (
-                            <p className="sph-empty">Belum ada akun yang dapat diatur.</p>
-                        ) : (
-                            <div className="sph-table-wrap">
-                                <table className="sph-table">
-                                    <thead><tr><th>Username</th><th>Jenis akun</th><th>Akses SPH</th></tr></thead>
-                                    <tbody>
-                                        {sphUsers.map((sphUser) => (
-                                            <tr key={sphUser.username}>
-                                                <td><strong>{sphUser.username}</strong></td>
-                                                <td>{sphUser.role === 'admin' ? 'Admin' : 'User'}</td>
-                                                <td>
-                                                    <label className="sph-field">
-                                                        <span className="sr-only">Role SPH untuk {sphUser.username}</span>
-                                                        <select
-                                                            value={['sales', 'commercial_head'].includes(sphUser.sph_role) ? sphUser.sph_role : ''}
-                                                            disabled={busy}
-                                                            aria-label={`Role SPH untuk ${sphUser.username}`}
-                                                            onChange={(event) => updateSphRole(sphUser.username, event.target.value)}
-                                                        >
-                                                            <option value="">Tidak ditugaskan</option>
-                                                            <option value="sales">Sales</option>
-                                                            <option value="commercial_head">Commercial Head</option>
-                                                        </select>
-                                                    </label>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </section>
-                )}
 
                 {activeTab === 'dashboard' && (
                     <section className="sph-dashboard">
@@ -824,7 +734,7 @@ export default function SphPage({ user, onLogout }) {
                                     <span className="sph-empty-mark">SPH</span>
                                     <strong>{proposals.length ? 'Tidak ada hasil yang sesuai' : 'Belum ada data SPH'}</strong>
                                     <p>{proposals.length ? 'Coba kata kunci atau filter status lain.' : 'Data akan muncul setelah draft SPH pertama dibuat. Tidak ada data contoh yang dimasukkan.'}</p>
-                                    {isSales && proposals.length === 0 && (
+                                    {isAdmin && proposals.length === 0 && (
                                         <button className="sph-primary" type="button" onClick={startNewProposal}>Buat SPH pertama</button>
                                     )}
                                 </div>
@@ -860,7 +770,7 @@ export default function SphPage({ user, onLogout }) {
                                                     <td>
                                                         <div className="sph-row-actions">
                                                             <button className="sph-row-button" type="button" disabled={busy} onClick={() => openProposal(item.id, 'process')}>Alur</button>
-                                                            <button className="sph-row-button" type="button" disabled={busy} onClick={() => openProposal(item.id, isSales ? 'editor' : 'process')}>Buka</button>
+                                                            <button className="sph-row-button" type="button" disabled={busy} onClick={() => openProposal(item.id, isAdmin ? 'editor' : 'process')}>Buka</button>
                                                             <a className="sph-row-button" href={`/api/sph/proposals/${item.id}/pdf`}>PDF</a>
                                                         </div>
                                                     </td>
@@ -945,15 +855,9 @@ export default function SphPage({ user, onLogout }) {
                             </div>
                             {proposal && <span className={`sph-status ${proposal.status}`}>{statusLabels[proposal.status]}</span>}
                         </div>
-                        {!proposal && !isSales ? (
-                            <div className="sph-empty"><strong>Pilih SPH untuk melihat detail</strong><p>Akun Anda tidak memiliki role Sales untuk membuat draft.</p></div>
-                        ) : proposal && (!isSales || proposal.status === 'active') ? (
+                        {proposal?.status === 'active' ? (
                             <div className="sph-readonly">
-                                <strong>
-                                    {proposal.status === 'active'
-                                        ? 'SPH berstatus Aktif tidak dapat diedit.'
-                                        : 'Role Sales diperlukan untuk mengedit SPH.'}
-                                </strong>
+                                <strong>SPH berstatus Aktif tidak dapat diedit.</strong>
                                 <p>Buka tab Alur proses untuk melihat tahapan, persetujuan, dan riwayat.</p>
                                 <button className="sph-secondary" type="button" onClick={() => setActiveTab('process')}>Lihat alur proses</button>
                             </div>
@@ -986,7 +890,7 @@ export default function SphPage({ user, onLogout }) {
                                     <p className="sph-form-hint">
                                         {isTermTemplate
                                             ? 'PDF memakai Rincian Volume. Jika Rincian Harga sudah mencantumkan harga dasar, nilainya tidak ditambahkan ulang. Produk dan penjual tetap.'
-                                            : 'Semua penawaran memerlukan persetujuan Commercial Head.'}
+                                            : 'Semua penawaran memerlukan persetujuan Admin.'}
                                     </p>
                                 </div>
                                 <div className="sph-form-section">
@@ -1135,7 +1039,7 @@ export default function SphPage({ user, onLogout }) {
                                 </div>
 
                                 <div className="sph-action-area">
-                                    {proposal.status !== 'active' && isSales && (
+                                    {proposal.status !== 'active' && isAdmin && (
                                         <button
                                             className="sph-secondary"
                                             type="button"
@@ -1145,26 +1049,21 @@ export default function SphPage({ user, onLogout }) {
                                             Edit SPH
                                         </button>
                                     )}
-                                    {action && (
-                                        action.action !== 'approve' || canApprove
-                                    ) && (
-                                        (action.role === 'admin' && user.role === 'admin')
-                                        || user.sphRole === action.role
-                                    ) && (
+                                    {action && isAdmin && (action.action !== 'approve' || canApprove) && (
                                         <button className="sph-primary" type="button" disabled={busy} onClick={() => performAction(action.action)}>
                                             {action.label}
                                         </button>
                                     )}
                                     {proposal.status === 'review' && canApprove && (
                                         <div className="sph-return-action">
-                                            <input value={returnReason} onChange={(event) => setReturnReason(event.target.value)} placeholder="Alasan mengembalikan ke Sales" maxLength={2000} />
+                                            <input value={returnReason} onChange={(event) => setReturnReason(event.target.value)} placeholder="Alasan pengembalian" maxLength={2000} />
                                             <button className="sph-secondary" type="button" disabled={busy || !returnReason.trim()} onClick={() => performAction('return', { reason: returnReason })}>Kembalikan</button>
                                         </div>
                                     )}
-                                    {proposal.status === 'sent' && isSales && (
+                                    {proposal.status === 'sent' && isAdmin && (
                                         <button className="sph-secondary" type="button" disabled={busy} onClick={() => performAction('negotiation')}>Mulai negosiasi</button>
                                     )}
-                                    {proposal.status === 'active' && isCommercialHead && (
+                                    {proposal.status === 'active' && isAdmin && (
                                         <div className="sph-return-action">
                                             <input type="number" min="0" step="0.01" value={actualVolume} onChange={(event) => setActualVolume(event.target.value)} placeholder="Volume aktual MMBTU/hari" />
                                             <button className="sph-secondary" type="button" disabled={busy || actualVolume === ''} onClick={() => performAction('record_actual', { actualVolume: Number(actualVolume) })}>Catat realisasi</button>

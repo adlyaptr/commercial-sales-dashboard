@@ -63,7 +63,7 @@ export default function LoginPage({ onLogin }) {
                             />
                             <span>
                                 <strong>SPH CNG Reethau</strong>
-                                <small>Penawaran harga dan alur persetujuan</small>
+                                <small>Penawaran harga dan persetujuan · khusus Admin</small>
                             </span>
                         </label>
                     </fieldset>

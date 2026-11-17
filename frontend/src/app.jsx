@@ -40,7 +40,7 @@ function SphAccess({ user, onLogout }) {
     if (!user) return <Navigate to="/login" replace />;
     if (
         user.application !== 'sph' ||
-        (user.role !== 'admin' && !user.sphRole)
+        user.role !== 'admin'
     ) {
         return <Navigate to="/beranda" replace />;
     }

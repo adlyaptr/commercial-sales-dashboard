@@ -12,11 +12,11 @@ import main
 
 
 class SphRequest:
-    def __init__(self, role, payload=None):
+    def __init__(self, role="admin", payload=None, system_role="admin"):
         self.payload = payload or {}
         self.session = {
-            "username": "reviewer",
-            "role": "user",
+            "username": "admin" if system_role == "admin" else "reviewer",
+            "role": system_role,
             "application": "sph",
             "sph_role": role,
         }
@@ -27,7 +27,7 @@ class SphRequest:
 
 class MemorySphDatabase:
     def __init__(self):
-        self.user = {"role": "user", "sph_role": "commercial_head"}
+        self.user = {"role": "admin", "sph_role": "commercial_head"}
         self.row = {
             "id": 7,
             "number": "SPH-2026-11-MKT-001",
@@ -79,6 +79,12 @@ class MemorySphDatabase:
 
     def execute(self, statement, parameters=None):
         parameters = parameters or ()
+        if statement.startswith("SELECT password_hash,role"):
+            return SimpleNamespace(fetchone=lambda: {
+                "password_hash": "hashed-password",
+                "role": self.user["role"],
+                "sph_role": self.user.get("sph_role"),
+            })
         if statement.startswith("SELECT role,sph_role FROM app_users"):
             return SimpleNamespace(fetchone=lambda: self.user)
         if statement.startswith("SELECT role FROM app_users"):
@@ -158,14 +164,14 @@ class SphWorkflowTests(unittest.TestCase):
         self.db_patch.start()
         self.addCleanup(self.db_patch.stop)
 
-    def test_all_proposals_require_only_commercial_head_approval(self):
+    def test_all_proposals_require_only_admin_approval(self):
         for proposal in (
             {"priceUsd": 14.49, "topPercent": 90},
             {"priceUsd": 14.5, "topPercent": 89.99},
             {"priceUsd": 14.5, "topPercent": 90},
         ):
             with self.subTest(proposal=proposal):
-                self.assertEqual(main._sph_approval_route(), ["commercial_head"])
+                self.assertEqual(main._sph_approval_route(), ["admin"])
 
     def test_application_session_prevents_cross_app_api_access(self):
         sph_session = SphRequest("sales")
@@ -178,6 +184,35 @@ class SphWorkflowTests(unittest.TestCase):
         with self.assertRaises(main.HTTPException) as error:
             main.require_sph_access(commercial_session)
         self.assertEqual(error.exception.status_code, 403)
+
+    def test_legacy_sph_role_does_not_grant_user_access_or_approval(self):
+        self.database.user.update({"role": "user", "sph_role": "commercial_head"})
+        request = SphRequest(
+            "commercial_head",
+            {"action": "approve"},
+            system_role="user",
+        )
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.sph_proposal_action(7, request))
+        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(self.database.row["approvals"], "[]")
+        self.assertEqual(self.database.logs, [])
+
+        with self.assertRaises(main.HTTPException) as error:
+            main.require_sph_access(SphRequest("admin"))
+        self.assertEqual(error.exception.status_code, 403)
+
+        with patch.object(main, "verify_user_password", return_value=True):
+            login_result = asyncio.run(main.login(SphRequest(
+                "commercial_head",
+                {
+                    "username": "reviewer",
+                    "password": "password",
+                    "application": "sph",
+                },
+                system_role="user",
+            )))
+        self.assertEqual(login_result.status_code, 403)
 
     def test_proposal_validation_rejects_noncanonical_price_precision(self):
         proposal = {
@@ -210,34 +245,16 @@ class SphWorkflowTests(unittest.TestCase):
             main._sph_validate_proposal(proposal)
         self.assertEqual(error.exception.status_code, 400)
 
-    def test_only_commercial_head_can_approve_and_approval_finishes_in_one_stage(self):
-        self.database.user["sph_role"] = "sales"
-        request = SphRequest("sales", {"action": "approve"})
-        with self.assertRaises(main.HTTPException) as error:
-            asyncio.run(main.sph_proposal_action(7, request))
-        self.assertEqual(error.exception.status_code, 403)
-        self.assertEqual(self.database.row["approvals"], "[]")
-        self.assertEqual(self.database.logs, [])
-
-        self.database.user["sph_role"] = "director"
-        director_request = SphRequest("director", {"action": "approve"})
-        with self.assertRaises(main.HTTPException) as error:
-            asyncio.run(main.sph_proposal_action(7, director_request))
-        self.assertEqual(error.exception.status_code, 403)
-        self.assertEqual(self.database.row["approvals"], "[]")
-
-        self.database.user["sph_role"] = "commercial_head"
-        head_request = SphRequest("commercial_head", {"action": "approve"})
-        result = asyncio.run(main.sph_proposal_action(7, head_request))
+    def test_admin_approval_is_the_only_workflow_approval_stage(self):
+        self.database.row["approvals"] = '["commercial_head"]'
+        admin_request = SphRequest("commercial_head", {"action": "approve"})
+        result = asyncio.run(main.sph_proposal_action(7, admin_request))
         self.assertEqual(result["status"], "approved")
-        self.assertEqual(
-            result["approvals"],
-            ["commercial_head"],
-        )
+        self.assertEqual(result["approvals"], ["admin"])
         self.assertEqual(len(self.database.logs), 1)
+        self.assertEqual(self.database.logs[-1]["actorRole"], "admin")
 
-    def test_sales_can_edit_submitted_proposal_and_reset_it_to_a_new_draft_version(self):
-        self.database.user["sph_role"] = "sales"
+    def test_admin_can_edit_submitted_proposal_and_reset_it_to_a_new_draft_version(self):
         self.database.row.update({
             "status": "sent",
             "approvals": '["commercial_head"]',
@@ -280,7 +297,7 @@ class SphWorkflowTests(unittest.TestCase):
 
         updated = asyncio.run(main.sph_update_proposal(
             7,
-            SphRequest("sales", proposal),
+            SphRequest("admin", proposal),
         ))
 
         self.assertEqual(updated["status"], "draft")
@@ -401,12 +418,11 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 400)
 
     def test_active_proposal_cannot_be_edited(self):
-        self.database.user["sph_role"] = "sales"
         self.database.row["status"] = "active"
         with self.assertRaises(main.HTTPException) as error:
             asyncio.run(main.sph_update_proposal(
                 7,
-                SphRequest("sales", {
+                SphRequest("admin", {
                     "proposalNumber": "SPH-2026-11-MKT-001",
                     "customerName": "Customer A",
                     "proposalDate": "2026-11-06",
@@ -426,8 +442,12 @@ class SphWorkflowTests(unittest.TestCase):
 
     def test_only_admin_can_activate_customer_approved_proposal(self):
         self.database.row["status"] = "customer_approved"
-        self.database.user["sph_role"] = "sales"
-        sales_request = SphRequest("sales", {"action": "activate"})
+        self.database.user.update({"role": "user", "sph_role": "sales"})
+        sales_request = SphRequest(
+            "sales",
+            {"action": "activate"},
+            system_role="user",
+        )
         with self.assertRaises(main.HTTPException) as error:
             asyncio.run(main.sph_proposal_action(7, sales_request))
         self.assertEqual(error.exception.status_code, 403)
@@ -435,11 +455,6 @@ class SphWorkflowTests(unittest.TestCase):
 
         self.database.user.update({"role": "admin", "sph_role": None})
         admin_request = SphRequest("admin", {"action": "activate"})
-        admin_request.session.update({
-            "username": "admin",
-            "role": "admin",
-            "sph_role": None,
-        })
         result = asyncio.run(main.sph_proposal_action(7, admin_request))
         self.assertEqual(result["status"], "active")
         self.assertEqual(self.database.logs[-1]["actorRole"], "admin")
@@ -450,8 +465,7 @@ class SphWorkflowTests(unittest.TestCase):
 
     def test_legal_handoff_action_is_no_longer_valid(self):
         self.database.row["status"] = "customer_approved"
-        self.database.user["sph_role"] = "sales"
-        request = SphRequest("sales", {"action": "handoff_legal"})
+        request = SphRequest("admin", {"action": "handoff_legal"})
         with self.assertRaises(main.HTTPException) as error:
             asyncio.run(main.sph_proposal_action(7, request))
         self.assertEqual(error.exception.status_code, 409)
@@ -461,16 +475,11 @@ class SphWorkflowTests(unittest.TestCase):
         self.database.row["status"] = "pjbg"
         self.database.user.update({"role": "admin", "sph_role": None})
         request = SphRequest("admin", {"action": "activate"})
-        request.session.update({
-            "username": "admin",
-            "role": "admin",
-            "sph_role": None,
-        })
         proposal = asyncio.run(main.sph_proposal_action(7, request))
         self.assertEqual(proposal["status"], "active")
 
     def test_sph_pdf_endpoint_returns_a_downloadable_pdf(self):
-        response = main.sph_proposal_pdf(7, SphRequest("commercial_head"))
+        response = main.sph_proposal_pdf(7, SphRequest("admin"))
 
         async def read_response():
             return b"".join([chunk async for chunk in response.body_iterator])
@@ -543,7 +552,7 @@ class SphWorkflowTests(unittest.TestCase):
             return Paragraph(text, style, bulletText, *args, **kwargs)
 
         with patch("reportlab.platypus.Paragraph", side_effect=capture_paragraph):
-            main.sph_proposal_pdf(7, SphRequest("commercial_head"))
+            main.sph_proposal_pdf(7, SphRequest("admin"))
 
         self.assertIn(
             "Jalan Akses Tol Cibitung No.82, Gandasari,"
@@ -554,7 +563,7 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertIn("Approval Penawaran", paragraph_texts)
         self.assertIn("PT Green Pulse Dynamics", paragraph_texts)
         self.assertIn(
-            "<u><b>Sahrul Asturrachman</b></u><br/><i>Commercial Head</i>",
+            "<u><b>Admin</b></u>",
             paragraph_texts,
         )
 
@@ -748,7 +757,7 @@ class SphWorkflowTests(unittest.TestCase):
             return Paragraph(text, style, bulletText, *args, **kwargs)
 
         with patch("reportlab.platypus.Paragraph", side_effect=capture_paragraph):
-            main.sph_proposal_pdf(7, SphRequest("commercial_head"))
+            main.sph_proposal_pdf(7, SphRequest("admin"))
 
         self.assertTrue(list_styles)
         self.assertEqual({style.name for style in list_styles}, {"SphListB", "SphListC", "SphListD"})

@@ -328,67 +328,39 @@ class UserRoleTests(unittest.TestCase):
             ))
         self.assertEqual(error.exception.status_code, 404)
 
-    def test_admin_can_assign_and_revoke_a_valid_sph_workflow_role_in_sph_app(self):
-        self.database.users["sales.team"] = {
-            "username": "sales.team",
-            "password_hash": "unused",
-            "role": "user",
-            "sph_role": None,
-        }
-        request = FakeRequest({"sphRole": "sales"})
-        request.session["application"] = "sph"
-        response = asyncio.run(main.update_sph_user_role(
-            "sales.team",
-            request,
-        ))
-        self.assertEqual(response, {"username": "sales.team", "sphRole": "sales"})
-        self.assertEqual(self.database.users["sales.team"]["sph_role"], "sales")
+    def test_sph_role_assignment_endpoints_are_removed(self):
+        routes = {route.path for route in main.app.routes}
+        self.assertNotIn("/api/sph/users", routes)
+        self.assertNotIn("/api/sph/users/{username}/role", routes)
 
-        request = FakeRequest({"sphRole": "legal"})
-        request.session["application"] = "sph"
-        with self.assertRaises(main.HTTPException) as error:
-            asyncio.run(main.update_sph_user_role("sales.team", request))
-        self.assertEqual(error.exception.status_code, 400)
-        self.assertEqual(self.database.users["sales.team"]["sph_role"], "sales")
-
-        sph_request = FakeRequest()
-        sph_request.session["application"] = "sph"
-        self.assertEqual(
-            main.list_sph_users(sph_request),
-            [
-                {"username": main.APP_USERNAME, "role": "admin", "sph_role": None},
-                {"username": "sales.team", "role": "user", "sph_role": "sales"},
-            ],
-        )
-
-        request = FakeRequest({"sphRole": None})
-        request.session["application"] = "sph"
-        asyncio.run(main.update_sph_user_role(
-            "sales.team",
-            request,
-        ))
-        self.assertIsNone(self.database.users["sales.team"]["sph_role"])
-
-    def test_sph_role_assignment_is_not_available_from_commercial_or_to_users(self):
+    def test_legacy_sph_assignment_does_not_grant_user_access(self):
         self.database.users["reader"] = {
             "username": "reader",
-            "password_hash": "unused",
+            "password_hash": main.hash_user_password("reader-password"),
             "role": "user",
-            "sph_role": None,
+            "sph_role": "sales",
         }
-        request = FakeRequest({"sphRole": "sales"})
-        with self.assertRaises(main.HTTPException) as error:
-            asyncio.run(main.update_sph_user_role("reader", request))
-        self.assertEqual(error.exception.status_code, 403)
+        request = FakeRequest(
+            {
+                "username": "reader",
+                "password": "reader-password",
+                "application": "sph",
+            },
+            username="",
+            role="",
+        )
+        response = asyncio.run(main.login(request))
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(request.session, {"username": "", "role": ""})
 
+        request = FakeRequest(username="reader", role="user")
         request.session["application"] = "sph"
-        request.session["username"] = "reader"
-        request.session["role"] = "user"
         with self.assertRaises(main.HTTPException) as error:
-            asyncio.run(main.update_sph_user_role("reader", request))
+            main.me(request)
         self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(request.session, {})
 
-    def test_login_application_selection_enforces_sph_assignment(self):
+    def test_login_application_selection_requires_admin_for_sph(self):
         self.database.users["reader"] = {
             "username": "reader",
             "password_hash": main.hash_user_password("reader-password"),
@@ -407,29 +379,6 @@ class UserRoleTests(unittest.TestCase):
         response = asyncio.run(main.login(request))
         self.assertEqual(response.status_code, 403)
         self.assertEqual(request.session, {"username": "", "role": ""})
-
-        self.database.users["reader"]["sph_role"] = "sales"
-        request = FakeRequest(
-            {
-                "username": "reader",
-                "password": "reader-password",
-                "application": "sph",
-            },
-            username="",
-            role="",
-        )
-        asyncio.run(main.login(request))
-        self.assertEqual(request.session["application"], "sph")
-        self.assertEqual(request.session["sph_role"], "sales")
-        self.assertEqual(
-            main.me(request),
-            {
-                "username": "reader",
-                "role": "user",
-                "sphRole": "sales",
-                "application": "sph",
-            },
-        )
 
 
 if __name__ == "__main__":
