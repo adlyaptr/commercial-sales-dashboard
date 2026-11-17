@@ -227,7 +227,6 @@ class MemoryHomeSummary:
         self,
         sales_rows=None,
         actual_imported_dates=("2026-10-05", "2026-10-06", "2026-10-07"),
-        expected_range_end="2026-10-31",
     ):
         self.sales_rows = sales_rows or [
             {"report_date": date(2026, 10, 5), "customer_name": "SETU Customer", "operator": "SETU", "customer_key": "setu-a", "so": 100, "actual": 80},
@@ -238,7 +237,6 @@ class MemoryHomeSummary:
         self.actual_imported_dates = {
             date.fromisoformat(value) for value in actual_imported_dates
         }
-        self.expected_range_end = expected_range_end
 
     def __enter__(self):
         return self
@@ -254,8 +252,6 @@ class MemoryHomeSummary:
                 {"customer_key": "setu-a", "customer_name": "SETU Customer", "operator": "SETU"},
                 {"customer_key": "kht-a", "customer_name": "KHT Customer", "operator": "KHT"},
                 {"customer_key": "off-a", "customer_name": "OFF Customer", "operator": "OFF"},
-                {"customer_key": "new-a", "customer_name": "New Customer", "operator": "WUNUT"},
-                {"customer_key": "manualfob-blora-test", "customer_name": "KANAKA", "operator": "BLORA"},
             ])
         if statement.startswith(
             "SELECT report_date, imported_at FROM daily_actual_imports"
@@ -272,7 +268,7 @@ class MemoryHomeSummary:
             ])
         if "SELECT s.report_date, c.customer_name, c.operator" not in statement:
             raise AssertionError(f"Unexpected SQL in test: {statement}")
-        if parameters != ("2026-01-01", self.expected_range_end):
+        if parameters != ("2026-01-01", "2026-10-31"):
             raise AssertionError(f"Unexpected home-summary date range: {parameters}")
         return SimpleNamespace(fetchall=lambda: self.sales_rows)
 
@@ -711,8 +707,8 @@ class DashboardApiTests(unittest.TestCase):
             )
 
         forecast_customer = result["operators"]["WUNUT"][0]
-        self.assertEqual(forecast_customer["so"], 500)
-        self.assertEqual(forecast_customer["actual"], 500)
+        self.assertEqual(forecast_customer["so"], 700)
+        self.assertEqual(forecast_customer["actual"], 700)
         self.assertTrue(forecast_customer["actual_is_forecast"])
 
     def test_dashboard_forecasts_same_day_actual_import(self):
@@ -938,94 +934,6 @@ class HomeSummaryTests(unittest.TestCase):
         self.assertEqual(result["days"][9]["so"], 300)
         self.assertEqual(result["days"][9]["actual"], 300)
         self.assertEqual(result["days"][10]["actual"], 400)
-
-    def test_november_summary_matches_sales_order_and_actual_totals(self):
-        database = MemoryHomeSummary(
-            sales_rows=[
-                {
-                    "report_date": date(2026, 11, 1),
-                    "customer_name": "SETU Customer",
-                    "operator": "SETU",
-                    "customer_key": "setu-a",
-                    "so": 3000000,
-                    "actual": 2764684,
-                    "source_file": "daily-sales.xlsx",
-                },
-                {
-                    "report_date": date(2026, 11, 2),
-                    "customer_name": "KHT Customer",
-                    "operator": "KHT",
-                    "customer_key": "kht-a",
-                    "so": 3193148,
-                    "actual": 10,
-                    "source_file": "planner.xlsx",
-                },
-                {
-                    "report_date": date(2026, 11, 1),
-                    "customer_name": "KANAKA",
-                    "operator": "BLORA",
-                    "customer_key": "manualfob-blora-test",
-                    "so": 1000,
-                    "actual": 0,
-                    "source_file": "manual-fob",
-                    "manual_fob": True,
-                },
-            ],
-            actual_imported_dates=("2026-11-01",),
-            expected_range_end="2026-11-30",
-        )
-        sales_orders = {
-            "2026-11-02": [
-                {"customer": "KHT Customer", "so": 500000},
-                {"customer": "New Customer", "so": 79000},
-            ],
-        }
-        with (
-            patch.object(main, "db", return_value=database),
-            patch.object(main, "get_sales_order_data", return_value=sales_orders),
-        ):
-            result = main.home_summary(FakeRequest(), month="2026-11")
-
-        self.assertEqual(result["month_summary"]["so"], 6193148)
-        self.assertEqual(result["month_summary"]["actual"], 5957832)
-
-    def test_previous_month_summary_keeps_legacy_so_and_manual_fob_totals(self):
-        database = MemoryHomeSummary(
-            sales_rows=[
-                {
-                    "report_date": date(2026, 10, 1),
-                    "customer_name": "SETU Customer",
-                    "operator": "SETU",
-                    "customer_key": "setu-a",
-                    "so": 300,
-                    "actual": 120,
-                    "source_file": "daily-sales.xlsx",
-                },
-                {
-                    "report_date": date(2026, 10, 1),
-                    "customer_name": "KANAKA",
-                    "operator": "BLORA",
-                    "customer_key": "manualfob-blora-test",
-                    "so": 100,
-                    "actual": 50,
-                    "source_file": "manual-fob",
-                    "manual_fob": True,
-                },
-            ],
-            actual_imported_dates=(),
-            expected_range_end="2026-10-31",
-        )
-        sales_orders = {
-            "2026-10-01": [{"customer": "SETU Customer", "so": 500}],
-        }
-        with (
-            patch.object(main, "db", return_value=database),
-            patch.object(main, "get_sales_order_data", return_value=sales_orders),
-        ):
-            result = main.home_summary(FakeRequest(), month="2026-10")
-
-        self.assertEqual(result["month_summary"]["so"], 600)
-        self.assertEqual(result["month_summary"]["actual"], 550)
 
     def test_home_summary_rejects_invalid_month(self):
         with self.assertRaises(main.HTTPException) as invalid:

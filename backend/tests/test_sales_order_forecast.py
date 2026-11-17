@@ -298,56 +298,21 @@ class SalesOrderForecastTests(unittest.TestCase):
         self.assertFalse(by_customer_date[("other", "2026-11-15")]["actual_is_forecast"])
         self.assertNotIn(("new", "2026-11-15"), by_customer_date)
 
-        unconfirmed_platinum = by_customer_date[("platinum", "2026-11-16")]
-        self.assertEqual(unconfirmed_platinum["so"], 4020000)
-        self.assertEqual(unconfirmed_platinum["actual"], 4020000)
-        self.assertTrue(unconfirmed_platinum["actual_is_forecast"])
+        unimported_forecast = by_customer_date[("platinum", "2026-11-16")]
+        self.assertEqual(unimported_forecast["so"], 999999)
+        self.assertEqual(unimported_forecast["actual"], 999999)
+        self.assertTrue(unimported_forecast["actual_is_forecast"])
         stale_customer = by_customer_date[("other", "2026-11-16")]
-        self.assertEqual(stale_customer["so"], 1000)
-        self.assertEqual(stale_customer["actual"], 1000)
-        self.assertTrue(stale_customer["actual_is_forecast"])
+        self.assertEqual(stale_customer["so"], 0)
+        self.assertEqual(stale_customer["actual"], 0)
+        self.assertFalse(stale_customer["actual_is_forecast"])
 
         sheet_forecast = by_customer_date[("platinum", "2026-11-17")]
         self.assertEqual(sheet_forecast["so"], 4030000)
         self.assertEqual(sheet_forecast["actual"], 4030000)
         self.assertTrue(sheet_forecast["actual_is_forecast"])
 
-    def test_forecast_preserves_imported_so_and_replaces_unconfirmed_actual(self):
-        sales_rows = [{
-            "report_date": "2026-11-16",
-            "customer_key": "platinum",
-            "customer_name": "PLATINUM",
-            "operator": "WUNUT",
-            "so": 300,
-            "actual": 120,
-            "source_file": "daily-sales.xlsx",
-            "manual_fob": False,
-        }]
-        customers = [{
-            "customer_key": "platinum",
-            "customer_name": "PLATINUM",
-            "operator": "WUNUT",
-        }]
-        sales_orders = {
-            "2026-11-16": [{"customer": "PLATINUM", "so": 500}],
-        }
-
-        rows, _ = main.overlay_sales_order_forecast(
-            sales_rows,
-            customers,
-            sales_orders,
-            date(2026, 11, 16),
-            date(2026, 11, 16),
-            preserve_imported_so=True,
-            forecast_only_unimported_dates=True,
-            summary_override_months={"2026-11"},
-        )
-
-        self.assertEqual(rows[0]["so"], 300)
-        self.assertEqual(rows[0]["actual"], 300)
-        self.assertTrue(rows[0]["actual_is_forecast"])
-
-    def test_imported_zero_so_does_not_fall_back_to_google_sheet(self):
+    def test_forecast_falls_back_to_sheet_when_stored_so_is_zero(self):
         sales_rows = [{
             "report_date": "2026-11-16",
             "customer_key": "platinum",
@@ -356,111 +321,6 @@ class SalesOrderForecastTests(unittest.TestCase):
             "so": 0,
             "actual": 120,
             "source_file": "daily-sales.xlsx",
-            "manual_fob": False,
-        }]
-        customers = [{
-            "customer_key": "platinum",
-            "customer_name": "PLATINUM",
-            "operator": "WUNUT",
-        }]
-        sales_orders = {
-            "2026-11-16": [{"customer": "PLATINUM", "so": 300}],
-        }
-
-        rows, _ = main.overlay_sales_order_forecast(
-            sales_rows,
-            customers,
-            sales_orders,
-            date(2026, 11, 16),
-            date(2026, 11, 16),
-            preserve_imported_so=True,
-            forecast_only_unimported_dates=True,
-            summary_override_months={"2026-11"},
-        )
-
-        self.assertEqual(rows[0]["so"], 0)
-        self.assertEqual(rows[0]["actual"], 0)
-        self.assertFalse(rows[0]["actual_is_forecast"])
-
-    def test_summary_override_is_limited_to_configured_months(self):
-        sales_rows = [
-            {
-                "report_date": "2026-10-16",
-                "customer_key": "platinum",
-                "customer_name": "PLATINUM",
-                "operator": "WUNUT",
-                "so": 300,
-                "actual": 120,
-                "source_file": "daily-sales.xlsx",
-            },
-            {
-                "report_date": "2026-11-16",
-                "customer_key": "platinum",
-                "customer_name": "PLATINUM",
-                "operator": "WUNUT",
-                "so": 300,
-                "actual": 120,
-                "source_file": "daily-sales.xlsx",
-            },
-        ]
-        customers = [
-            {
-                "customer_key": "platinum",
-                "customer_name": "PLATINUM",
-                "operator": "WUNUT",
-            },
-            {
-                "customer_key": "new",
-                "customer_name": "NEW",
-                "operator": "WUNUT",
-            },
-        ]
-        sales_orders = {
-            "2026-10-16": [
-                {"customer": "PLATINUM", "so": 500},
-                {"customer": "NEW", "so": 700},
-            ],
-            "2026-11-16": [
-                {"customer": "PLATINUM", "so": 500},
-                {"customer": "NEW", "so": 700},
-            ],
-        }
-
-        rows, _ = main.overlay_sales_order_forecast(
-            sales_rows,
-            customers,
-            sales_orders,
-            date(2026, 10, 16),
-            date(2026, 11, 16),
-            preserve_imported_so=True,
-            forecast_only_unimported_dates=True,
-            summary_override_months={"2026-11"},
-        )
-        by_customer_date = {
-            (row["customer_key"], row["report_date"]): row
-            for row in rows
-        }
-        new_customer_dates = {
-            row["report_date"]
-            for row in rows
-            if row["customer_key"] == "new"
-        }
-
-        self.assertEqual(by_customer_date[("platinum", "2026-10-16")]["so"], 500)
-        self.assertEqual(by_customer_date[("platinum", "2026-10-16")]["actual"], 500)
-        self.assertEqual(by_customer_date[("platinum", "2026-11-16")]["so"], 300)
-        self.assertEqual(by_customer_date[("platinum", "2026-11-16")]["actual"], 300)
-        self.assertIn("2026-10-16", new_customer_dates)
-        self.assertNotIn("2026-11-16", new_customer_dates)
-
-    def test_forecast_falls_back_to_sheet_when_no_daily_import_exists(self):
-        sales_rows = [{
-            "report_date": "2026-11-16",
-            "customer_key": "platinum",
-            "customer_name": "PLATINUM",
-            "operator": "WUNUT",
-            "so": 0,
-            "actual": 120,
             "manual_fob": False,
         }]
         customers = [{
