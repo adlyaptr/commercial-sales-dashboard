@@ -4,6 +4,21 @@ import re
 from pathlib import Path
 
 
+def _ensure_sph_contract_date_columns(connection):
+    columns = connection.execute(
+        """
+        SELECT COLUMN_NAME FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sph_proposals'
+        """
+    ).fetchall()
+    column_names = {column["COLUMN_NAME"] for column in columns}
+    for column_name in ("start_date", "end_date"):
+        if column_name not in column_names:
+            connection.execute(
+                f"ALTER TABLE sph_proposals ADD COLUMN {column_name} DATE NULL"
+            )
+
+
 def initialize_database(connection_factory, app_username, app_password):
     schema_path = Path(__file__).resolve().parent.parent / "database" / "schema.sql"
     schema = schema_path.read_text(encoding="utf-8")
@@ -12,13 +27,7 @@ def initialize_database(connection_factory, app_username, app_password):
             if statement.strip():
                 con.execute(statement)
 
-        con.execute(
-            "UPDATE sph_proposals SET status='approved',"
-            "approved_at=COALESCE(approved_at,CURRENT_DATE),updated_at=CURRENT_TIMESTAMP "
-            "WHERE status='review' AND CASE WHEN JSON_VALID(approvals) "
-            "THEN JSON_CONTAINS(approvals,%s) ELSE 0 END=1",
-            ('"commercial_head"',),
-        )
+        _ensure_sph_contract_date_columns(con)
 
         user_columns = con.execute(
             """

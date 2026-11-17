@@ -1959,6 +1959,7 @@ SPH_STATUSES = {
     "negotiation": "Negosiasi",
     "customer_approved": "Disetujui Pelanggan",
     "active": "Aktif",
+    "inactive": "Tidak Aktif",
 }
 
 SPH_GUARANTEES = {
@@ -1999,6 +2000,56 @@ def _sph_text(value, label, maximum=10000, required=False):
     if len(text) > maximum:
         raise HTTPException(status_code=400, detail=f"{label} terlalu panjang.")
     return text
+
+
+def _sph_contract_dates(start_value, end_value, required=False):
+    try:
+        start_date = date.fromisoformat(str(start_value)) if start_value else None
+        end_date = date.fromisoformat(str(end_value)) if end_value else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Tanggal kontrak tidak valid.")
+    if required and (start_date is None or end_date is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Tanggal mulai dan tanggal selesai kontrak wajib diisi.",
+        )
+    if start_date and end_date and end_date < start_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Tanggal selesai kontrak tidak boleh sebelum tanggal mulai.",
+        )
+    return start_date, end_date
+
+
+def _sph_contract_duration(value, unit):
+    if (
+        isinstance(value, bool)
+        or not isinstance(unit, str)
+        or unit not in SPH_DURATION_UNITS
+    ):
+        raise HTTPException(status_code=400, detail="Jangka waktu kontrak tidak valid.")
+    try:
+        duration = int(value)
+        if Decimal(str(value)) != duration:
+            raise ValueError
+    except (InvalidOperation, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Jangka waktu kontrak tidak valid.")
+    if not 1 <= duration <= (15 if unit == "year" else 5475):
+        raise HTTPException(status_code=400, detail="Jangka waktu kontrak tidak valid.")
+    return duration, unit
+
+
+def _sph_add_contract_metadata(proposal):
+    start_date = proposal.get("startDate")
+    end_date = proposal.get("endDate")
+    is_active = proposal.get("status") == "active"
+    proposal["contractDatesMissing"] = is_active and not (start_date and end_date)
+    proposal["contractExpired"] = (
+        is_active
+        and bool(end_date)
+        and end_date < _sph_now().date().isoformat()
+    )
+    return proposal
 
 
 def _sph_pack_supply_pattern(pattern, mother_station, plant_name="", plant_address=""):
@@ -2098,23 +2149,17 @@ def _sph_validate_proposal(payload):
             Decimal(str(value)) for value in numeric_fields
         )
         due_value = payload.get("dueDay", 20)
-        duration_value = payload.get("contractDuration", payload.get("contractYears", 2))
-        duration_unit = payload.get("contractDurationUnit", "year")
-        if (
-            isinstance(due_value, bool)
-            or isinstance(duration_value, bool)
-            or not isinstance(duration_unit, str)
-            or duration_unit not in SPH_DURATION_UNITS
-        ):
+        if isinstance(due_value, bool):
             raise ValueError
-        due_day, duration = int(due_value), int(duration_value)
-        if (
-            Decimal(str(due_value)) != due_day
-            or Decimal(str(duration_value)) != duration
-        ):
+        due_day = int(due_value)
+        if Decimal(str(due_value)) != due_day:
             raise ValueError
     except (InvalidOperation, TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Tanggal dan angka pada SPH harus valid.")
+    duration, duration_unit = _sph_contract_duration(
+        payload.get("contractDuration", payload.get("contractYears", 2)),
+        payload.get("contractDurationUnit", "year"),
+    )
     if (
         not all(value.is_finite() for value in (volume_min, volume_max, price_usd, top_percent))
         or any(value.normalize().as_tuple().exponent < -2 for value in (
@@ -2127,7 +2172,6 @@ def _sph_validate_proposal(payload):
         or price_usd > Decimal("9999999999.99")
         or not 0 <= top_percent <= 100
         or not 1 <= due_day <= 28
-        or not 1 <= duration <= (15 if duration_unit == "year" else 5475)
     ):
         raise HTTPException(status_code=400, detail="Nilai volume, harga, TOP, atau termin di luar batas.")
     guarantee_value = payload.get("guarantee", "Cash Deposit")
@@ -2147,15 +2191,10 @@ def _sph_validate_proposal(payload):
         "Lokasi Mother Station",
         500,
     )
-    start_date_value = payload.get("startDate")
-    try:
-        start_date = (
-            date.fromisoformat(start_date_value)
-            if start_date_value
-            else None
-        )
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="Tanggal mulai tidak valid.")
+    start_date, end_date = _sph_contract_dates(
+        payload.get("startDate"),
+        payload.get("endDate"),
+    )
     return {
         "proposal_number": proposal_number,
         "template_key": template_key,
@@ -2181,6 +2220,7 @@ def _sph_validate_proposal(payload):
         "supply_pattern": _sph_text(payload.get("supplyPattern"), "Pola supply", 2000),
         "delivery_point": _sph_text(payload.get("deliveryPoint"), "Titik penyerahan", 2000),
         "start_date": start_date,
+        "end_date": end_date,
         "volume_details": _sph_text(payload.get("volumeDetails"), "Rincian volume", 5000),
         "price_details": _sph_text(payload.get("priceDetails"), "Rincian harga", 5000),
         "payment_terms": _sph_text(payload.get("paymentTerms"), "Ketentuan pembayaran", 5000),
@@ -2209,6 +2249,7 @@ def _sph_proposal_row(con, proposal_id):
         "p.duration_details AS durationDetails,"
         "p.attention_to AS attentionTo,p.supply_pattern AS supplyPattern,"
         "p.delivery_point AS deliveryPoint,p.start_date AS startDate,"
+        "p.end_date AS endDate,"
         "p.volume_details AS volumeDetails,p.price_details AS priceDetails,"
         "p.payment_terms AS paymentTerms,p.advantages,p.other_terms AS otherTerms,"
         "p.preparation,"
@@ -2238,7 +2279,7 @@ def _sph_proposal_json(row):
     result["version"] = int(result["version"])
     result["exchangeClause"] = bool(result["exchangeClause"])
     result["approvals"] = json.loads(result["approvals"] or "[]")
-    for key in ("proposalDate", "startDate", "sentDate", "approvedAt"):
+    for key in ("proposalDate", "startDate", "endDate", "sentDate", "approvedAt"):
         if result[key] is not None:
             result[key] = result[key].isoformat()
     if result["updatedAt"] is not None:
@@ -2246,7 +2287,7 @@ def _sph_proposal_json(row):
     for key in ("volumeMin", "volumeMax", "priceUsd", "topPercent", "actualVolume"):
         if result[key] is not None:
             result[key] = float(result[key])
-    return result
+    return _sph_add_contract_metadata(result)
 
 
 def _sph_log(con, proposal_id, request, message):
@@ -2274,7 +2315,8 @@ def sph_list_proposals(request: Request):
             "SELECT p.id,p.proposal_number AS number,c.customer_name AS customerName,"
             "p.proposal_date AS proposalDate,p.volume_min AS volumeMin,"
             "p.volume_max AS volumeMax,p.price_usd AS priceUsd,p.top_percent AS topPercent,"
-            "p.status,p.version,p.actual_volume AS actualVolume,p.updated_at AS updatedAt "
+            "p.status,p.version,p.start_date AS startDate,p.end_date AS endDate,"
+            "p.actual_volume AS actualVolume,p.updated_at AS updatedAt "
             "FROM sph_proposals p JOIN sph_customers c ON c.customer_key=p.customer_key "
             "ORDER BY p.updated_at DESC,p.id DESC"
         ).fetchall()
@@ -2285,12 +2327,14 @@ def sph_list_proposals(request: Request):
             proposal["status"] = "customer_approved"
         proposal["id"] = int(proposal["id"])
         proposal["version"] = int(proposal["version"])
-        proposal["proposalDate"] = proposal["proposalDate"].isoformat()
+        for key in ("proposalDate", "startDate", "endDate"):
+            if proposal[key] is not None:
+                proposal[key] = proposal[key].isoformat()
         proposal["updatedAt"] = proposal["updatedAt"].isoformat()
         for key in ("volumeMin", "volumeMax", "priceUsd", "topPercent", "actualVolume"):
             if proposal[key] is not None:
                 proposal[key] = float(proposal[key])
-        proposals.append(proposal)
+        proposals.append(_sph_add_contract_metadata(proposal))
     return proposals
 
 
@@ -2344,12 +2388,12 @@ async def sph_create_proposal(request: Request):
                 "INSERT INTO sph_proposals(proposal_number,customer_key,proposal_date,"
                 "volume_min,volume_max,price_usd,status,version,top_percent,guarantee,"
                 "due_day,exchange_clause,contract_duration_value,contract_duration_unit,"
-                "duration_details,attention_to,supply_pattern,delivery_point,start_date,volume_details,"
+                "duration_details,attention_to,supply_pattern,delivery_point,start_date,end_date,volume_details,"
                 "price_details,payment_terms,advantages,other_terms,preparation,"
                 "reethau_obligations,customer_obligations,template_key,approvals,"
                 "created_by,updated_at) "
                 "VALUES(%s,%s,%s,%s,%s,%s,'draft',0,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
-                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'[]',%s,%s)",
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'[]',%s,%s)",
                 (
                     proposal["proposal_number"], proposal["customer_key"], proposal["proposal_date"],
                     proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
@@ -2362,7 +2406,7 @@ async def sph_create_proposal(request: Request):
                         proposal["plant_name"],
                         proposal["plant_address"],
                     ),
-                    proposal["delivery_point"], proposal["start_date"],
+                    proposal["delivery_point"], proposal["start_date"], proposal["end_date"],
                     proposal["volume_details"], proposal["price_details"],
                     proposal["payment_terms"], proposal["advantages"],
                     proposal["other_terms"], proposal["preparation"],
@@ -2413,7 +2457,7 @@ async def sph_update_proposal(proposal_id: int, request: Request):
                 "volume_min=%s,volume_max=%s,price_usd=%s,top_percent=%s,guarantee=%s,"
                 "due_day=%s,exchange_clause=%s,contract_duration_value=%s,"
                 "contract_duration_unit=%s,duration_details=%s,attention_to=%s,supply_pattern=%s,"
-                "delivery_point=%s,start_date=%s,volume_details=%s,price_details=%s,"
+                "delivery_point=%s,start_date=%s,end_date=%s,volume_details=%s,price_details=%s,"
                 "payment_terms=%s,advantages=%s,other_terms=%s,preparation=%s,"
                 "reethau_obligations=%s,"
                 "customer_obligations=%s,template_key=%s,version=version+%s,approvals='[]',"
@@ -2430,7 +2474,7 @@ async def sph_update_proposal(proposal_id: int, request: Request):
                         proposal["plant_name"],
                         proposal["plant_address"],
                     ),
-                    proposal["delivery_point"], proposal["start_date"],
+                    proposal["delivery_point"], proposal["start_date"], proposal["end_date"],
                     proposal["volume_details"], proposal["price_details"],
                     proposal["payment_terms"], proposal["advantages"],
                     proposal["other_terms"], proposal["preparation"],
@@ -2538,11 +2582,77 @@ async def sph_proposal_action(proposal_id: int, request: Request):
             message = "Membuat revisi SPH dari hasil negosiasi."
         elif action == "activate" and status == "customer_approved":
             allowed_role, next_status = "admin", "active"
+            start_date, end_date = _sph_contract_dates(
+                payload.get("startDate", proposal.get("startDate")),
+                payload.get("endDate", proposal.get("endDate")),
+                required=True,
+            )
+            update = (
+                "UPDATE sph_proposals SET status=%s,start_date=%s,end_date=%s,updated_at=%s WHERE id=%s",
+                (next_status, start_date, end_date, now, proposal_id),
+            )
+            message = (
+                "Pelanggan diaktifkan setelah persetujuan SPH "
+                f"untuk periode {start_date.isoformat()} sampai {end_date.isoformat()}."
+            )
+        elif action == "record_contract_dates" and status == "active":
+            allowed_role = "admin"
+            start_date, end_date = _sph_contract_dates(
+                payload.get("startDate"),
+                payload.get("endDate"),
+                required=True,
+            )
+            update = (
+                "UPDATE sph_proposals SET start_date=%s,end_date=%s,updated_at=%s WHERE id=%s",
+                (start_date, end_date, now, proposal_id),
+            )
+            message = (
+                "Melengkapi tanggal kontrak "
+                f"{start_date.isoformat()} sampai {end_date.isoformat()}."
+            )
+        elif action == "renew_contract" and status == "active":
+            allowed_role = "admin"
+            if not proposal["contractExpired"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Perpanjangan hanya tersedia setelah tanggal selesai kontrak.",
+                )
+            start_date, end_date = _sph_contract_dates(
+                payload.get("startDate"),
+                payload.get("endDate"),
+                required=True,
+            )
+            previous_end_date = date.fromisoformat(proposal["endDate"])
+            if start_date <= previous_end_date:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Tanggal mulai perpanjangan harus setelah periode kontrak sebelumnya.",
+                )
+            duration, duration_unit = _sph_contract_duration(
+                payload.get("contractDuration"),
+                payload.get("contractDurationUnit"),
+            )
+            update = (
+                "UPDATE sph_proposals SET start_date=%s,end_date=%s,"
+                "contract_duration_value=%s,contract_duration_unit=%s,updated_at=%s WHERE id=%s",
+                (start_date, end_date, duration, duration_unit, now, proposal_id),
+            )
+            message = (
+                f"Memperpanjang kontrak selama {duration} {SPH_DURATION_UNITS[duration_unit]} "
+                f"untuk periode {start_date.isoformat()} sampai {end_date.isoformat()}."
+            )
+        elif action == "deactivate_contract" and status == "active":
+            allowed_role, next_status = "admin", "inactive"
+            if not proposal["contractExpired"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Kontrak hanya dapat dinonaktifkan setelah tanggal selesai.",
+                )
             update = (
                 "UPDATE sph_proposals SET status=%s,updated_at=%s WHERE id=%s",
                 (next_status, now, proposal_id),
             )
-            message = "Pelanggan diaktifkan setelah persetujuan SPH."
+            message = "Admin memilih untuk tidak memperpanjang kontrak; status menjadi Tidak Aktif."
         elif action == "record_actual" and status == "active":
             allowed_role = "admin"
             try:
@@ -3508,6 +3618,7 @@ async def sph_proposal_pdf_preview(request: Request):
         "supplyPattern": validated["supply_pattern"],
         "deliveryPoint": validated["delivery_point"],
         "startDate": validated["start_date"].isoformat() if validated["start_date"] else None,
+        "endDate": validated["end_date"].isoformat() if validated["end_date"] else None,
         "volumeDetails": validated["volume_details"],
         "priceDetails": validated["price_details"],
         "paymentTerms": validated["payment_terms"],

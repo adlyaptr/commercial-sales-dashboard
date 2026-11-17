@@ -169,6 +169,8 @@ CREATE TABLE IF NOT EXISTS sph_proposals (
     due_day TINYINT NOT NULL DEFAULT 20,
     exchange_clause BOOLEAN NOT NULL DEFAULT FALSE,
     contract_years TINYINT NOT NULL DEFAULT 2,
+    start_date DATE NULL,
+    end_date DATE NULL,
     reethau_obligations TEXT NOT NULL,
     customer_obligations TEXT NOT NULL,
     approvals TEXT NOT NULL,

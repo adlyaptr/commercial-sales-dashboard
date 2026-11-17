@@ -15,6 +15,7 @@ const statusLabels = {
     negotiation: 'Negosiasi',
     customer_approved: 'Disetujui customer',
     active: 'Kontrak aktif',
+    inactive: 'Tidak aktif',
 };
 
 const statusFilters = [
@@ -25,6 +26,7 @@ const statusFilters = [
     { key: 'negotiation', label: statusLabels.negotiation },
     { key: 'customer_approved', label: statusLabels.customer_approved },
     { key: 'active', label: statusLabels.active },
+    { key: 'inactive', label: statusLabels.inactive },
 ];
 
 const workflow = [
@@ -35,6 +37,7 @@ const workflow = [
     'negotiation',
     'customer_approved',
     'active',
+    'inactive',
 ];
 
 const reethauObligationOptions = [
@@ -194,6 +197,7 @@ function blankProposal() {
         supplyPattern: '',
         deliveryPoint: '',
         startDate: '',
+        endDate: '',
         volumeDetails: '',
         priceDetails: '',
         paymentTerms: serializeTermChecklist(paymentTermOptions, paymentTermOptions.map((option) => option.label), false, ''),
@@ -239,6 +243,7 @@ function formFromProposal(proposal) {
         supplyPattern: proposal.supplyPattern || '',
         deliveryPoint: proposal.deliveryPoint || '',
         startDate: proposal.startDate || '',
+        endDate: proposal.endDate || '',
         volumeDetails: proposal.volumeDetails || '',
         priceDetails: proposal.priceDetails || '',
         paymentTerms: proposal.paymentTerms || '',
@@ -297,6 +302,7 @@ function SphPaperPreview({ form }) {
         supplyPattern: form.supplyPattern,
         deliveryPoint: form.deliveryPoint,
         startDate: form.startDate,
+        endDate: form.endDate,
         volumeDetails: form.volumeDetails,
         priceDetails: form.priceDetails,
         paymentTerms: form.paymentTerms,
@@ -487,6 +493,12 @@ export default function SphPage({ user, onLogout }) {
     const [statusFilter, setStatusFilter] = useState('all');
     const [returnReason, setReturnReason] = useState('');
     const [actualVolume, setActualVolume] = useState('');
+    const [renewalTerms, setRenewalTerms] = useState({
+        startDate: '',
+        endDate: '',
+        contractDuration: '',
+        contractDurationUnit: 'year',
+    });
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
@@ -519,6 +531,12 @@ export default function SphPage({ user, onLogout }) {
             setForm(formFromProposal(selected));
             setReturnReason('');
             setActualVolume(selected.actualVolume ?? '');
+            setRenewalTerms({
+                startDate: '',
+                endDate: '',
+                contractDuration: selected.contractDuration || '',
+                contractDurationUnit: selected.contractDurationUnit || 'year',
+            });
             setActiveTab(tab);
         } catch (requestError) {
             setError(requestError.message || 'Detail SPH gagal dimuat.');
@@ -538,6 +556,11 @@ export default function SphPage({ user, onLogout }) {
     function updateField(event) {
         const { name, value, type, checked } = event.target;
         setForm((current) => ({ ...current, [name]: type === 'checkbox' ? checked : value }));
+    }
+
+    function updateRenewalField(event) {
+        const { name, value } = event.target;
+        setRenewalTerms((current) => ({ ...current, [name]: value }));
     }
 
     async function saveDraft(event) {
@@ -583,6 +606,12 @@ export default function SphPage({ user, onLogout }) {
             setProposal(updated);
             setForm(formFromProposal(updated));
             setReturnReason('');
+            setRenewalTerms({
+                startDate: '',
+                endDate: '',
+                contractDuration: updated.contractDuration || '',
+                contractDurationUnit: updated.contractDurationUnit || 'year',
+            });
             setNotice(`Status SPH diperbarui: ${statusLabels[updated.status]}.`);
             await loadProposals();
         } catch (requestError) {
@@ -630,8 +659,12 @@ export default function SphPage({ user, onLogout }) {
         negotiation: 0,
         customer_approved: 0,
         active: 0,
+        inactive: 0,
     });
     const activeProposals = proposals.filter((item) => item.status === 'active');
+    const contractsNeedingAttention = activeProposals.filter(
+        (item) => item.contractExpired || item.contractDatesMissing,
+    );
     const averagePrice = proposals.length
         ? proposals.reduce((total, item) => total + Number(item.priceUsd || 0), 0) / proposals.length
         : 0;
@@ -692,6 +725,25 @@ export default function SphPage({ user, onLogout }) {
 
                 {activeTab === 'dashboard' && (
                     <section className="sph-dashboard">
+                        {contractsNeedingAttention.length > 0 && (
+                            <section className="sph-alert error" role="alert">
+                                <strong>Perhatian masa kontrak</strong>
+                                {contractsNeedingAttention.map((item) => (
+                                    <p key={item.id}>
+                                        <strong>{item.customerName} · {item.number}</strong>
+                                        {' — '}
+                                        {item.contractExpired
+                                            ? `Kontrak berakhir ${formatUpdatedAt(item.endDate)}.`
+                                            : 'Tanggal kontrak belum lengkap.'}
+                                        {item.contractDatesMissing && item.contractExpired
+                                            ? ' Tanggal mulai juga belum diisi.'
+                                            : ''}
+                                        {' '}
+                                        <button className="sph-row-button" type="button" disabled={busy} onClick={() => openProposal(item.id, 'process')}>Tinjau</button>
+                                    </p>
+                                ))}
+                            </section>
+                        )}
                         <section className="sph-panel">
                             <div className="sph-list-heading">
                                 <h2>DAFTAR SPH</h2>
@@ -808,7 +860,7 @@ export default function SphPage({ user, onLogout }) {
                                             <article className="sph-active-contract" key={item.id}>
                                                 <div className="sph-contract-heading">
                                                     <strong>{item.customerName}</strong>
-                                                    <span>{item.number}</span>
+                                                    <span>{item.number} · {formatUpdatedAt(item.startDate)} – {formatUpdatedAt(item.endDate)}</span>
                                                 </div>
                                                 <div className="sph-contract-scale">
                                                     <div className={`sph-contract-fill ${belowTop ? 'below-top' : ''}`} style={{ width: `${actualWidth}%` }} />
@@ -927,8 +979,11 @@ export default function SphPage({ user, onLogout }) {
                                                 </select>
                                             </div>
                                         </label>
+                                        <TextField label="Tanggal mulai kontrak" name="startDate" type="date" value={form.startDate} onChange={updateField} />
+                                        <TextField label="Tanggal selesai kontrak" name="endDate" type="date" value={form.endDate} onChange={updateField} />
                                         <label className="sph-checkbox"><input type="checkbox" name="exchangeClause" checked={form.exchangeClause} onChange={updateField} /><span>Klausul tukar menukar berlaku</span></label>
                                     </div>
+                                    <p className="sph-form-hint">Tanggal mulai dan selesai digunakan untuk memantau masa kontrak. Keduanya wajib dilengkapi sebelum pelanggan diaktifkan.</p>
                                 </div>
                                 {isTermTemplate ? (
                                     <div className="sph-form-section">
@@ -939,7 +994,6 @@ export default function SphPage({ user, onLogout }) {
                                             <TextAreaField label="Titik Penyerahan" name="deliveryPoint" value={form.deliveryPoint} onChange={updateField} maxLength={2000} placeholder="Lokasi penyerahan gas" />
                                             <TextField label="Nama plant customer" name="plantName" value={form.plantName} onChange={updateField} maxLength={255} placeholder="Contoh: Plant Gresik" />
                                             <TextAreaField label="Alamat plant supply" name="plantAddress" value={form.plantAddress} onChange={updateField} maxLength={2000} placeholder="Alamat lokasi plant, pisahkan baris sesuai format surat" />
-                                            <TextField label="Tanggal Dimulai" name="startDate" type="date" value={form.startDate} onChange={updateField} />
                                             <TextAreaField label="Rincian Volume (lokasi / periode / satuan)" name="volumeDetails" value={form.volumeDetails} onChange={updateField} maxLength={5000} placeholder="Lokasi, jumlah, satuan, atau periode pasokan" />
                                             <TextAreaField label="Evaluasi / Ketentuan Jangka Waktu" name="durationDetails" value={form.durationDetails} onChange={updateField} maxLength={5000} placeholder="Ketentuan evaluasi selama jangka waktu kontrak" />
                                             <TextAreaField label="Rincian Harga (terbilang / komponen / pajak)" name="priceDetails" value={form.priceDetails} onChange={updateField} maxLength={5000} placeholder="Contoh: harga terbilang, fasilitas yang termasuk, serta pajak yang belum termasuk" />
@@ -1023,6 +1077,7 @@ export default function SphPage({ user, onLogout }) {
                                     <div><span>Volume</span><strong>{formatNumber(proposal.volumeMin)}–{formatNumber(proposal.volumeMax)} MMBTU/hari</strong></div>
                                     <div><span>Harga</span><strong>USD {formatNumber(proposal.priceUsd, 2)}/MMBTU</strong></div>
                                     <div><span>TOP</span><strong>{formatNumber(proposal.topPercent, 2)}%</strong></div>
+                                    <div><span>Periode kontrak</span><strong>{formatUpdatedAt(proposal.startDate)} – {formatUpdatedAt(proposal.endDate)}</strong></div>
                                     <div><span>Persetujuan</span><strong>{proposal.approvalRoute.map((role) => roleLabels[role]).join(' → ')}</strong></div>
                                 </div>
                                 <div className="sph-flow">
@@ -1038,6 +1093,68 @@ export default function SphPage({ user, onLogout }) {
                                     })}
                                 </div>
 
+                                {proposal.status === 'active' && isAdmin && (proposal.contractExpired || proposal.contractDatesMissing) && (
+                                    <section className="sph-expiry-panel" aria-live="polite">
+                                        <h3>{proposal.contractExpired ? 'Kontrak telah melewati tanggal selesai' : 'Tanggal kontrak belum lengkap'}</h3>
+                                        <p>
+                                            {proposal.contractExpired
+                                                ? 'Pilih untuk memperpanjang atau menonaktifkan kontrak. Perpanjangan menyimpan periode dan jangka waktu baru.'
+                                                : 'Lengkapi tanggal kontrak lama agar sistem dapat memantau masa berlakunya.'}
+                                        </p>
+                                        {proposal.contractDatesMissing && (
+                                            <div className="sph-contract-date-fields">
+                                                <TextField label="Tanggal mulai kontrak" name="startDate" type="date" value={form.startDate} onChange={updateField} />
+                                                <TextField label="Tanggal selesai kontrak" name="endDate" type="date" value={form.endDate} onChange={updateField} />
+                                                <button
+                                                    className="sph-secondary"
+                                                    type="button"
+                                                    disabled={busy || !form.startDate || !form.endDate}
+                                                    onClick={() => performAction('record_contract_dates', {
+                                                        startDate: form.startDate,
+                                                        endDate: form.endDate,
+                                                    })}
+                                                >
+                                                    Simpan tanggal kontrak
+                                                </button>
+                                            </div>
+                                        )}
+                                        {proposal.contractExpired && (
+                                            <div className="sph-contract-date-fields">
+                                                <TextField label="Tanggal mulai perpanjangan *" name="startDate" type="date" value={renewalTerms.startDate} onChange={updateRenewalField} />
+                                                <TextField label="Tanggal selesai perpanjangan *" name="endDate" type="date" value={renewalTerms.endDate} onChange={updateRenewalField} />
+                                                <label className="sph-field sph-duration-control">
+                                                    <span>Jangka waktu baru *</span>
+                                                    <div>
+                                                        <input
+                                                            name="contractDuration"
+                                                            type="number"
+                                                            min="1"
+                                                            max={renewalTerms.contractDurationUnit === 'year' ? 15 : 5475}
+                                                            value={renewalTerms.contractDuration}
+                                                            onChange={updateRenewalField}
+                                                        />
+                                                        <select name="contractDurationUnit" value={renewalTerms.contractDurationUnit} onChange={updateRenewalField}>
+                                                            <option value="year">Tahun</option>
+                                                            <option value="day">Hari</option>
+                                                        </select>
+                                                    </div>
+                                                </label>
+                                                <button
+                                                    className="sph-primary"
+                                                    type="button"
+                                                    disabled={busy || !renewalTerms.startDate || !renewalTerms.endDate || !renewalTerms.contractDuration}
+                                                    onClick={() => performAction('renew_contract', renewalTerms)}
+                                                >
+                                                    Perpanjang kontrak
+                                                </button>
+                                                <button className="sph-secondary" type="button" disabled={busy} onClick={() => performAction('deactivate_contract')}>
+                                                    Tidak diperpanjang
+                                                </button>
+                                            </div>
+                                        )}
+                                    </section>
+                                )}
+
                                 <div className="sph-action-area">
                                     {proposal.status !== 'active' && isAdmin && (
                                         <button
@@ -1049,7 +1166,24 @@ export default function SphPage({ user, onLogout }) {
                                             Edit SPH
                                         </button>
                                     )}
-                                    {action && isAdmin && (action.action !== 'approve' || canApprove) && (
+                                    {action?.action === 'activate' && isAdmin && (
+                                        <div className="sph-contract-date-fields">
+                                            <TextField label="Tanggal mulai kontrak *" name="startDate" type="date" value={form.startDate} onChange={updateField} />
+                                            <TextField label="Tanggal selesai kontrak *" name="endDate" type="date" value={form.endDate} onChange={updateField} />
+                                            <button
+                                                className="sph-primary"
+                                                type="button"
+                                                disabled={busy || !form.startDate || !form.endDate}
+                                                onClick={() => performAction('activate', {
+                                                    startDate: form.startDate,
+                                                    endDate: form.endDate,
+                                                })}
+                                            >
+                                                Aktifkan pelanggan
+                                            </button>
+                                        </div>
+                                    )}
+                                    {action && action.action !== 'activate' && isAdmin && (action.action !== 'approve' || canApprove) && (
                                         <button className="sph-primary" type="button" disabled={busy} onClick={() => performAction(action.action)}>
                                             {action.label}
                                         </button>

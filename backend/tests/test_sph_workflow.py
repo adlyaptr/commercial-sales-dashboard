@@ -2,7 +2,7 @@ import asyncio
 import re
 import sys
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -54,6 +54,7 @@ class MemorySphDatabase:
             "supplyPattern": "",
             "deliveryPoint": "",
             "startDate": None,
+            "endDate": None,
             "volumeDetails": "",
             "priceDetails": "",
             "paymentTerms": "",
@@ -116,17 +117,18 @@ class MemorySphDatabase:
             self.row["supplyPattern"] = parameters[14]
             self.row["deliveryPoint"] = parameters[15]
             self.row["startDate"] = parameters[16]
-            self.row["volumeDetails"] = parameters[17]
-            self.row["priceDetails"] = parameters[18]
-            self.row["paymentTerms"] = parameters[19]
-            self.row["advantages"] = parameters[20]
-            self.row["otherTerms"] = parameters[21]
-            self.row["preparation"] = parameters[22]
-            self.row["reethauObligations"] = parameters[23]
-            self.row["customerObligations"] = parameters[24]
-            self.row["templateKey"] = parameters[25]
-            self.row["version"] += parameters[26]
-            self.row["updatedAt"] = parameters[27]
+            self.row["endDate"] = parameters[17]
+            self.row["volumeDetails"] = parameters[18]
+            self.row["priceDetails"] = parameters[19]
+            self.row["paymentTerms"] = parameters[20]
+            self.row["advantages"] = parameters[21]
+            self.row["otherTerms"] = parameters[22]
+            self.row["preparation"] = parameters[23]
+            self.row["reethauObligations"] = parameters[24]
+            self.row["customerObligations"] = parameters[25]
+            self.row["templateKey"] = parameters[26]
+            self.row["version"] += parameters[27]
+            self.row["updatedAt"] = parameters[28]
             self.row["status"] = "draft"
             self.row["approvals"] = "[]"
             self.row["approvedAt"] = None
@@ -138,6 +140,22 @@ class MemorySphDatabase:
             if "approved_at=%s" in statement:
                 self.row["approvedAt"] = parameters[2]
                 self.row["updatedAt"] = parameters[3]
+            else:
+                self.row["updatedAt"] = parameters[2]
+            return SimpleNamespace(rowcount=1)
+        if statement.startswith("UPDATE sph_proposals SET status=%s,start_date=%s"):
+            self.row["status"] = parameters[0]
+            self.row["startDate"] = parameters[1]
+            self.row["endDate"] = parameters[2]
+            self.row["updatedAt"] = parameters[3]
+            return SimpleNamespace(rowcount=1)
+        if statement.startswith("UPDATE sph_proposals SET start_date=%s,end_date=%s"):
+            self.row["startDate"] = parameters[0]
+            self.row["endDate"] = parameters[1]
+            if "contract_duration_value=%s" in statement:
+                self.row["contractDuration"] = parameters[2]
+                self.row["contractDurationUnit"] = parameters[3]
+                self.row["updatedAt"] = parameters[4]
             else:
                 self.row["updatedAt"] = parameters[2]
             return SimpleNamespace(rowcount=1)
@@ -234,6 +252,20 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertEqual(validated["price_usd"], 14.5)
         self.assertEqual(validated["template_key"], "standard")
 
+        proposal["startDate"] = "2026-11-10"
+        proposal["endDate"] = "2026-11-09"
+        with self.assertRaises(main.HTTPException) as error:
+            main._sph_validate_proposal(proposal)
+        self.assertEqual(error.exception.status_code, 400)
+
+        proposal["endDate"] = "2026-11-11"
+        self.assertEqual(
+            main._sph_validate_proposal(proposal)["end_date"],
+            date(2026, 11, 11),
+        )
+
+        proposal.pop("startDate")
+        proposal.pop("endDate")
         proposal["proposalNumber"] = ""
         with self.assertRaises(main.HTTPException) as error:
             main._sph_validate_proposal(proposal)
@@ -454,14 +486,103 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertEqual(self.database.row["status"], "customer_approved")
 
         self.database.user.update({"role": "admin", "sph_role": None})
-        admin_request = SphRequest("admin", {"action": "activate"})
+        admin_request = SphRequest("admin", {
+            "action": "activate",
+            "startDate": "2026-11-01",
+            "endDate": "2028-10-31",
+        })
         result = asyncio.run(main.sph_proposal_action(7, admin_request))
         self.assertEqual(result["status"], "active")
+        self.assertEqual(result["startDate"], "2026-11-01")
+        self.assertEqual(result["endDate"], "2028-10-31")
         self.assertEqual(self.database.logs[-1]["actorRole"], "admin")
         self.assertEqual(
             self.database.logs[-1]["message"],
-            "Pelanggan diaktifkan setelah persetujuan SPH.",
+            "Pelanggan diaktifkan setelah persetujuan SPH untuk periode 2026-11-01 sampai 2028-10-31.",
         )
+
+    def test_activation_requires_valid_start_and_end_dates(self):
+        self.database.row["status"] = "customer_approved"
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.sph_proposal_action(7, SphRequest(
+                "admin",
+                {"action": "activate", "startDate": "2026-11-01"},
+            )))
+        self.assertEqual(error.exception.status_code, 400)
+        self.assertEqual(self.database.row["status"], "customer_approved")
+
+    def test_expired_contract_can_be_renewed_with_new_dates_and_duration(self):
+        today = main._sph_now().date()
+        self.database.row.update({
+            "status": "active",
+            "startDate": today - timedelta(days=365),
+            "endDate": today - timedelta(days=1),
+        })
+        renewal_start = today.isoformat()
+        renewal_end = (today + timedelta(days=730)).isoformat()
+        result = asyncio.run(main.sph_proposal_action(7, SphRequest(
+            "admin",
+            {
+                "action": "renew_contract",
+                "startDate": renewal_start,
+                "endDate": renewal_end,
+                "contractDuration": 2,
+                "contractDurationUnit": "year",
+            },
+        )))
+        self.assertEqual(result["status"], "active")
+        self.assertEqual(result["startDate"], renewal_start)
+        self.assertEqual(result["endDate"], renewal_end)
+        self.assertEqual(result["contractDuration"], 2)
+        self.assertFalse(result["contractExpired"])
+        self.assertIn("Memperpanjang kontrak", self.database.logs[-1]["message"])
+
+    def test_active_contract_cannot_be_deactivated_before_end_date(self):
+        self.database.row.update({
+            "status": "active",
+            "startDate": date(2026, 11, 1),
+            "endDate": main._sph_now().date() + timedelta(days=1),
+        })
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.sph_proposal_action(7, SphRequest(
+                "admin",
+                {"action": "deactivate_contract"},
+            )))
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertEqual(self.database.row["status"], "active")
+
+    def test_expired_contract_can_be_marked_inactive_by_admin(self):
+        today = main._sph_now().date()
+        self.database.row.update({
+            "status": "active",
+            "startDate": today - timedelta(days=365),
+            "endDate": today - timedelta(days=1),
+        })
+
+        result = asyncio.run(main.sph_proposal_action(7, SphRequest(
+            "admin",
+            {"action": "deactivate_contract"},
+        )))
+
+        self.assertEqual(result["status"], "inactive")
+        self.assertFalse(result["contractExpired"])
+        self.assertIn("Tidak Aktif", self.database.logs[-1]["message"])
+
+    def test_admin_can_complete_dates_for_an_existing_active_contract(self):
+        self.database.row["status"] = "active"
+
+        result = asyncio.run(main.sph_proposal_action(7, SphRequest(
+            "admin",
+            {
+                "action": "record_contract_dates",
+                "startDate": "2026-11-01",
+                "endDate": "2027-10-31",
+            },
+        )))
+
+        self.assertEqual(result["startDate"], "2026-11-01")
+        self.assertEqual(result["endDate"], "2027-10-31")
+        self.assertFalse(result["contractDatesMissing"])
 
     def test_legal_handoff_action_is_no_longer_valid(self):
         self.database.row["status"] = "customer_approved"
@@ -474,7 +595,11 @@ class SphWorkflowTests(unittest.TestCase):
     def test_legacy_pjbg_proposal_can_be_activated_by_admin(self):
         self.database.row["status"] = "pjbg"
         self.database.user.update({"role": "admin", "sph_role": None})
-        request = SphRequest("admin", {"action": "activate"})
+        request = SphRequest("admin", {
+            "action": "activate",
+            "startDate": "2026-11-01",
+            "endDate": "2028-10-31",
+        })
         proposal = asyncio.run(main.sph_proposal_action(7, request))
         self.assertEqual(proposal["status"], "active")
 
