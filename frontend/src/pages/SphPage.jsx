@@ -674,8 +674,20 @@ export default function SphPage({ user, onLogout }) {
     const contractsNeedingAttention = activeProposals.filter(
         (item) => item.contractExpired || item.contractDatesMissing,
     );
-    const averagePrice = proposals.length
-        ? proposals.reduce((total, item) => total + Number(item.priceUsd || 0), 0) / proposals.length
+    const inProcessStatuses = new Set(['draft', 'review', 'approved', 'sent', 'negotiation']);
+    const inProcessProposals = proposals.filter((item) => inProcessStatuses.has(item.status));
+    const monthlyPotential = inProcessProposals.reduce(
+        (total, item) => total + Number(item.volumeMin || 0) * Number(item.priceUsd || 0),
+        0,
+    );
+    const submittedProposals = proposals.filter(
+        (item) => ['sent', 'negotiation', 'customer_approved', 'active', 'inactive'].includes(item.status),
+    );
+    const convertedProposals = proposals.filter(
+        (item) => ['customer_approved', 'active', 'inactive'].includes(item.status),
+    );
+    const conversionRate = submittedProposals.length
+        ? Math.round(convertedProposals.length / submittedProposals.length * 100)
         : 0;
     const action = proposal ? nextAction(proposal) : null;
     const headApprovalPending = proposal?.status === 'review'
@@ -735,6 +747,34 @@ export default function SphPage({ user, onLogout }) {
 
                 {activeTab === 'dashboard' && (
                     <section className="sph-dashboard">
+                        {isAdmin && (
+                            <section className="sph-kpis" aria-label="Ringkasan KPI SPH">
+                                <article>
+                                    <span>SPH dalam proses</span>
+                                    <strong>{formatNumber(inProcessProposals.length)}</strong>
+                                    <small>Draft sampai negosiasi</small>
+                                </article>
+                                <article>
+                                    <span>Potensi per bulan (USD)</span>
+                                    <strong>{formatNumber(monthlyPotential)}</strong>
+                                    <small>Pada volume minimum</small>
+                                </article>
+                                <article>
+                                    <span>Menunggu approval</span>
+                                    <strong>{formatNumber(statusCounts.review)}</strong>
+                                    <small>Commercial Head · Admin pengganti tersedia</small>
+                                </article>
+                                <article>
+                                    <span>Conversion rate</span>
+                                    <strong>{formatNumber(conversionRate)}%</strong>
+                                    <small>
+                                        {submittedProposals.length
+                                            ? `${formatNumber(convertedProposals.length)} dari ${formatNumber(submittedProposals.length)} SPH terkirim disetujui`
+                                            : 'Belum ada SPH terkirim'}
+                                    </small>
+                                </article>
+                            </section>
+                        )}
                         {contractsNeedingAttention.length > 0 && (
                             <section className="sph-alert error" role="alert">
                                 <strong>Perhatian masa kontrak</strong>

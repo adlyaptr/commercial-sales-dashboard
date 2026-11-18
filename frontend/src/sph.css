@@ -117,11 +117,12 @@
 .sph-notice { border: 1px solid #dce8df; background: #edf5ef; color: #506d5b; }
 .sph-alert.error { border: 1px solid #efd0ce; background: #fff3f2; color: #9c3934; }
 .sph-alert.success { border: 1px solid #cce5d2; background: #f0f8f2; color: #276344; }
-.sph-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
-.sph-kpis article { display: grid; min-height: 112px; align-content: start; gap: 8px; padding: 16px; border: 1px solid var(--sph-border); border-top: 3px solid var(--sph-green); border-radius: 9px; background: #fff; box-shadow: 0 4px 14px rgb(10 62 45 / 7%); }
+.sph-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 18px 0; overflow: hidden; border: 1px solid var(--sph-border); border-radius: 9px; background: #fff; }
+.sph-kpis article { display: grid; min-width: 0; min-height: 112px; align-content: center; gap: 5px; padding: 16px; border-right: 1px solid var(--sph-border); }
+.sph-kpis article:last-child { border-right: 0; }
 .sph-kpis article span { color: #75867b; font-size: 10px; font-weight: 650; }
 .sph-kpis article strong { color: #194733; font-size: clamp(20px, 2.4vw, 27px); letter-spacing: -.5px; }
-.sph-kpis article small { color: #93a097; font-size: 9px; }
+.sph-kpis article small { color: #93a097; font-size: 9px; line-height: 1.5; }
 .sph-panel { margin-top: 16px; padding: 20px; border: 1px solid var(--sph-border); border-radius: 9px; background: #fff; box-shadow: 0 4px 14px rgb(10 62 45 / 7%); }
 .sph-panel-heading { margin-bottom: 18px; }
 .sph-panel-heading h2 { margin: 0; color: #254533; font-size: 16px; }
@@ -310,15 +311,11 @@
 .sph-notice,
 .sph-alert { padding: 12px 16px; border-radius: 9px; font-size: 13px; }
 
-.sph-kpis { gap: 16px; margin: 20px 0; }
+.sph-kpis { gap: 0; margin: 20px 0; }
 .sph-kpis article {
-  min-height: 126px;
-  gap: 10px;
-  padding: 19px;
-  border-color: #e1e9e5;
-  border-top-width: 3px;
-  border-radius: 12px;
-  box-shadow: 0 5px 16px rgb(27 55 44 / 5%);
+  min-height: 112px;
+  gap: 5px;
+  padding: 16px;
 }
 
 .sph-kpis article span { font-size: 12px; }
@@ -609,7 +606,10 @@
   .sph-main { width: min(100% - 32px, 700px); padding-top: 28px; }
   .sph-panel { padding: 18px; }
   .sph-editor-panel { padding: 18px; }
-  .sph-kpis { gap: 10px; }
+  .sph-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sph-kpis article { border-bottom: 1px solid var(--sph-border); }
+  .sph-kpis article:nth-child(2) { border-right: 0; }
+  .sph-kpis article:nth-last-child(-n + 2) { border-bottom: 0; }
   .sph-active-contract-list { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -628,6 +628,7 @@
   .sph-form-grid { grid-template-columns: minmax(0, 1fr); }
   .sph-status-filters { flex-wrap: nowrap; overflow-x: auto; padding: 2px 0 8px; }
   .sph-status-filters button { flex: 0 0 auto; }
+  .sph-kpis article { min-height: 88px; padding: 12px; }
   .sph-pdf-preview-frame { height: 72vh; min-height: 480px; }
   .sph-form-actions { bottom: 8px; }
 }
@@ -641,5 +642,5 @@
     transition: box-shadow .18s ease, border-color .18s ease, background-color .18s ease, transform .18s ease;
   }
 
-  .sph-kpis article:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgb(24 49 39 / 9%); }
+  .sph-kpis article:hover { background-color: #f8fbf9; }
 }
