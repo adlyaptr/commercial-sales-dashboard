@@ -79,7 +79,9 @@ class MemoryMonthlyRange:
                 }
                 for report_date in self.actual_imported_dates
             ])
-        if statement.startswith("SELECT customer_key, customer_name, operator FROM customers"):
+        if statement.startswith(
+            "SELECT customer_key, customer_name, operator, off_from_date FROM customers"
+        ):
             return SimpleNamespace(fetchall=lambda: [{
                 "customer_key": "customer-1",
                 "customer_name": "Customer Contoh",

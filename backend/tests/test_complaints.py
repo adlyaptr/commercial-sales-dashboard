@@ -126,6 +126,31 @@ class MemoryCustomerMappings:
         return SimpleNamespace(rowcount=1)
 
 
+class MemoryCustomerStatus:
+    def __init__(self):
+        self.customer = {
+            "customer_key": "tomimoto",
+            "operator": "OFF",
+            "off_from_date": None,
+        }
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def execute(self, statement, parameters=None):
+        if statement.startswith("SELECT customer_key FROM customers"):
+            result = {"customer_key": self.customer["customer_key"]}
+            return SimpleNamespace(fetchone=lambda: result)
+        if statement.startswith("UPDATE customers SET operator="):
+            self.customer["operator"] = parameters[0]
+            self.customer["off_from_date"] = parameters[1]
+            return SimpleNamespace(rowcount=1)
+        raise AssertionError(f"Unexpected SQL in test: {statement}")
+
+
 class MemoryDashboard:
     def __init__(
         self,
@@ -149,7 +174,9 @@ class MemoryDashboard:
 
     def execute(self, statement, parameters=None):
         normalized_statement = statement.strip()
-        if normalized_statement.startswith("SELECT c.customer_name, c.operator, c.customer_key"):
+        if normalized_statement.startswith(
+            "SELECT c.customer_name, c.operator, c.off_from_date, c.customer_key"
+        ):
             return SimpleNamespace(fetchall=lambda: self.sales_rows)
 
         if normalized_statement.startswith(
@@ -165,7 +192,9 @@ class MemoryDashboard:
             } if self.actual_imported else None
             return SimpleNamespace(fetchone=lambda: imported)
 
-        if normalized_statement.startswith("SELECT customer_key, customer_name, operator FROM customers"):
+        if normalized_statement.startswith(
+            "SELECT customer_key, customer_name, operator, off_from_date FROM customers"
+        ):
             return SimpleNamespace(fetchall=lambda: [
                 {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU"},
                 {"customer_key": "pelanggankht", "customer_name": "Pelanggan KHT", "operator": "KHT"},
@@ -249,7 +278,9 @@ class MemoryHomeSummary:
     def execute(self, statement, parameters=None):
         if statement.startswith("SELECT so FROM monthly_so_targets"):
             return SimpleNamespace(fetchone=lambda: {"so": 1250})
-        if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
+        if statement.startswith(
+            "SELECT customer_key,customer_name,operator,off_from_date FROM customers"
+        ):
             return SimpleNamespace(fetchall=lambda: [
                 {"customer_key": "setu-a", "customer_name": "SETU Customer", "operator": "SETU"},
                 {"customer_key": "kht-a", "customer_name": "KHT Customer", "operator": "KHT"},
@@ -270,7 +301,10 @@ class MemoryHomeSummary:
                 }
                 for report_date in self.actual_imported_dates
             ])
-        if "SELECT s.report_date, c.customer_name, c.operator" not in statement:
+        if (
+            "SELECT s.report_date, c.customer_name, c.operator,c.off_from_date"
+            not in statement
+        ):
             raise AssertionError(f"Unexpected SQL in test: {statement}")
         if parameters != ("2026-01-01", self.expected_range_end):
             raise AssertionError(f"Unexpected home-summary date range: {parameters}")
@@ -323,7 +357,9 @@ class MemoryHomeSummaryRange:
                 }
                 for report_date in self.actual_imported_dates
             ])
-        if statement.startswith("SELECT customer_key,customer_name,operator FROM customers"):
+        if statement.startswith(
+            "SELECT customer_key,customer_name,operator,off_from_date FROM customers"
+        ):
             return SimpleNamespace(fetchall=lambda: [
                 {"customer_key": "setu-a", "customer_name": "SETU Customer", "operator": "SETU"},
                 {"customer_key": "kht-a", "customer_name": "KHT Customer", "operator": "KHT"},
@@ -598,6 +634,26 @@ class ComplaintApiTests(unittest.TestCase):
             mappings_database.rows,
             [("customernonaktif", "Customer Nonaktif", "OFF")],
         )
+
+    def test_customer_status_api_saves_operator_and_effective_off_date(self):
+        database = MemoryCustomerStatus()
+        request = FakeRequest({
+            "operator": "KHT",
+            "off_from_date": "2026-07-01",
+        })
+        with patch.object(main, "db", return_value=database):
+            result = asyncio.run(
+                main.update_customer_status("tomimoto", request)
+            )
+
+        self.assertEqual(result, {
+            "ok": True,
+            "customer_key": "tomimoto",
+            "operator": "KHT",
+            "off_from_date": "2026-07-01",
+        })
+        self.assertEqual(database.customer["operator"], "KHT")
+        self.assertEqual(database.customer["off_from_date"], date(2026, 7, 1))
 
 
 class DashboardApiTests(unittest.TestCase):

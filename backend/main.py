@@ -907,6 +907,25 @@ def get_sales_order_data(refresh=False):
         return result
 
 
+def effective_customer_operator(customer, report_date):
+    operator = str(customer.get("operator") or "").strip().upper()
+    if operator == "OFF":
+        return "OFF"
+
+    off_from_date = customer.get("off_from_date")
+    if not off_from_date:
+        return operator
+    if isinstance(off_from_date, datetime):
+        off_from_date = off_from_date.date()
+    elif not isinstance(off_from_date, date):
+        off_from_date = date.fromisoformat(str(off_from_date)[:10])
+    if isinstance(report_date, datetime):
+        report_date = report_date.date()
+    elif not isinstance(report_date, date):
+        report_date = date.fromisoformat(str(report_date)[:10])
+    return "OFF" if report_date >= off_from_date else operator
+
+
 def overlay_sales_order_forecast(
     sales_rows,
     customer_rows,
@@ -963,6 +982,10 @@ def overlay_sales_order_forecast(
         if isinstance(report_date, date):
             report_date = report_date.isoformat()
         enriched["report_date"] = str(report_date)
+        customer = customers_by_key.get(str(enriched.get("customer_key", "")))
+        if customer is not None:
+            enriched["operator"] = effective_customer_operator(customer, report_date)
+        is_off = enriched.get("operator") == "OFF"
         if (
             enriched["report_date"][:7] in summary_override_months
             and enriched.get("source_file")
@@ -976,7 +999,7 @@ def overlay_sales_order_forecast(
                 enriched["report_date"] not in actual_imported_dates
                 and not enriched.get("manual_fob")
             ):
-                use_imported_so = (
+                use_imported_so = not is_off and (
                     enriched["report_date"][:7] in summary_override_months
                     and enriched.get("source_file")
                     and enriched["source_file"] != "manual-fob"
@@ -1006,6 +1029,9 @@ def overlay_sales_order_forecast(
             if customer is None:
                 if order["so"] != 0:
                     unmapped.add(order["customer"])
+                continue
+            operator = effective_customer_operator(customer, report_date)
+            if operator == "OFF":
                 continue
 
             key = (report_date, str(customer["customer_key"]))
@@ -1061,7 +1087,7 @@ def overlay_sales_order_forecast(
                 "report_date": report_date,
                 "customer_key": customer["customer_key"],
                 "customer_name": customer["customer_name"],
-                "operator": customer["operator"],
+                "operator": operator,
                 "so": order["so"],
                 "actual": order["so"],
                 "id": None,
@@ -4422,7 +4448,7 @@ def home_summary(request: Request, month: str, through_date: Optional[str] = Non
     with db() as con:
         rows = con.execute(
             """
-            SELECT s.report_date, c.customer_name, c.operator,
+            SELECT s.report_date, c.customer_name, c.operator,c.off_from_date,
                    s.customer_key, s.so, s.actual, s.source_file,
                    c.customer_key LIKE 'manualfob-%%' AS manual_fob
             FROM sales s
@@ -4438,7 +4464,7 @@ def home_summary(request: Request, month: str, through_date: Optional[str] = Non
             (year_start.isoformat(), month_end.isoformat()),
         ).fetchall()
         customer_rows = con.execute(
-            "SELECT customer_key,customer_name,operator FROM customers"
+            "SELECT customer_key,customer_name,operator,off_from_date FROM customers"
         ).fetchall()
         manual_so_row = con.execute(
             "SELECT so FROM monthly_so_targets WHERE month_start=%s",
@@ -4682,7 +4708,7 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
     with db() as con:
         rows = con.execute(
             """
-            SELECT s.report_date,c.customer_name,c.operator,s.customer_key,
+            SELECT s.report_date,c.customer_name,c.operator,c.off_from_date,s.customer_key,
                    s.so,s.actual,s.source_file,
                    c.customer_key LIKE 'manualfob-%%' AS manual_fob
             FROM sales s
@@ -4698,7 +4724,7 @@ def home_summary_range(request: Request, start_date: str, end_date: str):
             (start.isoformat(), end.isoformat()),
         ).fetchall()
         customer_rows = con.execute(
-            "SELECT customer_key,customer_name,operator FROM customers"
+            "SELECT customer_key,customer_name,operator,off_from_date FROM customers"
         ).fetchall()
         target_rows = con.execute(
             "SELECT month_start,so FROM monthly_so_targets WHERE month_start BETWEEN %s AND %s",
@@ -5842,6 +5868,7 @@ def monthly_summary(
                 c.customer_key,
                 c.customer_name,
                 c.operator,
+                c.off_from_date,
                 MONTH(s.report_date) AS month_number,
                 SUM(s.so) AS total_so,
                 SUM(s.actual) AS total_actual
@@ -5922,7 +5949,7 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
             (start.isoformat(), end.isoformat()),
         ).fetchall()
         customer_rows = con.execute(
-            "SELECT customer_key, customer_name, operator FROM customers"
+            "SELECT customer_key, customer_name, operator, off_from_date FROM customers"
         ).fetchall()
 
     actual_imported_dates = _confirmed_actual_import_dates(actual_import_rows)
@@ -6311,7 +6338,8 @@ def export_monthly_report(request: Request, year: int, month: int):
     with db() as con:
         sales_rows = con.execute(
             """
-            SELECT s.report_date, c.customer_name, c.operator, s.so, s.actual
+            SELECT s.report_date, c.customer_name, c.operator, c.off_from_date,
+                   s.so, s.actual
             FROM sales s
             JOIN customers c ON c.customer_key=s.customer_key
             WHERE s.report_date BETWEEN %s AND %s
@@ -6327,7 +6355,13 @@ def export_monthly_report(request: Request, year: int, month: int):
     workbook = build_monthly_template_export(
         year,
         month,
-        sales_rows,
+        [
+            dict(
+                row,
+                operator=effective_customer_operator(row, row["report_date"]),
+            )
+            for row in sales_rows
+        ],
         float(target_row["so"]) if target_row is not None else None,
     )
     month_names = (
@@ -6377,7 +6411,7 @@ def dashboard(
             raise HTTPException(status_code=400, detail="Periode tren tidak valid.")
 
         rows = con.execute("""
-            SELECT c.customer_name, c.operator, c.customer_key,
+            SELECT c.customer_name, c.operator, c.off_from_date, c.customer_key,
                    s.so, s.actual, s.id, s.source_file,
                    c.customer_key LIKE 'manualfob-%%' AS manual_fob
             FROM sales s JOIN customers c ON c.customer_key=s.customer_key
@@ -6389,7 +6423,7 @@ def dashboard(
             (report_date,),
         ).fetchone()
         customer_rows = con.execute(
-            "SELECT customer_key, customer_name, operator FROM customers"
+            "SELECT customer_key, customer_name, operator, off_from_date FROM customers"
         ).fetchall()
         rows, sales_order_unmapped = overlay_sales_order_forecast(
             [dict(row, report_date=report_date) for row in rows],
@@ -6449,9 +6483,16 @@ def dashboard(
         trend_rows = con.execute(
             f"""
             SELECT {group_expression} AS period_start,
-                   SUM(s.so) AS so,
-                   SUM(s.actual) AS actual
+                   SUM(CASE WHEN (c.operator='OFF' OR
+                       (c.off_from_date IS NOT NULL AND s.report_date>=c.off_from_date))
+                       AND dai.report_date IS NULL THEN 0 ELSE s.so END) AS so,
+                   SUM(CASE WHEN (c.operator='OFF' OR
+                       (c.off_from_date IS NOT NULL AND s.report_date>=c.off_from_date))
+                       AND dai.report_date IS NULL THEN 0 ELSE s.actual END) AS actual
             FROM sales s JOIN customers c ON c.customer_key=s.customer_key
+            LEFT JOIN daily_actual_imports dai
+              ON dai.report_date=s.report_date
+             AND LEFT(dai.imported_at,10)>DATE_FORMAT(s.report_date,'%Y-%m-%d')
             WHERE s.report_date BETWEEN %s AND %s
             GROUP BY period_start ORDER BY period_start
             """,
@@ -8462,10 +8503,51 @@ def customers(request: Request):
     require_login(request)
     with db() as con:
         rows = con.execute(
-            "SELECT customer_key,customer_name,operator FROM customers "
+            "SELECT customer_key,customer_name,operator,off_from_date FROM customers "
             "ORDER BY operator,customer_name"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+@app.put("/api/customers/{customer_key}/status")
+async def update_customer_status(customer_key: str, request: Request):
+    require_admin(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Format status customer tidak valid.")
+
+    operator = str(payload.get("operator") or "").strip().upper()
+    if operator not in OPERATORS:
+        raise HTTPException(status_code=400, detail="Operator aktif tidak valid.")
+
+    off_from_value = payload.get("off_from_date")
+    if off_from_value in (None, ""):
+        off_from_date = None
+    else:
+        try:
+            off_from_date = date.fromisoformat(str(off_from_value))
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Tanggal OFF harus berformat YYYY-MM-DD.",
+            ) from exc
+
+    with db() as con:
+        if not con.execute(
+            "SELECT customer_key FROM customers WHERE customer_key=%s",
+            (customer_key,),
+        ).fetchone():
+            raise HTTPException(status_code=404, detail="Customer tidak ditemukan.")
+        con.execute(
+            "UPDATE customers SET operator=%s,off_from_date=%s WHERE customer_key=%s",
+            (operator, off_from_date, customer_key),
+        )
+    return {
+        "ok": True,
+        "customer_key": customer_key,
+        "operator": operator,
+        "off_from_date": off_from_date.isoformat() if off_from_date else None,
+    }
 
 
 @app.get("/", include_in_schema=False)

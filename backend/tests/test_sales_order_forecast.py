@@ -9,6 +9,82 @@ import main
 
 
 class SalesOrderForecastTests(unittest.TestCase):
+    def test_customer_off_date_preserves_kht_history_and_stops_future_forecast(self):
+        customer = {
+            "customer_key": "tomimoto",
+            "customer_name": "TOMIMOTO",
+            "operator": "KHT",
+            "off_from_date": date(2026, 7, 1),
+        }
+        rows, unmapped = main.overlay_sales_order_forecast(
+            [
+                {
+                    "report_date": "2026-06-30",
+                    "customer_key": "tomimoto",
+                    "customer_name": "TOMIMOTO",
+                    "operator": "KHT",
+                    "so": 100,
+                    "actual": 80,
+                    "manual_fob": False,
+                },
+                {
+                    "report_date": "2026-07-01",
+                    "customer_key": "tomimoto",
+                    "customer_name": "TOMIMOTO",
+                    "operator": "KHT",
+                    "so": 200,
+                    "actual": 150,
+                    "manual_fob": False,
+                },
+            ],
+            [customer],
+            {
+                "2026-06-30": [{"customer": "TOMIMOTO", "so": 110}],
+                "2026-07-01": [{"customer": "TOMIMOTO", "so": 210}],
+            },
+            date(2026, 6, 30),
+            date(2026, 7, 1),
+            forecast_only_unimported_dates=True,
+        )
+
+        by_date = {row["report_date"]: row for row in rows}
+        self.assertEqual(by_date["2026-06-30"]["operator"], "KHT")
+        self.assertEqual(by_date["2026-06-30"]["actual"], 110)
+        self.assertEqual(by_date["2026-07-01"]["operator"], "OFF")
+        self.assertEqual(by_date["2026-07-01"]["so"], 0)
+        self.assertEqual(by_date["2026-07-01"]["actual"], 0)
+        self.assertEqual(unmapped, [])
+
+    def test_off_date_keeps_confirmed_actuals_grouped_under_off(self):
+        customer = {
+            "customer_key": "tomimoto",
+            "customer_name": "TOMIMOTO",
+            "operator": "KHT",
+            "off_from_date": "2026-07-01",
+        }
+        rows, _ = main.overlay_sales_order_forecast(
+            [{
+                "report_date": "2026-07-15",
+                "customer_key": "tomimoto",
+                "customer_name": "TOMIMOTO",
+                "operator": "KHT",
+                "so": 20,
+                "actual": 15,
+                "manual_fob": False,
+            }],
+            [customer],
+            {"2026-07-15": [{"customer": "TOMIMOTO", "so": 99}]},
+            date(2026, 7, 15),
+            date(2026, 7, 15),
+            actual_imported_dates={"2026-07-15"},
+            forecast_only_unimported_dates=True,
+        )
+
+        self.assertEqual(rows[0]["operator"], "OFF")
+        self.assertEqual(rows[0]["so"], 20)
+        self.assertEqual(rows[0]["actual"], 15)
+        self.assertFalse(rows[0]["actual_is_forecast"])
+
     def test_same_day_actual_import_is_not_confirmed(self):
         imported_dates = main._confirmed_actual_import_dates([
             {

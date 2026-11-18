@@ -24,6 +24,29 @@ class MigrationConnection:
 
 
 class DatabaseMigrationTests(unittest.TestCase):
+    def test_customer_off_date_migration_adds_missing_column(self):
+        connection = MigrationConnection({"customer_key", "operator"})
+
+        db._ensure_customer_off_date_column(connection)
+
+        self.assertIn("off_from_date", connection.columns)
+        self.assertEqual(
+            sum("ALTER TABLE customers" in statement for statement in connection.statements),
+            1,
+        )
+
+    def test_customer_off_date_migration_preserves_existing_column(self):
+        connection = MigrationConnection(
+            {"customer_key", "operator", "off_from_date"}
+        )
+
+        db._ensure_customer_off_date_column(connection)
+
+        self.assertEqual(
+            sum("ALTER TABLE customers" in statement for statement in connection.statements),
+            0,
+        )
+
     def test_contract_date_migration_adds_missing_columns_only(self):
         connection = MigrationConnection({"proposal_number"})
 

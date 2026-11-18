@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS customers (
     customer_key VARCHAR(191) PRIMARY KEY,
     customer_name TEXT NOT NULL,
     operator VARCHAR(16) NOT NULL,
+    off_from_date DATE NULL,
     CONSTRAINT chk_customers_operator CHECK(operator IN ('SETU','KHT','BLORA','WUNUT','OFF'))
 );
 

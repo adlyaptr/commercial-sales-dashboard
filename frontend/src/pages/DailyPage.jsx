@@ -42,6 +42,11 @@ export default function DailyPage() {
     const [fobSaving, setFobSaving] = useState(false);
     const [editingFob, setEditingFob] = useState(null);
     const [customerMappings, setCustomerMappings] = useState([]);
+    const [masterCustomers, setMasterCustomers] = useState([]);
+    const [statusCustomerKey, setStatusCustomerKey] = useState('');
+    const [statusOperator, setStatusOperator] = useState('');
+    const [offFromDate, setOffFromDate] = useState('');
+    const [statusSaving, setStatusSaving] = useState(false);
     const [fobForm, setFobForm] = useState({ date: selectedDate ?? '', customer: '', operator: 'SETU', so: '', actual: '' });
     const [monthlySummary, setMonthlySummary] = useState(null);
     const [importPreview, setImportPreview] = useState(null);
@@ -64,6 +69,29 @@ export default function DailyPage() {
     const parsedActual = parseIndonesianNumber(fobForm.actual);
     const fobDiff = (parsedActual ?? 0) - (parsedSo ?? 0);
     const formatFobNumber = (value) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(value);
+    const selectedStatusCustomer = masterCustomers.find(
+        (customer) => customer.customer_key === statusCustomerKey,
+    );
+
+    useEffect(() => {
+        if (!canEdit) return undefined;
+
+        let active = true;
+        api('/api/customers')
+            .then((customers) => {
+                if (active) setMasterCustomers(customers);
+            })
+            .catch((error) => {
+                if (active) {
+                    setNotice({
+                        bad: true,
+                        text: `Daftar customer gagal dimuat: ${error.message}`,
+                    });
+                }
+            });
+
+        return () => { active = false; };
+    }, [canEdit]);
 
     useEffect(() => {
         if (selectedDate) {
@@ -344,6 +372,56 @@ export default function DailyPage() {
             return;
         }
 
+        async function saveCustomerStatus(event) {
+            event.preventDefault();
+            if (!statusCustomerKey || !statusOperator) {
+                setNotice({ bad: true, text: 'Pilih customer dan operator asalnya.' });
+                return;
+            }
+
+            setStatusSaving(true);
+            setNotice(null);
+            try {
+                const result = await api(
+                    `/api/customers/${encodeURIComponent(statusCustomerKey)}/status`,
+                    {
+                        method: 'PUT',
+                        body: {
+                            operator: statusOperator,
+                            off_from_date: offFromDate || null,
+                        },
+                    },
+                );
+                setMasterCustomers((current) => current.map((customer) => (
+                    customer.customer_key === result.customer_key
+                        ? {
+                            ...customer,
+                            operator: result.operator,
+                            off_from_date: result.off_from_date,
+                        }
+                        : customer
+                )));
+                setNotice({
+                    bad: false,
+                    text: `${selectedStatusCustomer?.customer_name ?? 'Customer'} berhasil diperbarui.`,
+                });
+
+                try {
+                    await refreshForecast();
+                    await refreshDashboard(selectedDate);
+                } catch (error) {
+                    setNotice({
+                        bad: true,
+                        text: `Status tersimpan, tetapi Harian gagal diperbarui: ${error.message}`,
+                    });
+                }
+            } catch (error) {
+                setNotice({ bad: true, text: error.message || 'Status customer gagal disimpan.' });
+            } finally {
+                setStatusSaving(false);
+            }
+        }
+
         setForecastMappingBusy(true);
         setNotice(null);
         try {
@@ -589,6 +667,60 @@ export default function DailyPage() {
                 onDeleteManualFob={canEdit && !isDateRange ? deleteManualFob : undefined}
             />
             {canEdit && <>
+            <form className="manual-fob-panel" onSubmit={saveCustomerStatus}>
+                <div className="manual-fob-heading">
+                    <b>Atur Status Customer</b>
+                    <small>Data sebelum tanggal OFF tetap memakai operator asal; prognosis SO berhenti sejak tanggal OFF.</small>
+                </div>
+                <div className="manual-fob-fields">
+                    <label><span>Customer</span><select
+                        required
+                        value={statusCustomerKey}
+                        onChange={(event) => {
+                            const customer = masterCustomers.find(
+                                (item) => item.customer_key === event.target.value,
+                            );
+                            setStatusCustomerKey(event.target.value);
+                            setStatusOperator(
+                                ['SETU', 'KHT', 'BLORA', 'WUNUT'].includes(customer?.operator)
+                                    ? customer.operator
+                                    : '',
+                            );
+                            setOffFromDate(customer?.off_from_date?.slice(0, 10) ?? '');
+                        }}
+                    >
+                        <option value="">Pilih customer</option>
+                        {masterCustomers.map((customer) => (
+                            <option key={customer.customer_key} value={customer.customer_key}>
+                                {customer.customer_name} ({customer.off_from_date
+                                    ? `${customer.operator} → OFF sejak ${customer.off_from_date}`
+                                    : customer.operator})
+                            </option>
+                        ))}
+                    </select></label>
+                    <label><span>Operator Asal</span><select
+                        required
+                        value={statusOperator}
+                        onChange={(event) => setStatusOperator(event.target.value)}
+                    >
+                        <option value="">Pilih operator</option>
+                        <option value="SETU">SETU</option>
+                        <option value="KHT">KHT</option>
+                        <option value="BLORA">BLORA</option>
+                        <option value="WUNUT">WUNUT</option>
+                    </select></label>
+                    <label><span>OFF Mulai Tanggal</span><input
+                        type="date"
+                        value={offFromDate}
+                        onChange={(event) => setOffFromDate(event.target.value)}
+                    /></label>
+                    <div className="manual-fob-actions">
+                        <button className="primary" type="submit" disabled={statusSaving}>
+                            {statusSaving ? 'Menyimpan...' : 'Simpan Status'}
+                        </button>
+                    </div>
+                </div>
+            </form>
             <form className="manual-fob-panel" onSubmit={saveManualFob}>
                 <div className="manual-fob-heading">
                     <b>{editingFob ? 'Edit Customer FOB' : 'Input Manual Customer FOB'}</b>

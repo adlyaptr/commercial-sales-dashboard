@@ -19,6 +19,19 @@ def _ensure_sph_contract_date_columns(connection):
             )
 
 
+def _ensure_customer_off_date_column(connection):
+    columns = connection.execute(
+        """
+        SELECT COLUMN_NAME FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'customers'
+        """
+    ).fetchall()
+    if not any(column["COLUMN_NAME"] == "off_from_date" for column in columns):
+        connection.execute(
+            "ALTER TABLE customers ADD COLUMN off_from_date DATE NULL"
+        )
+
+
 def initialize_database(connection_factory, app_username, app_password):
     schema_path = Path(__file__).resolve().parent.parent / "database" / "schema.sql"
     schema = schema_path.read_text(encoding="utf-8")
@@ -28,6 +41,7 @@ def initialize_database(connection_factory, app_username, app_password):
                 con.execute(statement)
 
         _ensure_sph_contract_date_columns(con)
+        _ensure_customer_off_date_column(con)
 
         con.execute(
             "UPDATE sph_proposals SET status='approved',"
