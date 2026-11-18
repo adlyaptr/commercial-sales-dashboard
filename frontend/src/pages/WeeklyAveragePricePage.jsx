@@ -183,7 +183,7 @@ const workbookCustomerGroups = [
         label: 'Customer <50.000 Sm³/bln',
         regions: {
             'JAWA BARAT': ['CLIN', 'MKG', 'OPTIMA', 'SHB', 'GTL', 'TWK', 'BEM', 'TOMIMOTO', 'NIAGA GARAM', 'PCI MENGGER', 'Alia Digital'],
-            'JAWA TENGAH': ['CV PA', 'GF KULIT', 'RPI'],
+            'JAWA TENGAH': ['CV PA', 'GF KULIT', 'RPI', 'JARGAS', 'SDM'],
             'JAWA TIMUR': ['Djarum'],
         },
     },
@@ -213,7 +213,7 @@ const workbookCustomerGroups = [
     {
         label: 'KSO · Customer <50.000 Sm³/bln',
         regions: {
-            'JAWA BARAT': ['FJI / SBI', 'ALTINEX /Masami', 'Winglok / EBM', 'PSD / WIRA', 'ABP / SBI', 'KGM / RRS', 'BDP / LEMB', 'Toyobo (KSO Ineko)', 'Citymall/Wira'],
+            'JAWA BARAT': ['FJI / SBI', 'ALTINEX /Masami', 'Winglok / EBM', 'PSD / WIRA', 'ABP / SBI', 'KGM / RRS', 'BDP / LEMB', 'Toyobo (KSO Ineko)', 'Citymall/Wira', 'SBI', 'KF'],
             'JAWA TENGAH': [],
         },
     },
@@ -305,6 +305,8 @@ function workbookGroupForCustomer(row, month) {
             hskksogas: 6,
             jiuqi: 6,
             platinum: 2,
+            jargas: 0,
+            sdm: 0,
         }[customerKey];
         if (groupIndex != null) {
             return { index: groupIndex, label: workbookCustomerGroups[groupIndex].label };
