@@ -260,11 +260,16 @@ def require_login(request: Request, application: str = "commercial"):
     username = request.session["username"]
     with db() as con:
         user = con.execute(
-            "SELECT role FROM app_users WHERE username=%s", (username,)
+            "SELECT role,sph_role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
     if not user or user["role"] != "user":
         request.session.clear()
         raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
+    if application == "commercial" and user.get("sph_role") == "commercial_head":
+        raise HTTPException(
+            status_code=403,
+            detail="Akun Commercial Head hanya dapat mengakses persetujuan SPH.",
+        )
 
 
 def require_admin(request: Request):
@@ -280,21 +285,26 @@ def require_sph_admin(request: Request):
     require_login(request, "sph")
     username = request.session["username"]
     if request.session.get("role") is None and username == APP_USERNAME:
+        request.session["role"] = "admin"
+        request.session["sph_role"] = None
         return
     with db() as con:
         user = con.execute(
-            "SELECT role FROM app_users WHERE username=%s", (username,)
+            "SELECT role,sph_role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
     if not user or user["role"] not in {"admin", "user"}:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
     request.session["role"] = user["role"]
-    request.session["sph_role"] = None
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Akses khusus admin.")
+    if user["role"] == "admin":
+        request.session["sph_role"] = None
+        return
+    request.session["sph_role"] = user.get("sph_role")
+    if user["role"] != "user" or user.get("sph_role") != "commercial_head":
+        raise HTTPException(status_code=403, detail="Akses khusus Admin atau Commercial Head SPH.")
 
 
-SPH_ROLES = {"admin": "Admin"}
+SPH_ROLES = {"admin": "Admin", "commercial_head": "Commercial Head"}
 SPH_HISTORY_ROLE_LABELS = {
     "sales": "Sales",
     "commercial_head": "Commercial Head",
@@ -305,8 +315,16 @@ SPH_HISTORY_ROLE_LABELS = {
 
 def require_sph_access(request: Request):
     require_sph_admin(request)
-    request.session["sph_role"] = None
-    return {"role": "admin", "sph_role": None}
+    if request.session["role"] == "admin":
+        return {"role": "admin", "sph_role": None}
+    return {"role": "commercial_head", "sph_role": "commercial_head"}
+
+
+def require_sph_admin_access(request: Request):
+    actor = require_sph_access(request)
+    if actor["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Tindakan ini hanya dapat dilakukan oleh Admin.")
+    return actor
 
 
 def require_home_access(request: Request):
@@ -1820,16 +1838,24 @@ async def login(request: Request):
         or not verify_user_password(password, row["password_hash"])
     ):
         return JSONResponse({"detail": "Username atau password salah."}, status_code=401)
-    if application == "sph" and row["role"] != "admin":
+    is_commercial_head = (
+        row["role"] == "user" and row.get("sph_role") == "commercial_head"
+    )
+    if application == "sph" and row["role"] != "admin" and not is_commercial_head:
         return JSONResponse(
-            {"detail": "Aplikasi SPH CNG hanya dapat diakses oleh Admin."},
+            {"detail": "Aplikasi SPH hanya dapat diakses oleh Admin atau Commercial Head."},
+            status_code=403,
+        )
+    if application == "commercial" and is_commercial_head:
+        return JSONResponse(
+            {"detail": "Akun Commercial Head hanya dapat mengakses persetujuan SPH."},
             status_code=403,
         )
     request.session.clear()
     request.session["username"] = username
     request.session["role"] = row["role"]
     request.session["application"] = application
-    request.session["sph_role"] = None
+    request.session["sph_role"] = "commercial_head" if is_commercial_head else None
     return {"ok": True}
 
 
@@ -1848,21 +1874,33 @@ def me(request: Request):
     username = request.session["username"]
     with db() as con:
         user = con.execute(
-            "SELECT role FROM app_users WHERE username=%s", (username,)
+            "SELECT role,sph_role FROM app_users WHERE username=%s", (username,)
         ).fetchone()
     if not user or user["role"] not in {"admin", "user"}:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
     request.session["role"] = user["role"]
     application = request.session.get("application", "commercial")
-    if application == "sph" and user["role"] != "admin":
+    is_commercial_head = (
+        user["role"] == "user" and user.get("sph_role") == "commercial_head"
+    )
+    if application == "sph" and user["role"] != "admin" and not is_commercial_head:
         request.session.clear()
-        raise HTTPException(status_code=403, detail="Aplikasi SPH CNG hanya dapat diakses oleh Admin.")
-    request.session["sph_role"] = None
+        raise HTTPException(
+            status_code=403,
+            detail="Aplikasi SPH hanya dapat diakses oleh Admin atau Commercial Head.",
+        )
+    if application == "commercial" and is_commercial_head:
+        request.session.clear()
+        raise HTTPException(
+            status_code=403,
+            detail="Akun Commercial Head hanya dapat mengakses persetujuan SPH.",
+        )
+    request.session["sph_role"] = "commercial_head" if is_commercial_head else None
     return {
         "username": username,
         "role": user["role"],
-        "sphRole": None,
+        "sphRole": request.session["sph_role"],
         "application": application,
     }
 
@@ -1886,6 +1924,11 @@ async def create_user(request: Request):
     username = str(payload.get("username", "")).strip()
     password = str(payload.get("password", ""))
     role = str(payload.get("role", "user")).strip()
+    sph_role = payload.get("sphRole")
+    if sph_role in ("", None):
+        sph_role = None
+    if sph_role is not None and sph_role != "commercial_head":
+        raise HTTPException(status_code=400, detail="Role SPH tidak valid.")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{2,63}", username):
         raise HTTPException(
             status_code=400,
@@ -1905,10 +1948,34 @@ async def create_user(request: Request):
         if existing:
             raise HTTPException(status_code=409, detail="Username sudah digunakan.")
         con.execute(
-            "INSERT INTO app_users(username,password_hash,role) VALUES(%s,%s,%s)",
-            (username, hash_user_password(password), role),
+            "INSERT INTO app_users(username,password_hash,role,sph_role) VALUES(%s,%s,%s,%s)",
+            (username, hash_user_password(password), role, sph_role),
         )
-    return {"username": username, "role": role}
+    return {"username": username, "role": role, "sphRole": sph_role}
+
+
+@app.put("/api/users/{username}/sph-role")
+async def update_user_sph_role(username: str, request: Request):
+    require_admin(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Format role SPH tidak valid.")
+    sph_role = payload.get("sphRole")
+    if sph_role in ("", None):
+        sph_role = None
+    if sph_role is not None and sph_role != "commercial_head":
+        raise HTTPException(status_code=400, detail="Role SPH tidak valid.")
+    with db() as con:
+        user = con.execute(
+            "SELECT role FROM app_users WHERE username=%s", (username,)
+        ).fetchone()
+        if not user or user["role"] != "user":
+            raise HTTPException(status_code=404, detail="Akun pengguna tidak ditemukan.")
+        con.execute(
+            "UPDATE app_users SET sph_role=%s WHERE username=%s",
+            (sph_role, username),
+        )
+    return {"username": username, "sphRole": sph_role}
 
 
 @app.put("/api/users/{username}/password")
@@ -2238,7 +2305,7 @@ def _sph_validate_proposal(payload):
 
 
 def _sph_approval_route():
-    return ["admin"]
+    return ["commercial_head"]
 
 
 def _sph_proposal_row(con, proposal_id):
@@ -2296,11 +2363,12 @@ def _sph_proposal_json(row):
 
 
 def _sph_log(con, proposal_id, request, message):
+    actor_role = request.session.get("sph_role") or "admin"
     con.execute(
         "INSERT INTO sph_proposal_logs"
         "(proposal_id,actor_username,actor_role,message,created_at) "
         "VALUES(%s,%s,%s,%s,%s)",
-        (proposal_id, request.session["username"], "admin", message, _sph_now()),
+        (proposal_id, request.session["username"], actor_role, message, _sph_now()),
     )
 
 
@@ -2314,17 +2382,20 @@ def _sph_get_proposal(proposal_id):
 
 @app.get("/api/sph/proposals")
 def sph_list_proposals(request: Request):
-    require_sph_access(request)
+    actor = require_sph_access(request)
+    query = (
+        "SELECT p.id,p.proposal_number AS number,c.customer_name AS customerName,"
+        "p.proposal_date AS proposalDate,p.volume_min AS volumeMin,"
+        "p.volume_max AS volumeMax,p.price_usd AS priceUsd,p.top_percent AS topPercent,"
+        "p.status,p.version,p.start_date AS startDate,p.end_date AS endDate,"
+        "p.actual_volume AS actualVolume,p.updated_at AS updatedAt "
+        "FROM sph_proposals p JOIN sph_customers c ON c.customer_key=p.customer_key "
+    )
+    if actor["role"] == "commercial_head":
+        query += "WHERE p.status='review' "
+    query += "ORDER BY p.updated_at DESC,p.id DESC"
     with db() as con:
-        rows = con.execute(
-            "SELECT p.id,p.proposal_number AS number,c.customer_name AS customerName,"
-            "p.proposal_date AS proposalDate,p.volume_min AS volumeMin,"
-            "p.volume_max AS volumeMax,p.price_usd AS priceUsd,p.top_percent AS topPercent,"
-            "p.status,p.version,p.start_date AS startDate,p.end_date AS endDate,"
-            "p.actual_volume AS actualVolume,p.updated_at AS updatedAt "
-            "FROM sph_proposals p JOIN sph_customers c ON c.customer_key=p.customer_key "
-            "ORDER BY p.updated_at DESC,p.id DESC"
-        ).fetchall()
+        rows = con.execute(query).fetchall()
     proposals = []
     for row in rows:
         proposal = dict(row)
@@ -2345,8 +2416,16 @@ def sph_list_proposals(request: Request):
 
 @app.get("/api/sph/proposals/{proposal_id}")
 def sph_get_proposal(proposal_id: int, request: Request):
-    require_sph_access(request)
+    actor = require_sph_access(request)
     proposal = _sph_get_proposal(proposal_id)
+    if actor["role"] == "commercial_head" and (
+        proposal["status"] != "review"
+        or "commercial_head" in proposal["approvals"]
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="SPH tidak ditemukan atau tidak menunggu persetujuan Commercial Head.",
+        )
     with db() as con:
         logs = con.execute(
             "SELECT actor_username AS actor,actor_role AS actorRole,message,"
@@ -2368,7 +2447,7 @@ def sph_get_proposal(proposal_id: int, request: Request):
 
 @app.post("/api/sph/proposals")
 async def sph_create_proposal(request: Request):
-    require_sph_access(request)
+    require_sph_admin_access(request)
     proposal = _sph_validate_proposal(await request.json())
     now = _sph_now()
     with db() as con:
@@ -2430,7 +2509,7 @@ async def sph_create_proposal(request: Request):
 
 @app.put("/api/sph/proposals/{proposal_id}")
 async def sph_update_proposal(proposal_id: int, request: Request):
-    require_sph_access(request)
+    require_sph_admin_access(request)
     proposal = _sph_validate_proposal(await request.json())
     now = _sph_now()
     with db() as con:
@@ -2515,6 +2594,11 @@ async def sph_proposal_action(proposal_id: int, request: Request):
     action = payload.get("action")
     if not isinstance(action, str):
         raise HTTPException(status_code=400, detail="Jenis tindakan tidak valid.")
+    if actor["role"] == "commercial_head" and action not in {"approve", "return"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Commercial Head hanya dapat menyetujui atau mengembalikan SPH.",
+        )
     now = _sph_now()
     with db() as con:
         current_row = _sph_proposal_row(con, proposal_id)
@@ -2523,6 +2607,7 @@ async def sph_proposal_action(proposal_id: int, request: Request):
         proposal = _sph_proposal_json(current_row)
         status = proposal["status"]
         allowed_role = None
+        allowed_actor_roles = None
         next_status = status
         message = None
         update = None
@@ -2530,13 +2615,16 @@ async def sph_proposal_action(proposal_id: int, request: Request):
             allowed_role, next_status = "admin", "review"
             update = ("UPDATE sph_proposals SET status=%s,approvals='[]',updated_at=%s WHERE id=%s", (next_status, now, proposal_id))
             message = "Mengirim SPH untuk persetujuan Admin."
-        elif action in {"approve", "return"} and status == "review":
+        elif action in {"approve", "approve_as_admin", "return"} and status == "review":
             route = _sph_approval_route()
             approvals = [role for role in proposal["approvals"] if role in route]
             if len(approvals) >= len(route):
                 raise HTTPException(status_code=409, detail="Tahap persetujuan SPH sudah selesai.")
             allowed_role = route[len(approvals)]
-            if action == "approve":
+            if action in {"approve", "approve_as_admin"}:
+                allowed_actor_roles = (
+                    {"admin"} if action == "approve_as_admin" else {"commercial_head"}
+                )
                 approvals.append(allowed_role)
                 next_status = "approved" if len(approvals) == len(route) else "review"
                 update = (
@@ -2549,8 +2637,13 @@ async def sph_proposal_action(proposal_id: int, request: Request):
                         else (next_status, json.dumps(approvals), now, proposal_id)
                     ),
                 )
-                message = f"Persetujuan {SPH_ROLES[allowed_role]} dicatat."
+                message = (
+                    "Admin menyetujui sebagai pengganti Commercial Head."
+                    if action == "approve_as_admin"
+                    else f"Persetujuan {SPH_ROLES[allowed_role]} dicatat."
+                )
             else:
+                allowed_actor_roles = {"commercial_head"}
                 next_status = "draft"
                 update = (
                     "UPDATE sph_proposals SET status=%s,approvals='[]',updated_at=%s WHERE id=%s",
@@ -2682,7 +2775,14 @@ async def sph_proposal_action(proposal_id: int, request: Request):
             message = f"Mencatat volume aktual {actual_volume:g} MMBTU."
         else:
             raise HTTPException(status_code=409, detail="Tindakan tidak sesuai dengan status SPH.")
-        if actor["role"] != allowed_role:
+        if allowed_actor_roles is not None:
+            if actor["role"] not in allowed_actor_roles:
+                required_role = "Admin sebagai pengganti" if action == "approve_as_admin" else SPH_ROLES[allowed_role]
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Tindakan ini hanya dapat dilakukan oleh {required_role}.",
+                )
+        elif actor["role"] != allowed_role:
             required_role = SPH_ROLES[allowed_role]
             raise HTTPException(
                 status_code=403,
@@ -2695,8 +2795,16 @@ async def sph_proposal_action(proposal_id: int, request: Request):
 
 @app.get("/api/sph/proposals/{proposal_id}/pdf")
 def sph_proposal_pdf(proposal_id: int, request: Request):
-    require_sph_access(request)
+    actor = require_sph_access(request)
     proposal = _sph_get_proposal(proposal_id)
+    if actor["role"] == "commercial_head" and (
+        proposal["status"] != "review"
+        or "commercial_head" in proposal["approvals"]
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="SPH tidak ditemukan atau tidak menunggu persetujuan Commercial Head.",
+        )
     with db() as con:
         _sph_log(con, proposal_id, request, "Mengunduh PDF SPH.")
     return _sph_generate_proposal_pdf(proposal)
@@ -3609,7 +3717,7 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
 
 @app.post("/api/sph/proposals/preview/pdf")
 async def sph_proposal_pdf_preview(request: Request):
-    require_sph_access(request)
+    require_sph_admin_access(request)
     validated = _sph_validate_proposal(await request.json())
     preview = {
         "number": validated["proposal_number"],

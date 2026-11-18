@@ -27,7 +27,7 @@ class SphRequest:
 
 class MemorySphDatabase:
     def __init__(self):
-        self.user = {"role": "admin", "sph_role": "commercial_head"}
+        self.user = {"role": "admin", "sph_role": None}
         self.row = {
             "id": 7,
             "number": "SPH-2026-11-MKT-001",
@@ -182,14 +182,14 @@ class SphWorkflowTests(unittest.TestCase):
         self.db_patch.start()
         self.addCleanup(self.db_patch.stop)
 
-    def test_all_proposals_require_only_admin_approval(self):
+    def test_all_proposals_require_commercial_head_approval(self):
         for proposal in (
             {"priceUsd": 14.49, "topPercent": 90},
             {"priceUsd": 14.5, "topPercent": 89.99},
             {"priceUsd": 14.5, "topPercent": 90},
         ):
             with self.subTest(proposal=proposal):
-                self.assertEqual(main._sph_approval_route(), ["admin"])
+                self.assertEqual(main._sph_approval_route(), ["commercial_head"])
 
     def test_application_session_prevents_cross_app_api_access(self):
         sph_session = SphRequest("sales")
@@ -203,26 +203,34 @@ class SphWorkflowTests(unittest.TestCase):
             main.require_sph_access(commercial_session)
         self.assertEqual(error.exception.status_code, 403)
 
-    def test_legacy_sph_role_does_not_grant_user_access_or_approval(self):
-        self.database.user.update({"role": "user", "sph_role": "commercial_head"})
-        request = SphRequest(
-            "commercial_head",
-            {"action": "approve"},
-            system_role="user",
-        )
+    def test_only_assigned_commercial_head_can_access_head_approval(self):
+        self.database.user.update({"role": "user", "sph_role": "sales"})
+        request = SphRequest("sales", {"action": "approve"}, system_role="user")
         with self.assertRaises(main.HTTPException) as error:
             asyncio.run(main.sph_proposal_action(7, request))
         self.assertEqual(error.exception.status_code, 403)
         self.assertEqual(self.database.row["approvals"], "[]")
         self.assertEqual(self.database.logs, [])
 
+        self.database.user.update({"role": "user", "sph_role": "commercial_head"})
+        request = SphRequest(
+            "commercial_head",
+            {"action": "approve"},
+            system_role="user",
+        )
+        result = asyncio.run(main.sph_proposal_action(7, request))
+        self.assertEqual(result["status"], "approved")
+        self.assertEqual(result["approvals"], ["commercial_head"])
+        self.assertEqual(self.database.logs[-1]["actorRole"], "commercial_head")
+
+        self.database.user.update({"role": "user", "sph_role": "sales"})
         with self.assertRaises(main.HTTPException) as error:
             main.require_sph_access(SphRequest("admin"))
         self.assertEqual(error.exception.status_code, 403)
 
         with patch.object(main, "verify_user_password", return_value=True):
             login_result = asyncio.run(main.login(SphRequest(
-                "commercial_head",
+                "sales",
                 {
                     "username": "reviewer",
                     "password": "password",
@@ -232,6 +240,52 @@ class SphWorkflowTests(unittest.TestCase):
             )))
         self.assertEqual(login_result.status_code, 403)
 
+    def test_admin_can_approve_head_stage_without_head_login(self):
+        request = SphRequest("admin", {"action": "approve_as_admin"})
+        result = asyncio.run(main.sph_proposal_action(7, request))
+
+        self.assertEqual(result["status"], "approved")
+        self.assertEqual(result["approvals"], ["commercial_head"])
+        self.assertEqual(self.database.logs[-1]["actorRole"], "admin")
+        self.assertIn("pengganti Commercial Head", self.database.logs[-1]["message"])
+
+    def test_commercial_head_cannot_perform_admin_workflow_actions(self):
+        self.database.user.update({"role": "user", "sph_role": "commercial_head"})
+
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.sph_proposal_action(7, SphRequest(
+                "commercial_head",
+                {"action": "submit"},
+                system_role="user",
+            )))
+
+        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(self.database.row["status"], "review")
+
+    def test_commercial_head_can_read_only_proposals_pending_their_approval(self):
+        self.database.user.update({"role": "user", "sph_role": "commercial_head"})
+        request = SphRequest("commercial_head", system_role="user")
+        request.session.pop("sph_role", None)
+
+        proposal = main.sph_get_proposal(7, request)
+        self.assertEqual(proposal["approvalRoute"], ["commercial_head"])
+
+        self.database.row["status"] = "approved"
+        with self.assertRaises(main.HTTPException) as error:
+            main.sph_get_proposal(7, request)
+        self.assertEqual(error.exception.status_code, 404)
+
+    def test_commercial_head_cannot_create_or_edit_proposals(self):
+        self.database.user.update({"role": "user", "sph_role": "commercial_head"})
+        request = SphRequest("commercial_head", {}, system_role="user")
+
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.sph_create_proposal(request))
+        self.assertEqual(error.exception.status_code, 403)
+
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.sph_update_proposal(7, request))
+        self.assertEqual(error.exception.status_code, 403)
     def test_proposal_validation_rejects_noncanonical_price_precision(self):
         proposal = {
             "proposalNumber": "  SPH-2026-11-MKT-002  ",
@@ -277,14 +331,14 @@ class SphWorkflowTests(unittest.TestCase):
             main._sph_validate_proposal(proposal)
         self.assertEqual(error.exception.status_code, 400)
 
-    def test_admin_approval_is_the_only_workflow_approval_stage(self):
+    def test_existing_commercial_head_approval_is_not_replaced_by_admin(self):
         self.database.row["approvals"] = '["commercial_head"]'
-        admin_request = SphRequest("commercial_head", {"action": "approve"})
-        result = asyncio.run(main.sph_proposal_action(7, admin_request))
-        self.assertEqual(result["status"], "approved")
-        self.assertEqual(result["approvals"], ["admin"])
-        self.assertEqual(len(self.database.logs), 1)
-        self.assertEqual(self.database.logs[-1]["actorRole"], "admin")
+        admin_request = SphRequest("admin", {"action": "approve_as_admin"})
+        with self.assertRaises(main.HTTPException) as error:
+            asyncio.run(main.sph_proposal_action(7, admin_request))
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertEqual(self.database.row["approvals"], '["commercial_head"]')
+        self.assertEqual(self.database.logs, [])
 
     def test_admin_can_edit_submitted_proposal_and_reset_it_to_a_new_draft_version(self):
         self.database.row.update({

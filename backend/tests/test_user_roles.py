@@ -73,13 +73,17 @@ class MemoryUsers:
             self.users[username]["sph_role"] = sph_role
             return SimpleNamespace(rowcount=1)
         if statement.startswith("INSERT INTO app_users"):
-            username, password_hash, role = parameters
+            username, password_hash, role, sph_role = parameters
             self.users[username] = {
                 "username": username,
                 "password_hash": password_hash,
                 "role": role,
-                "sph_role": None,
+                "sph_role": sph_role,
             }
+            return SimpleNamespace(rowcount=1)
+        if statement.startswith("UPDATE app_users SET sph_role"):
+            sph_role, username = parameters
+            self.users[username]["sph_role"] = sph_role
             return SimpleNamespace(rowcount=1)
         if statement.startswith("UPDATE app_users SET password_hash"):
             password_hash, username = parameters
@@ -103,7 +107,7 @@ class UserRoleTests(unittest.TestCase):
             "username": "sales.team",
             "password": "division-password",
         })))
-        self.assertEqual(created, {"username": "sales.team", "role": "user"})
+        self.assertEqual(created, {"username": "sales.team", "role": "user", "sphRole": None})
         self.assertTrue(
             self.database.users["sales.team"]["password_hash"].startswith("pbkdf2_sha256$")
         )
@@ -152,7 +156,11 @@ class UserRoleTests(unittest.TestCase):
             "password": "a",
             "role": "user",
         })))
-        self.assertEqual(created, {"username": "short.pass", "role": "user"})
+        self.assertEqual(created, {
+            "username": "short.pass",
+            "role": "user",
+            "sphRole": None,
+        })
         self.assertTrue(main.verify_user_password(
             "a", self.database.users["short.pass"]["password_hash"]
         ))
@@ -188,7 +196,11 @@ class UserRoleTests(unittest.TestCase):
             "password": "reader-password",
             "role": "user",
         })))
-        self.assertEqual(created, {"username": "report.reader", "role": "user"})
+        self.assertEqual(created, {
+            "username": "report.reader",
+            "role": "user",
+            "sphRole": None,
+        })
         self.assertEqual(self.database.users["report.reader"]["role"], "user")
 
         asyncio.run(main.update_user_password(
@@ -328,10 +340,65 @@ class UserRoleTests(unittest.TestCase):
             ))
         self.assertEqual(error.exception.status_code, 404)
 
-    def test_sph_role_assignment_endpoints_are_removed(self):
+    def test_sph_role_assignment_endpoint_is_available_to_admin(self):
         routes = {route.path for route in main.app.routes}
-        self.assertNotIn("/api/sph/users", routes)
-        self.assertNotIn("/api/sph/users/{username}/role", routes)
+        self.assertIn("/api/users/{username}/sph-role", routes)
+
+    def test_admin_can_assign_and_revoke_commercial_head_access(self):
+        asyncio.run(main.create_user(FakeRequest({
+            "username": "contract.head",
+            "password": "head-password",
+        })))
+
+        updated = asyncio.run(main.update_user_sph_role(
+            "contract.head",
+            FakeRequest({"sphRole": "commercial_head"}),
+        ))
+        self.assertEqual(updated["sphRole"], "commercial_head")
+        self.assertEqual(self.database.users["contract.head"]["sph_role"], "commercial_head")
+
+        revoked = asyncio.run(main.update_user_sph_role(
+            "contract.head",
+            FakeRequest({"sphRole": None}),
+        ))
+        self.assertIsNone(revoked["sphRole"])
+        self.assertIsNone(self.database.users["contract.head"]["sph_role"])
+
+    def test_commercial_head_login_is_limited_to_sph_approval_app(self):
+        self.database.users["contract.head"] = {
+            "username": "contract.head",
+            "password_hash": main.hash_user_password("head-password"),
+            "role": "user",
+            "sph_role": "commercial_head",
+        }
+        sph_request = FakeRequest(
+            {
+                "username": "contract.head",
+                "password": "head-password",
+                "application": "sph",
+            },
+            username="",
+            role="",
+        )
+
+        asyncio.run(main.login(sph_request))
+        profile = main.me(sph_request)
+
+        self.assertEqual(profile["role"], "user")
+        self.assertEqual(profile["sphRole"], "commercial_head")
+        self.assertEqual(profile["application"], "sph")
+
+        commercial_request = FakeRequest(
+            {
+                "username": "contract.head",
+                "password": "head-password",
+                "application": "commercial",
+            },
+            username="",
+            role="",
+        )
+        response = asyncio.run(main.login(commercial_request))
+        self.assertEqual(response.status_code, 403)
 
     def test_legacy_sph_assignment_does_not_grant_user_access(self):
         self.database.users["reader"] = {

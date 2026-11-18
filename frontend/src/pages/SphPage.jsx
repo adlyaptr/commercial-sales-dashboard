@@ -5,6 +5,7 @@ import '../sph.css';
 
 const roleLabels = {
     admin: 'Admin',
+    commercial_head: 'Commercial Head',
 };
 
 const statusLabels = {
@@ -373,12 +374,15 @@ function SphPaperPreview({ form }) {
 }
 
 function nextAction(proposal) {
-    if (proposal.status === 'draft') return { action: 'submit', label: 'Kirim untuk persetujuan Admin' };
+    if (proposal.status === 'draft') return { action: 'submit', label: 'Kirim untuk persetujuan Commercial Head' };
     if (proposal.status === 'review') {
         const role = proposal.approvalRoute?.includes('admin')
             && !proposal.approvals?.includes('admin')
             ? 'admin'
-            : null;
+            : proposal.approvalRoute?.includes('commercial_head')
+                && !proposal.approvals?.includes('commercial_head')
+                ? 'commercial_head'
+                : null;
         return role ? { action: 'approve', label: `Setujui sebagai ${roleLabels[role]}` } : null;
     }
     if (proposal.status === 'approved') return { action: 'mark_sent', label: 'Tandai telah dikirim' };
@@ -506,6 +510,7 @@ export default function SphPage({ user, onLogout }) {
     const [notice, setNotice] = useState('');
 
     const isAdmin = user.role === 'admin';
+    const isCommercialHead = user.sphRole === 'commercial_head';
     const isTermTemplate = form.templateKey === 'term_description';
     async function loadProposals() {
         setError('');
@@ -673,10 +678,11 @@ export default function SphPage({ user, onLogout }) {
         ? proposals.reduce((total, item) => total + Number(item.priceUsd || 0), 0) / proposals.length
         : 0;
     const action = proposal ? nextAction(proposal) : null;
-    const canApprove = proposal?.status === 'review'
-        && isAdmin
-        && proposal.approvalRoute?.includes('admin')
-        && !proposal.approvals?.includes('admin');
+    const headApprovalPending = proposal?.status === 'review'
+        && proposal.approvalRoute?.includes('commercial_head')
+        && !proposal.approvals?.includes('commercial_head');
+    const canApprove = headApprovalPending && (isAdmin || isCommercialHead);
+    const canReturn = headApprovalPending && isCommercialHead;
 
     return (
         <main className="sph-app">
@@ -687,7 +693,7 @@ export default function SphPage({ user, onLogout }) {
                 <div className="sph-topbar-right">
                     <span className="sph-user-chip">
                         <strong>{user.username}</strong>
-                        <small>Admin</small>
+                        <small>{isCommercialHead ? 'Commercial Head' : 'Admin'}</small>
                     </span>
                     <button className="sph-logout" type="button" onClick={logout} disabled={busy}>Keluar</button>
                 </div>
@@ -710,7 +716,7 @@ export default function SphPage({ user, onLogout }) {
                 <nav className="sph-tabs" aria-label="Navigasi SPH">
                     {[
                         ['dashboard', 'Dashboard'],
-                        ['editor', 'Editor SPH'],
+                        ...(isAdmin ? [['editor', 'Editor SPH']] : []),
                         ['process', 'Alur proses'],
                     ].map(([tab, label]) => (
                         <button
@@ -946,7 +952,7 @@ export default function SphPage({ user, onLogout }) {
                                     <p className="sph-form-hint">
                                         {isTermTemplate
                                             ? 'PDF memakai Rincian Volume. Jika Rincian Harga sudah mencantumkan harga dasar, nilainya tidak ditambahkan ulang. Produk dan penjual tetap.'
-                                            : 'Semua penawaran memerlukan persetujuan Admin.'}
+                                            : 'Semua penawaran memerlukan persetujuan Commercial Head; Admin dapat menyetujui sebagai pengganti.'}
                                     </p>
                                 </div>
                                 <div className="sph-form-section">
@@ -1220,12 +1226,24 @@ export default function SphPage({ user, onLogout }) {
                                             </button>
                                         </div>
                                     )}
-                                    {action && action.action !== 'activate' && isAdmin && (action.action !== 'approve' || canApprove) && (
+                                    {canApprove && (
+                                        <button
+                                            className="sph-primary"
+                                            type="button"
+                                            disabled={busy}
+                                            onClick={() => performAction(isCommercialHead ? 'approve' : 'approve_as_admin')}
+                                        >
+                                            {isCommercialHead
+                                                ? 'Setujui sebagai Commercial Head'
+                                                : 'Setujui sebagai Admin pengganti'}
+                                        </button>
+                                    )}
+                                    {action && action.action !== 'activate' && action.action !== 'approve' && isAdmin && (
                                         <button className="sph-primary" type="button" disabled={busy} onClick={() => performAction(action.action)}>
                                             {action.label}
                                         </button>
                                     )}
-                                    {proposal.status === 'review' && canApprove && (
+                                    {proposal.status === 'review' && canReturn && (
                                         <div className="sph-return-action">
                                             <input value={returnReason} onChange={(event) => setReturnReason(event.target.value)} placeholder="Alasan pengembalian" maxLength={2000} />
                                             <button className="sph-secondary" type="button" disabled={busy || !returnReason.trim()} onClick={() => performAction('return', { reason: returnReason })}>Kembalikan</button>

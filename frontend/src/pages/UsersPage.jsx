@@ -5,6 +5,8 @@ export default function UsersPage() {
     const [users, setUsers] = useState([]);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [newSphRole, setNewSphRole] = useState('');
+    const [sphRoles, setSphRoles] = useState({});
     const [passwords, setPasswords] = useState({});
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState('');
@@ -14,7 +16,12 @@ export default function UsersPage() {
     async function loadUsers() {
         setError('');
         try {
-            setUsers(await api('/api/users'));
+            const loadedUsers = await api('/api/users');
+            setUsers(loadedUsers);
+            setSphRoles(Object.fromEntries(loadedUsers.map((user) => [
+                user.username,
+                user.sph_role || '',
+            ])));
         } catch (requestError) {
             setError(requestError.message || 'Daftar pengguna gagal dimuat.');
         } finally {
@@ -34,14 +41,38 @@ export default function UsersPage() {
         try {
             await api('/api/users', {
                 method: 'POST',
-                body: { username, password, role: 'user' },
+                body: { username, password, role: 'user', sphRole: newSphRole || null },
             });
+            const createdUsername = username;
             setUsername('');
             setPassword('');
-            setNotice(`Akun User "${username}" berhasil dibuat.`);
+            setNewSphRole('');
+            setNotice(newSphRole
+                ? `Akun Commercial Head SPH "${createdUsername}" berhasil dibuat.`
+                : `Akun User "${createdUsername}" berhasil dibuat.`);
             await loadUsers();
         } catch (requestError) {
             setError(requestError.message || 'Akun gagal dibuat.');
+        } finally {
+            setBusy('');
+        }
+    }
+
+    async function updateSphRole(targetUsername) {
+        setBusy(targetUsername);
+        setError('');
+        setNotice('');
+        try {
+            await api(`/api/users/${encodeURIComponent(targetUsername)}/sph-role`, {
+                method: 'PUT',
+                body: { sphRole: sphRoles[targetUsername] || null },
+            });
+            setNotice(sphRoles[targetUsername]
+                ? `Akses Commercial Head SPH untuk "${targetUsername}" berhasil diaktifkan.`
+                : `Akses Commercial Head SPH untuk "${targetUsername}" berhasil dicabut.`);
+            await loadUsers();
+        } catch (requestError) {
+            setError(requestError.message || 'Role SPH gagal diperbarui.');
         } finally {
             setBusy('');
         }
@@ -123,8 +154,15 @@ export default function UsersPage() {
                             onChange={(event) => setPassword(event.target.value)}
                         />
                     </label>
+                    <label>
+                        Akses SPH
+                        <select value={newSphRole} onChange={(event) => setNewSphRole(event.target.value)}>
+                            <option value="">User biasa</option>
+                            <option value="commercial_head">Commercial Head · approval saja</option>
+                        </select>
+                    </label>
                     <button className="primary" type="submit" disabled={busy !== ''}>
-                        {busy === 'create' ? 'Menyimpan...' : 'Buat akun User'}
+                        {busy === 'create' ? 'Menyimpan...' : 'Buat akun'}
                     </button>
                 </form>
                 <small className="users-help">
@@ -147,9 +185,28 @@ export default function UsersPage() {
                                     <span className={`users-role ${user.role}`}>
                                         {user.role === 'admin' ? 'Admin' : user.role === 'user' ? 'User' : 'Akun Divisi lama · login nonaktif'}
                                     </span>
+                                    {user.role === 'user' && user.sph_role === 'commercial_head' && (
+                                        <span className="users-role">Commercial Head SPH · approval saja</span>
+                                    )}
                                 </div>
                                 {user.role === 'user' && (
                                     <div className="users-actions">
+                                        <form onSubmit={(event) => { event.preventDefault(); updateSphRole(user.username); }}>
+                                            <select
+                                                aria-label={`Akses SPH untuk ${user.username}`}
+                                                value={sphRoles[user.username] || ''}
+                                                onChange={(event) => setSphRoles((current) => ({
+                                                    ...current,
+                                                    [user.username]: event.target.value,
+                                                }))}
+                                            >
+                                                <option value="">Tidak ada akses SPH</option>
+                                                <option value="commercial_head">Commercial Head · approval saja</option>
+                                            </select>
+                                            <button type="submit" disabled={busy !== ''}>
+                                                Simpan akses SPH
+                                            </button>
+                                        </form>
                                         <form onSubmit={(event) => updatePassword(user.username, event)}>
                                             <input
                                                 type="password"
