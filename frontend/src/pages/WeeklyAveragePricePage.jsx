@@ -3,6 +3,7 @@ import { Bar } from 'react-chartjs-2';
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
+import { hasAveragePriceDisplayData } from '../utils/averagePrice';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -951,16 +952,11 @@ export default function WeeklyAveragePricePage() {
     const calculationRows = calculatedRows.filter((row) => (
         report.source === 'workbook'
             ? workbookCustomerKeySet.has(normalizeCustomerOrder(row.customer_key))
+                || hasAveragePriceDisplayData(row)
             : row.workbook_group.index < workbookCustomerGroups.length
                 || sheetCustomerKeySet.has(normalizeCustomerOrder(row.customer_key))
     ));
-    const sourceDisplayRows = calculationRows.filter((row) =>
-        row.sm3 > 0
-        || Number(row.price_usd_per_mmbtu) > 0
-        || Number(row.price_rp_per_sm3) > 0
-        || Number(row.total_usd_override) > 0
-        || Number(row.rupiah_override) > 0,
-    );
+    const sourceDisplayRows = calculationRows.filter(hasAveragePriceDisplayData);
     const displayRows = aggregateDuplicateCustomers(sourceDisplayRows);
     const displayGroups = displayRows.reduce((groups, row) => {
         const currentGroup = groups[groups.length - 1];
