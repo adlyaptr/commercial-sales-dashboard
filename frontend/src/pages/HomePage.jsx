@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js';
 import { useOutletContext } from 'react-router-dom';
@@ -135,6 +135,7 @@ export default function HomePage() {
     const {
         rangeStartDate,
         rangeEndDate,
+        homeRefreshKey,
         dataError,
         loadingDates,
         canEdit,
@@ -145,6 +146,8 @@ export default function HomePage() {
     const [complaints, setComplaints] = useState([]);
     const [errors, setErrors] = useState({});
     const [loading, setLoading] = useState(false);
+    const hasLoadedRef = useRef(false);
+    const loadedRangeRef = useRef('');
 
     useEffect(() => {
         if (!rangeStartDate || !rangeEndDate) {
@@ -152,11 +155,15 @@ export default function HomePage() {
             setPriceReport(null);
             setComplaints([]);
             setErrors({});
+            setLoading(false);
             return undefined;
         }
 
         let active = true;
-        setLoading(true);
+        const rangeKey = `${rangeStartDate}:${rangeEndDate}`;
+        if (!hasLoadedRef.current || loadedRangeRef.current !== rangeKey) {
+            setLoading(true);
+        }
         setErrors({});
 
         const query = new URLSearchParams({
@@ -168,7 +175,7 @@ export default function HomePage() {
             ...(canViewHomeAverage ? [['price', api(`/api/monthly-average-price-range?${query.toString()}`)]] : []),
             ['complaints', api('/api/complaints')],
         ];
-        if (!canEdit) setPriceReport(null);
+        if (!canViewHomeAverage) setPriceReport(null);
         Promise.allSettled(requests.map(([, request]) => request)).then((results) => {
             if (!active) return;
             const nextErrors = {};
@@ -191,11 +198,15 @@ export default function HomePage() {
             });
             setErrors(nextErrors);
         }).finally(() => {
-            if (active) setLoading(false);
+            if (active) {
+                setLoading(false);
+                hasLoadedRef.current = true;
+                loadedRangeRef.current = rangeKey;
+            }
         });
 
         return () => { active = false; };
-    }, [rangeStartDate, rangeEndDate, canEdit, canViewHomeAverage]);
+    }, [rangeStartDate, rangeEndDate, canEdit, canViewHomeAverage, homeRefreshKey]);
 
     const monthlyComplaints = complaints.filter((item) =>
         item.date >= rangeStartDate && item.date <= rangeEndDate);

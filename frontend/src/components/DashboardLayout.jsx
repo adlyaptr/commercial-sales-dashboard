@@ -12,7 +12,7 @@ import logoImage from '../assets/reethau.png';
 const classForNav = ({ isActive }) =>
     `nav-link${isActive ? ' active' : ''}`;
 
-const SALES_ORDER_REFRESH_INTERVAL_MS = 310_000;
+const AUTO_REFRESH_INTERVAL_MS = 310_000;
 
 function NavigationIcon({ name }) {
     const commonProps = {
@@ -140,6 +140,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const [rangePickerOpen, setRangePickerOpen] = useState(false);
     const [dashboard, setDashboard] = useState(null);
     const [forecastRefreshKey, setForecastRefreshKey] = useState(0);
+    const [homeRefreshKey, setHomeRefreshKey] = useState(0);
     const [dataError, setDataError] = useState('');
     const [loadingDates, setLoadingDates] = useState(true);
     const [loggingOut, setLoggingOut] = useState(false);
@@ -340,6 +341,73 @@ export default function DashboardLayout({ user, onLogout }) {
     }, [selectedDate, canViewAllFeatures]);
 
     useEffect(() => {
+        if (!isHome) return undefined;
+
+        let active = true;
+        let refreshInFlight = false;
+        const refreshHome = async () => {
+            if (!active || refreshInFlight || document.visibilityState === 'hidden') return;
+            refreshInFlight = true;
+            try {
+                const [result, latestActual] = await Promise.all([
+                    api('/api/dates'),
+                    api('/api/latest-actual-date'),
+                ]);
+                if (!active) return;
+                if (!Array.isArray(result)) {
+                    throw new Error('Format daftar tanggal dari server tidak valid.');
+                }
+                if (latestActual !== null && typeof latestActual !== 'string') {
+                    throw new Error('Format tanggal actual terakhir dari server tidak valid.');
+                }
+
+                const normalizedDates = [
+                    ...new Set(
+                        result
+                            .filter((reportDate) => typeof reportDate === 'string')
+                            .map((reportDate) => reportDate.trim())
+                            .filter(Boolean)
+                    ),
+                ].sort((a, b) => b.localeCompare(a));
+                const followsLatestDate = Boolean(
+                    latestActualDate
+                    && selectedDate === latestActualDate
+                    && rangeStartDate === latestActualDate
+                    && rangeEndDate === latestActualDate
+                );
+
+                setDates(normalizedDates);
+                setLatestActualDate(latestActual ?? '');
+                if (followsLatestDate && latestActual && latestActual !== latestActualDate) {
+                    setSelectedDate(latestActual);
+                    setRangeStartDate(latestActual);
+                    setRangeEndDate(latestActual);
+                    setAveragePriceMonth(latestActual.slice(0, 7));
+                }
+                setHomeRefreshKey((key) => key + 1);
+                setDataError('');
+            } catch (error) {
+                if (active) {
+                    setDataError(error?.message || 'Gagal memperbarui data Beranda.');
+                }
+            } finally {
+                refreshInFlight = false;
+            }
+        };
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== 'hidden') refreshHome();
+        };
+        const timer = window.setInterval(refreshHome, AUTO_REFRESH_INTERVAL_MS);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            active = false;
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.clearInterval(timer);
+        };
+    }, [isHome, latestActualDate, rangeEndDate, rangeStartDate, selectedDate]);
+
+    useEffect(() => {
         if (!isDaily || !canViewAllFeatures || !selectedDate) return undefined;
 
         let active = true;
@@ -360,7 +428,7 @@ export default function DashboardLayout({ user, onLogout }) {
                     );
                 }
             }
-        }, SALES_ORDER_REFRESH_INTERVAL_MS);
+        }, AUTO_REFRESH_INTERVAL_MS);
 
         return () => {
             active = false;
@@ -460,6 +528,7 @@ export default function DashboardLayout({ user, onLogout }) {
         canSyncDailySales: user?.role === 'admin' || user?.role === 'user',
         canViewHomeAverage: isHome,
         forecastRefreshKey,
+        homeRefreshKey,
         selectedDate,
         rangeStartDate,
         rangeEndDate,
