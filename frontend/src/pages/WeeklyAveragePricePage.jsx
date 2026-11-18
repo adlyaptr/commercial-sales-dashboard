@@ -200,6 +200,7 @@ const workbookCustomerGroups = [
         regions: {
             'JAWA BARAT': ['NNI', 'GFR Surcharge', 'GF RANCAEKEK', 'BYC', 'HLI Green Power', 'Dic Grapichs', 'KSN Maja', 'ATEJA', 'ABC Kogen'],
             'JAWA TENGAH': [],
+            'JAWA TIMUR': ['PLATINUM'],
         },
     },
     {
@@ -303,6 +304,7 @@ function workbookGroupForCustomer(row, month) {
             gfatom: 1,
             hskksogas: 6,
             jiuqi: 6,
+            platinum: 2,
         }[customerKey];
         if (groupIndex != null) {
             return { index: groupIndex, label: workbookCustomerGroups[groupIndex].label };
