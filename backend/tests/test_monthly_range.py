@@ -25,9 +25,10 @@ class MemoryMonthlyRange:
         sales_rows=None,
         actual_imported_dates=None,
         expected_range=("2025-12-15", "2026-02-10"),
+        customer_rows=None,
     ):
         self.expected_range = expected_range
-        self.sales_rows = sales_rows or [
+        self.sales_rows = [
             {
                 "report_date": "2025-12-15",
                 "customer_key": "customer-1",
@@ -50,7 +51,12 @@ class MemoryMonthlyRange:
                 "id": 2,
                 "manual_fob": False,
             },
-        ]
+        ] if sales_rows is None else sales_rows
+        self.customer_rows = customer_rows or [{
+            "customer_key": "customer-1",
+            "customer_name": "Customer Contoh",
+            "operator": "SETU",
+        }]
         if actual_imported_dates is None:
             actual_imported_dates = ("2025-12-15", "2026-01-03")
         self.actual_imported_dates = set(actual_imported_dates)
@@ -82,11 +88,7 @@ class MemoryMonthlyRange:
         if statement.startswith(
             "SELECT customer_key, customer_name, operator, off_from_date FROM customers"
         ):
-            return SimpleNamespace(fetchall=lambda: [{
-                "customer_key": "customer-1",
-                "customer_name": "Customer Contoh",
-                "operator": "SETU",
-            }])
+            return SimpleNamespace(fetchall=lambda: self.customer_rows)
         raise AssertionError(f"Unexpected SQL in monthly range test: {statement}")
 
 
@@ -163,6 +165,40 @@ class MonthlyRangeTests(unittest.TestCase):
         self.assertEqual(
             [(item["period"], item["so"], item["actual"]) for item in result["items"]],
             [("2025-12", 120, 100), ("2026-01", 80, 75)],
+        )
+
+    def test_monthly_range_lists_effective_off_customer_without_sales(self):
+        database = MemoryMonthlyRange(
+            sales_rows=[],
+            actual_imported_dates=[],
+            expected_range=("2026-01-01", "2026-08-31"),
+            customer_rows=[{
+                "customer_key": "tomimoto",
+                "customer_name": "TOMIMOTO",
+                "operator": "KHT",
+                "off_from_date": date(2026, 7, 1),
+            }],
+        )
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "get_sales_order_data", return_value={}),
+        ):
+            result = main.monthly_range_summary(
+                FakeRequest(),
+                "2026-01-01",
+                "2026-08-31",
+            )
+
+        tomimoto_rows = [
+            item for item in result["items"]
+            if item["customer_key"] == "tomimoto"
+        ]
+        self.assertEqual(
+            [(item["period"], item["operator"]) for item in tomimoto_rows],
+            [
+                ("2026-07", "OFF"),
+                ("2026-08", "OFF"),
+            ],
         )
 
     def test_forecasts_actual_only_for_dates_without_an_actual_import(self):

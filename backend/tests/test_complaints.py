@@ -157,14 +157,21 @@ class MemoryDashboard:
         actual_imported=True,
         sales_rows=None,
         imported_day_offset=1,
+        customer_rows=None,
     ):
         self.actual_imported = actual_imported
         self.imported_day_offset = imported_day_offset
         self.trend_query = None
-        self.sales_rows = sales_rows or [
+        self.sales_rows = [
             {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU", "so": 100, "actual": 120, "id": 1, "source_file": "daily.xlsx", "manual_fob": False},
             {"customer_key": "pelanggankht", "customer_name": "Pelanggan KHT", "operator": "KHT", "so": 0, "actual": 10, "id": 2, "source_file": "daily.xlsx", "manual_fob": False},
             {"customer_key": "pelangganoff", "customer_name": "Pelanggan OFF", "operator": "OFF", "so": 50, "actual": 20, "id": 3, "source_file": "daily.xlsx", "manual_fob": False},
+        ] if sales_rows is None else sales_rows
+        self.customer_rows = customer_rows or [
+            {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU"},
+            {"customer_key": "pelanggankht", "customer_name": "Pelanggan KHT", "operator": "KHT"},
+            {"customer_key": "pelangganoff", "customer_name": "Pelanggan OFF", "operator": "OFF"},
+            {"customer_key": "pelangganforecast", "customer_name": "Pelanggan Forecast", "operator": "WUNUT"},
         ]
 
     def __enter__(self):
@@ -196,12 +203,7 @@ class MemoryDashboard:
         if normalized_statement.startswith(
             "SELECT customer_key, customer_name, operator, off_from_date FROM customers"
         ):
-            return SimpleNamespace(fetchall=lambda: [
-                {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU"},
-                {"customer_key": "pelanggankht", "customer_name": "Pelanggan KHT", "operator": "KHT"},
-                {"customer_key": "pelangganoff", "customer_name": "Pelanggan OFF", "operator": "OFF"},
-                {"customer_key": "pelangganforecast", "customer_name": "Pelanggan Forecast", "operator": "WUNUT"},
-            ])
+            return SimpleNamespace(fetchall=lambda: self.customer_rows)
 
         if "AS period_start" in normalized_statement:
             self.trend_query = statement % parameters
@@ -692,6 +694,35 @@ class DashboardApiTests(unittest.TestCase):
         self.assertEqual(result["trend"][-1]["period_start"], "2026-10-01")
         self.assertTrue(result["trend"][-1]["has_data"])
         self.assertEqual(result["trend"][-1]["actual"], 150)
+
+    def test_dashboard_lists_effective_off_customer_without_sales(self):
+        database = MemoryDashboard(
+            sales_rows=[],
+            customer_rows=[{
+                "customer_key": "tomimoto",
+                "customer_name": "TOMIMOTO",
+                "operator": "KHT",
+                "off_from_date": date(2026, 7, 1),
+            }],
+        )
+        with patch.object(main, "db", return_value=database):
+            result = main.dashboard(
+                FakeRequest(),
+                report_date="2026-07-01",
+            )
+
+        self.assertEqual(
+            result["operators"]["OFF"],
+            [{
+                "customer": "TOMIMOTO",
+                "customer_key": "tomimoto",
+                "so": 0.0,
+                "actual": 0.0,
+                "actual_is_forecast": False,
+                "manual_fob": False,
+                "diff": 0.0,
+            }],
+        )
 
     def test_dashboard_preserves_imported_so_and_actual_when_date_has_actuals(self):
         sales_orders = {

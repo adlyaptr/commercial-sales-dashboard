@@ -5982,6 +5982,40 @@ def monthly_range_summary(request: Request, start_date: str, end_date: str):
         grouped["actual_is_forecast"] = (
             grouped["actual_is_forecast"] or row["actual_is_forecast"]
         )
+    first_month = date(start.year, start.month, 1)
+    last_month = date(end.year, end.month, 1)
+    for customer in customer_rows:
+        off_from_date = customer.get("off_from_date")
+        if not off_from_date:
+            continue
+        if isinstance(off_from_date, datetime):
+            off_from_date = off_from_date.date()
+        elif not isinstance(off_from_date, date):
+            off_from_date = date.fromisoformat(str(off_from_date)[:10])
+        if off_from_date > end:
+            continue
+
+        period_start = max(first_month, date(off_from_date.year, off_from_date.month, 1))
+        while period_start <= last_month:
+            key = (
+                customer["customer_key"],
+                customer["customer_name"],
+                "OFF",
+                period_start.strftime("%Y-%m"),
+            )
+            grouped_rows.setdefault(key, {
+                "customer_key": customer["customer_key"],
+                "customer": customer["customer_name"],
+                "operator": "OFF",
+                "period": period_start.strftime("%Y-%m"),
+                "so": 0.0,
+                "actual": 0.0,
+                "actual_is_forecast": False,
+            })
+            if period_start.month == 12:
+                period_start = date(period_start.year + 1, 1, 1)
+            else:
+                period_start = date(period_start.year, period_start.month + 1, 1)
     return {
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
@@ -6437,6 +6471,27 @@ def dashboard(
             preserve_imported_so=True,
             forecast_only_unimported_dates=True,
         )
+        off_rows = {
+            str(row["customer_key"])
+            for row in rows
+            if row.get("operator") == "OFF"
+        }
+        for customer in customer_rows:
+            if (
+                customer.get("off_from_date")
+                and effective_customer_operator(customer, selected_date) == "OFF"
+                and str(customer["customer_key"]) not in off_rows
+            ):
+                rows.append({
+                    "customer_name": customer["customer_name"],
+                    "customer_key": customer["customer_key"],
+                    "operator": "OFF",
+                    "so": 0.0,
+                    "actual": 0.0,
+                    "actual_is_forecast": False,
+                    "manual_fob": False,
+                    "diff": 0.0,
+                })
         operator_data = {op: [] for op in (*OPERATORS, "OFF")}
         operator_totals = {
             op: {"so": 0.0, "actual": 0.0, "diff": 0.0, "customers": 0}
