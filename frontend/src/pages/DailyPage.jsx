@@ -362,6 +362,56 @@ export default function DailyPage() {
         }
     }
 
+    async function saveCustomerStatus(event) {
+        event.preventDefault();
+        if (!statusCustomerKey || !statusOperator) {
+            setNotice({ bad: true, text: 'Pilih customer dan operator asalnya.' });
+            return;
+        }
+
+        setStatusSaving(true);
+        setNotice(null);
+        try {
+            const result = await api(
+                `/api/customers/${encodeURIComponent(statusCustomerKey)}/status`,
+                {
+                    method: 'PUT',
+                    body: {
+                        operator: statusOperator,
+                        off_from_date: offFromDate || null,
+                    },
+                },
+            );
+            setMasterCustomers((current) => current.map((customer) => (
+                customer.customer_key === result.customer_key
+                    ? {
+                        ...customer,
+                        operator: result.operator,
+                        off_from_date: result.off_from_date,
+                    }
+                    : customer
+            )));
+            setNotice({
+                bad: false,
+                text: `${selectedStatusCustomer?.customer_name ?? 'Customer'} berhasil diperbarui.`,
+            });
+
+            try {
+                await refreshForecast();
+                await refreshDashboard(selectedDate);
+            } catch (error) {
+                setNotice({
+                    bad: true,
+                    text: `Status tersimpan, tetapi Harian gagal diperbarui: ${error.message}`,
+                });
+            }
+        } catch (error) {
+            setNotice({ bad: true, text: error.message || 'Status customer gagal disimpan.' });
+        } finally {
+            setStatusSaving(false);
+        }
+    }
+
     async function saveForecastCustomerMappings() {
         const mappings = unmappedSalesOrderCustomers.map((customer) => ({
             customer,
@@ -370,56 +420,6 @@ export default function DailyPage() {
         if (mappings.some((mapping) => !mapping.operator)) {
             setNotice({ bad: true, text: 'Pilih operator untuk setiap customer baru sebelum menyimpan.' });
             return;
-        }
-
-        async function saveCustomerStatus(event) {
-            event.preventDefault();
-            if (!statusCustomerKey || !statusOperator) {
-                setNotice({ bad: true, text: 'Pilih customer dan operator asalnya.' });
-                return;
-            }
-
-            setStatusSaving(true);
-            setNotice(null);
-            try {
-                const result = await api(
-                    `/api/customers/${encodeURIComponent(statusCustomerKey)}/status`,
-                    {
-                        method: 'PUT',
-                        body: {
-                            operator: statusOperator,
-                            off_from_date: offFromDate || null,
-                        },
-                    },
-                );
-                setMasterCustomers((current) => current.map((customer) => (
-                    customer.customer_key === result.customer_key
-                        ? {
-                            ...customer,
-                            operator: result.operator,
-                            off_from_date: result.off_from_date,
-                        }
-                        : customer
-                )));
-                setNotice({
-                    bad: false,
-                    text: `${selectedStatusCustomer?.customer_name ?? 'Customer'} berhasil diperbarui.`,
-                });
-
-                try {
-                    await refreshForecast();
-                    await refreshDashboard(selectedDate);
-                } catch (error) {
-                    setNotice({
-                        bad: true,
-                        text: `Status tersimpan, tetapi Harian gagal diperbarui: ${error.message}`,
-                    });
-                }
-            } catch (error) {
-                setNotice({ bad: true, text: error.message || 'Status customer gagal disimpan.' });
-            } finally {
-                setStatusSaving(false);
-            }
         }
 
         setForecastMappingBusy(true);
