@@ -493,6 +493,7 @@ export default function SphPage({ user, onLogout }) {
     const [statusFilter, setStatusFilter] = useState('all');
     const [returnReason, setReturnReason] = useState('');
     const [actualVolume, setActualVolume] = useState('');
+    const [showContractDateEditor, setShowContractDateEditor] = useState(false);
     const [renewalTerms, setRenewalTerms] = useState({
         startDate: '',
         endDate: '',
@@ -531,6 +532,7 @@ export default function SphPage({ user, onLogout }) {
             setForm(formFromProposal(selected));
             setReturnReason('');
             setActualVolume(selected.actualVolume ?? '');
+            setShowContractDateEditor(false);
             setRenewalTerms({
                 startDate: '',
                 endDate: '',
@@ -548,6 +550,7 @@ export default function SphPage({ user, onLogout }) {
     function startNewProposal() {
         setProposal(null);
         setForm(blankProposal());
+        setShowContractDateEditor(false);
         setError('');
         setNotice('');
         setActiveTab('editor');
@@ -606,6 +609,7 @@ export default function SphPage({ user, onLogout }) {
             setProposal(updated);
             setForm(formFromProposal(updated));
             setReturnReason('');
+            setShowContractDateEditor(false);
             setRenewalTerms({
                 startDate: '',
                 endDate: '',
@@ -983,7 +987,7 @@ export default function SphPage({ user, onLogout }) {
                                         <TextField label="Tanggal selesai kontrak" name="endDate" type="date" value={form.endDate} onChange={updateField} />
                                         <label className="sph-checkbox"><input type="checkbox" name="exchangeClause" checked={form.exchangeClause} onChange={updateField} /><span>Klausul tukar menukar berlaku</span></label>
                                     </div>
-                                    <p className="sph-form-hint">Tanggal mulai dan selesai digunakan untuk memantau masa kontrak. Keduanya wajib dilengkapi sebelum pelanggan diaktifkan.</p>
+                                    <p className="sph-form-hint">Tanggal selesai opsional. Jika diisi, tanggal mulai juga harus diisi agar pengingat masa kontrak aktif. Kontrak tanpa tanggal selesai tetap dapat digunakan.</p>
                                 </div>
                                 {isTermTemplate ? (
                                     <div className="sph-form-section">
@@ -1155,6 +1159,38 @@ export default function SphPage({ user, onLogout }) {
                                     </section>
                                 )}
 
+                                {proposal.status === 'active' && isAdmin && !proposal.endDate && (
+                                    <section className="sph-date-option">
+                                        <p>{proposal.startDate
+                                            ? 'Tanggal mulai sudah tercatat. Tambahkan tanggal selesai jika pengingat masa kontrak diperlukan.'
+                                            : 'Kontrak ini tidak menggunakan tanggal selesai. Tanggal mulai dan selesai dapat ditambahkan jika pengingat masa kontrak diperlukan.'}</p>
+                                        {!showContractDateEditor ? (
+                                            <button className="sph-secondary" type="button" disabled={busy} onClick={() => setShowContractDateEditor(true)}>
+                                                Tambahkan periode tanggal (opsional)
+                                            </button>
+                                        ) : (
+                                            <div className="sph-contract-date-fields">
+                                                <TextField label="Tanggal mulai kontrak" name="startDate" type="date" value={form.startDate} onChange={updateField} />
+                                                <TextField label="Tanggal selesai kontrak" name="endDate" type="date" value={form.endDate} onChange={updateField} />
+                                                <button
+                                                    className="sph-primary"
+                                                    type="button"
+                                                    disabled={busy || !form.startDate || !form.endDate}
+                                                    onClick={() => performAction('record_contract_dates', {
+                                                        startDate: form.startDate,
+                                                        endDate: form.endDate,
+                                                    })}
+                                                >
+                                                    Simpan tanggal kontrak
+                                                </button>
+                                                <button className="sph-secondary" type="button" disabled={busy} onClick={() => setShowContractDateEditor(false)}>
+                                                    Batal
+                                                </button>
+                                            </div>
+                                        )}
+                                    </section>
+                                )}
+
                                 <div className="sph-action-area">
                                     {proposal.status !== 'active' && isAdmin && (
                                         <button
@@ -1168,12 +1204,13 @@ export default function SphPage({ user, onLogout }) {
                                     )}
                                     {action?.action === 'activate' && isAdmin && (
                                         <div className="sph-contract-date-fields">
-                                            <TextField label="Tanggal mulai kontrak *" name="startDate" type="date" value={form.startDate} onChange={updateField} />
-                                            <TextField label="Tanggal selesai kontrak *" name="endDate" type="date" value={form.endDate} onChange={updateField} />
+                                            <TextField label="Tanggal mulai kontrak (opsional)" name="startDate" type="date" value={form.startDate} onChange={updateField} />
+                                            <TextField label="Tanggal selesai kontrak (opsional)" name="endDate" type="date" value={form.endDate} onChange={updateField} />
+                                            <p className="sph-form-hint">Tanggal selesai mengaktifkan pengingat; jika diisi, tanggal mulai wajib diisi.</p>
                                             <button
                                                 className="sph-primary"
                                                 type="button"
-                                                disabled={busy || !form.startDate || !form.endDate}
+                                                disabled={busy || Boolean(form.endDate) && !Boolean(form.startDate)}
                                                 onClick={() => performAction('activate', {
                                                     startDate: form.startDate,
                                                     endDate: form.endDate,

@@ -200,6 +200,8 @@
 .sph-expiry-panel { margin: 14px 0; padding: 16px; border: 1px solid #efd0ce; border-radius: 8px; background: #fff3f2; color: #7d3935; }
 .sph-expiry-panel h3 { margin: 0 0 6px; font-size: 13px; }
 .sph-expiry-panel p { margin: 0 0 12px; font-size: 11px; line-height: 1.6; }
+.sph-date-option { margin: 14px 0; padding: 14px; border: 1px solid #dfe8e1; border-radius: 8px; background: #f8faf8; }
+.sph-date-option p { margin: 0 0 10px; color: #63776a; font-size: 11px; line-height: 1.6; }
 .sph-contract-date-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; gap: 10px; width: 100%; }
 .sph-contract-date-fields + .sph-contract-date-fields { margin-top: 12px; }
 .sph-pdf-link { margin-left: auto; }

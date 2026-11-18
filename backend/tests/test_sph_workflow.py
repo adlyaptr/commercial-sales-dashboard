@@ -501,15 +501,44 @@ class SphWorkflowTests(unittest.TestCase):
             "Pelanggan diaktifkan setelah persetujuan SPH untuk periode 2026-11-01 sampai 2028-10-31.",
         )
 
-    def test_activation_requires_valid_start_and_end_dates(self):
+    def test_activation_rejects_end_date_without_a_start_date(self):
         self.database.row["status"] = "customer_approved"
         with self.assertRaises(main.HTTPException) as error:
             asyncio.run(main.sph_proposal_action(7, SphRequest(
                 "admin",
-                {"action": "activate", "startDate": "2026-11-01"},
+                {"action": "activate", "endDate": "2027-10-31"},
             )))
         self.assertEqual(error.exception.status_code, 400)
         self.assertEqual(self.database.row["status"], "customer_approved")
+
+    def test_activation_allows_start_date_without_expiration_monitoring(self):
+        self.database.row["status"] = "customer_approved"
+
+        result = asyncio.run(main.sph_proposal_action(7, SphRequest(
+            "admin",
+            {"action": "activate", "startDate": "2026-11-01"},
+        )))
+
+        self.assertEqual(result["status"], "active")
+        self.assertEqual(result["startDate"], "2026-11-01")
+        self.assertIsNone(result["endDate"])
+        self.assertFalse(result["contractDatesMissing"])
+        self.assertFalse(result["contractExpired"])
+
+    def test_activation_allows_contracts_without_date_periods(self):
+        self.database.row["status"] = "customer_approved"
+
+        result = asyncio.run(main.sph_proposal_action(7, SphRequest(
+            "admin",
+            {"action": "activate"},
+        )))
+
+        self.assertEqual(result["status"], "active")
+        self.assertIsNone(result["startDate"])
+        self.assertIsNone(result["endDate"])
+        self.assertFalse(result["contractDatesMissing"])
+        self.assertFalse(result["contractExpired"])
+        self.assertIn("tanpa tanggal selesai", self.database.logs[-1]["message"])
 
     def test_expired_contract_can_be_renewed_with_new_dates_and_duration(self):
         today = main._sph_now().date()

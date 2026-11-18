@@ -2013,6 +2013,11 @@ def _sph_contract_dates(start_value, end_value, required=False):
             status_code=400,
             detail="Tanggal mulai dan tanggal selesai kontrak wajib diisi.",
         )
+    if end_date and not start_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Tanggal mulai wajib diisi jika tanggal selesai digunakan.",
+        )
     if start_date and end_date and end_date < start_date:
         raise HTTPException(
             status_code=400,
@@ -2043,7 +2048,7 @@ def _sph_add_contract_metadata(proposal):
     start_date = proposal.get("startDate")
     end_date = proposal.get("endDate")
     is_active = proposal.get("status") == "active"
-    proposal["contractDatesMissing"] = is_active and not (start_date and end_date)
+    proposal["contractDatesMissing"] = is_active and bool(end_date) and not start_date
     proposal["contractExpired"] = (
         is_active
         and bool(end_date)
@@ -2585,7 +2590,6 @@ async def sph_proposal_action(proposal_id: int, request: Request):
             start_date, end_date = _sph_contract_dates(
                 payload.get("startDate", proposal.get("startDate")),
                 payload.get("endDate", proposal.get("endDate")),
-                required=True,
             )
             update = (
                 "UPDATE sph_proposals SET status=%s,start_date=%s,end_date=%s,updated_at=%s WHERE id=%s",
@@ -2594,6 +2598,8 @@ async def sph_proposal_action(proposal_id: int, request: Request):
             message = (
                 "Pelanggan diaktifkan setelah persetujuan SPH "
                 f"untuk periode {start_date.isoformat()} sampai {end_date.isoformat()}."
+                if start_date and end_date
+                else "Pelanggan diaktifkan setelah persetujuan SPH tanpa tanggal selesai untuk pengingat."
             )
         elif action == "record_contract_dates" and status == "active":
             allowed_role = "admin"
