@@ -3130,7 +3130,7 @@ def _sph_generate_proposal_pdf(proposal, inline=False):
     ])
     is_draft = proposal["status"] == "draft"
 
-    def page_footer(canvas, _document):
+    def page_footer(canvas, _):
         canvas.saveState()
         logo_width = 62 * mm
         logo_image = ImageReader(str(sph_pdf_logo))
@@ -3676,7 +3676,7 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
         and proposal.get("templateKey") != "term_description"
     )
 
-    def page_footer(canvas, _document):
+    def page_footer(canvas, _):
         canvas.saveState()
         logo_width = 62 * mm
         logo_image = ImageReader(str(sph_pdf_logo))
@@ -5731,7 +5731,7 @@ async def update_complaint(complaint_id: int, request: Request):
         if not current:
             raise HTTPException(status_code=404, detail="Complain tidak ditemukan.")
         fields = normalize_complaint(await request.json())
-        cursor = con.execute(
+        con.execute(
             "UPDATE complaints SET report_date=%s,customer=%s,summary=%s,follow_up=%s,complaint_type=%s,"
             "priority=%s,status=%s,status_changed_at=%s,resolution=%s,updated_at=%s WHERE id=%s",
             (*fields, complaint_id),
@@ -6032,7 +6032,6 @@ def build_monthly_export(year, month, sales_rows, monthly_target):
     summary_sheet = workbook.active
     summary_sheet.title = "SUMMARY REPORT"
     header_fill = PatternFill("solid", fgColor="176341")
-    subheader_fill = PatternFill("solid", fgColor="E4F4E9")
     total_fill = PatternFill("solid", fgColor="DFF3E6")
     white_bold = Font(name="Aptos", color="FFFFFF", bold=True)
     title_font = Font(name="Aptos Display", size=16, bold=True, color="174632")

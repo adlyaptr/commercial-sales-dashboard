@@ -340,7 +340,7 @@ def _write_summary(sheet, month, sales_by_day, monthly_target):
     setu_so, setu_fob_so, setu_actual, setu_fob_actual = operator_values("SETU")
     blora_so, blora_fob_so, blora_actual, blora_fob_actual = operator_values("BLORA")
     wunut_so, wunut_fob_so, wunut_actual, wunut_fob_actual = operator_values("WUNUT")
-    _, off_fob_so, off_actual, off_fob_actual = operator_values("OFF")
+    _, _, off_actual, off_fob_actual = operator_values("OFF")
     values.update({
         27: target,
         28: 0,

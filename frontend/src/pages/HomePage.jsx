@@ -138,7 +138,6 @@ export default function HomePage() {
         homeRefreshKey,
         dataError,
         loadingDates,
-        canEdit,
         canViewHomeAverage,
     } = useOutletContext();
     const [summary, setSummary] = useState(null);
@@ -206,7 +205,7 @@ export default function HomePage() {
         });
 
         return () => { active = false; };
-    }, [rangeStartDate, rangeEndDate, canEdit, canViewHomeAverage, homeRefreshKey]);
+    }, [rangeStartDate, rangeEndDate, canViewHomeAverage, homeRefreshKey]);
 
     const monthlyComplaints = complaints.filter((item) =>
         item.date >= rangeStartDate && item.date <= rangeEndDate);
@@ -277,7 +276,7 @@ export default function HomePage() {
         <div className="home-page">
             <section className="home-section home-kpi-section" aria-label="Ringkasan">
                 {!rangeStartDate && <div className="home-message">{dataError || (loadingDates ? 'Memuat periode...' : 'Pilih periode laporan.')}</div>}
-                <Message loading={loading} error={errors.summary} empty={!summary ? '' : ''}>
+                <Message loading={loading} error={errors.summary}>
                     {summary && <PeriodMetrics summary={summary.month_summary} reportSummary={summary.summary_report} />}
                 </Message>
             </section>

@@ -149,11 +149,6 @@ CREATE TABLE IF NOT EXISTS sph_customers (
     created_at DATETIME NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS sph_sequences (
-    month_key CHAR(7) PRIMARY KEY,
-    next_value INT NOT NULL DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS sph_proposals (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     proposal_number VARCHAR(80) NOT NULL UNIQUE,
