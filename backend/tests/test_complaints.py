@@ -160,6 +160,7 @@ class MemoryDashboard:
     ):
         self.actual_imported = actual_imported
         self.imported_day_offset = imported_day_offset
+        self.trend_query = None
         self.sales_rows = sales_rows or [
             {"customer_key": "pelanggansetu", "customer_name": "Pelanggan Setu", "operator": "SETU", "so": 100, "actual": 120, "id": 1, "source_file": "daily.xlsx", "manual_fob": False},
             {"customer_key": "pelanggankht", "customer_name": "Pelanggan KHT", "operator": "KHT", "so": 0, "actual": 10, "id": 2, "source_file": "daily.xlsx", "manual_fob": False},
@@ -203,6 +204,7 @@ class MemoryDashboard:
             ])
 
         if "AS period_start" in normalized_statement:
+            self.trend_query = statement % parameters
             return SimpleNamespace(fetchall=lambda: [
                 {"period_start": date(2026, 1, 1), "so": 500, "actual": 450},
                 {"period_start": date(2026, 10, 1), "so": 150, "actual": 150},
@@ -666,12 +668,18 @@ class DashboardApiTests(unittest.TestCase):
         self.addCleanup(self.sales_order_patch.stop)
 
     def test_dashboard_returns_sales_totals_and_fills_monthly_trend(self):
-        result = main.dashboard(
-            FakeRequest(),
-            report_date="2026-10-14",
-            trend_period="monthly",
-        )
+        database = MemoryDashboard()
+        with patch.object(main, "db", return_value=database):
+            result = main.dashboard(
+                FakeRequest(),
+                report_date="2026-10-14",
+                trend_period="monthly",
+            )
 
+        self.assertIn(
+            "DATE_FORMAT(s.report_date,'%Y-%m-%d')",
+            database.trend_query,
+        )
         self.assertEqual(result["total_so"], 150)
         self.assertEqual(result["total_actual"], 150)
         self.assertEqual(result["diff"], 0)

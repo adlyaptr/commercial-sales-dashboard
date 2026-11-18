@@ -6492,7 +6492,7 @@ def dashboard(
             FROM sales s JOIN customers c ON c.customer_key=s.customer_key
             LEFT JOIN daily_actual_imports dai
               ON dai.report_date=s.report_date
-             AND LEFT(dai.imported_at,10)>DATE_FORMAT(s.report_date,'%Y-%m-%d')
+            AND LEFT(dai.imported_at,10)>DATE_FORMAT(s.report_date,'%%Y-%%m-%%d')
             WHERE s.report_date BETWEEN %s AND %s
             GROUP BY period_start ORDER BY period_start
             """,
