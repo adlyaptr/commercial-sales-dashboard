@@ -174,11 +174,6 @@ function CooperationList({ onShowNotice }) {
 
     return (
         <section className="cooperation-page">
-            <PageHeader
-                eyebrow="CUSTOMER & CONTRACT MANAGEMENT"
-                title="Kerja sama customer"
-                description="Daftar kontrak dan amendemen, masa berlakunya, serta tindak lanjut."
-            />
             <ExampleNotice />
 
             <section className="cooperation-metrics" aria-label="Ringkasan kerja sama">
@@ -311,11 +306,6 @@ function ExpiryDashboard({ onShowNotice }) {
 
     return (
         <section className="cooperation-page">
-            <PageHeader
-                eyebrow="CUSTOMER & CONTRACT MANAGEMENT"
-                title="Monitoring masa berlaku"
-                description="Pantau kerja sama yang akan berakhir dan yang perlu ditindaklanjuti."
-            />
             <ExampleNotice />
             <section className="cooperation-metrics" aria-label="Ringkasan masa berlaku">
                 <MetricCard label="TOTAL KONTRAK" value="7" caption="Data contoh" tone="blue" />
