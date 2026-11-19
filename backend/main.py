@@ -2392,7 +2392,7 @@ def _sph_get_proposal(proposal_id):
 
 @app.get("/api/sph/proposals")
 def sph_list_proposals(request: Request):
-    actor = require_sph_access(request)
+    require_sph_access(request)
     query = (
         "SELECT p.id,p.proposal_number AS number,c.customer_name AS customerName,"
         "p.proposal_date AS proposalDate,p.volume_min AS volumeMin,"
@@ -2401,8 +2401,6 @@ def sph_list_proposals(request: Request):
         "p.actual_volume AS actualVolume,p.updated_at AS updatedAt "
         "FROM sph_proposals p JOIN sph_customers c ON c.customer_key=p.customer_key "
     )
-    if actor["role"] == "commercial_head":
-        query += "WHERE p.status='review' "
     query += "ORDER BY p.updated_at DESC,p.id DESC"
     with db() as con:
         rows = con.execute(query).fetchall()
@@ -2426,16 +2424,8 @@ def sph_list_proposals(request: Request):
 
 @app.get("/api/sph/proposals/{proposal_id}")
 def sph_get_proposal(proposal_id: int, request: Request):
-    actor = require_sph_access(request)
+    require_sph_access(request)
     proposal = _sph_get_proposal(proposal_id)
-    if actor["role"] == "commercial_head" and (
-        proposal["status"] != "review"
-        or "commercial_head" in proposal["approvals"]
-    ):
-        raise HTTPException(
-            status_code=404,
-            detail="SPH tidak ditemukan atau tidak menunggu persetujuan Commercial Head.",
-        )
     with db() as con:
         logs = con.execute(
             "SELECT actor_username AS actor,actor_role AS actorRole,message,"
@@ -2805,16 +2795,8 @@ async def sph_proposal_action(proposal_id: int, request: Request):
 
 @app.get("/api/sph/proposals/{proposal_id}/pdf")
 def sph_proposal_pdf(proposal_id: int, request: Request):
-    actor = require_sph_access(request)
+    require_sph_access(request)
     proposal = _sph_get_proposal(proposal_id)
-    if actor["role"] == "commercial_head" and (
-        proposal["status"] != "review"
-        or "commercial_head" in proposal["approvals"]
-    ):
-        raise HTTPException(
-            status_code=404,
-            detail="SPH tidak ditemukan atau tidak menunggu persetujuan Commercial Head.",
-        )
     with db() as con:
         _sph_log(con, proposal_id, request, "Mengunduh PDF SPH.")
     return _sph_generate_proposal_pdf(proposal)

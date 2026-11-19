@@ -71,6 +71,8 @@ class MemorySphDatabase:
             "updatedAt": datetime(2026, 11, 1, 10, 0),
         }
         self.logs = []
+        self.list_rows = []
+        self.list_query = None
 
     def __enter__(self):
         return self
@@ -90,6 +92,11 @@ class MemorySphDatabase:
             return SimpleNamespace(fetchone=lambda: self.user)
         if statement.startswith("SELECT role FROM app_users"):
             return SimpleNamespace(fetchone=lambda: {"role": self.user["role"]})
+        if statement.startswith(
+            "SELECT p.id,p.proposal_number AS number,c.customer_name AS customerName,"
+        ):
+            self.list_query = statement
+            return SimpleNamespace(fetchall=lambda: list(self.list_rows))
         if statement.startswith("SELECT p.id,p.proposal_number"):
             return SimpleNamespace(fetchone=lambda: dict(self.row))
         if statement.startswith("SELECT id FROM sph_proposals WHERE proposal_number"):
@@ -262,18 +269,66 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 403)
         self.assertEqual(self.database.row["status"], "review")
 
-    def test_commercial_head_can_read_only_proposals_pending_their_approval(self):
+    def test_commercial_head_can_read_all_proposals_and_their_details(self):
         self.database.user.update({"role": "user", "sph_role": "commercial_head"})
         request = SphRequest("commercial_head", system_role="user")
         request.session.pop("sph_role", None)
+
+        self.database.list_rows = [
+            {
+                "id": 7,
+                "number": "SPH-2026-11-MKT-001",
+                "customerName": "Customer A",
+                "proposalDate": date(2026, 11, 1),
+                "volumeMin": 100,
+                "volumeMax": 200,
+                "priceUsd": 14,
+                "topPercent": 90,
+                "status": "review",
+                "version": 0,
+                "startDate": None,
+                "endDate": None,
+                "actualVolume": None,
+                "updatedAt": datetime(2026, 11, 1, 10, 0),
+            },
+            {
+                "id": 8,
+                "number": "SPH-2026-10-MKT-002",
+                "customerName": "Customer B",
+                "proposalDate": date(2026, 10, 1),
+                "volumeMin": 120,
+                "volumeMax": 220,
+                "priceUsd": 15,
+                "topPercent": 90,
+                "status": "active",
+                "version": 1,
+                "startDate": None,
+                "endDate": None,
+                "actualVolume": None,
+                "updatedAt": datetime(2026, 10, 1, 10, 0),
+            },
+        ]
+        proposals = main.sph_list_proposals(request)
+        self.assertEqual([proposal["status"] for proposal in proposals], ["review", "active"])
+        self.assertNotIn("WHERE p.status='review'", self.database.list_query)
 
         proposal = main.sph_get_proposal(7, request)
         self.assertEqual(proposal["approvalRoute"], ["commercial_head"])
 
         self.database.row["status"] = "approved"
-        with self.assertRaises(main.HTTPException) as error:
-            main.sph_get_proposal(7, request)
-        self.assertEqual(error.exception.status_code, 404)
+        proposal = main.sph_get_proposal(7, request)
+        self.assertEqual(proposal["status"], "approved")
+
+    def test_commercial_head_can_download_pdf_for_non_pending_proposals(self):
+        self.database.user.update({"role": "user", "sph_role": "commercial_head"})
+        self.database.row["status"] = "active"
+        request = SphRequest("commercial_head", system_role="user")
+
+        with patch.object(main, "_sph_generate_proposal_pdf", return_value="pdf") as generate:
+            response = main.sph_proposal_pdf(7, request)
+
+        self.assertEqual(response, "pdf")
+        generate.assert_called_once()
 
     def test_commercial_head_cannot_create_or_edit_proposals(self):
         self.database.user.update({"role": "user", "sph_role": "commercial_head"})
