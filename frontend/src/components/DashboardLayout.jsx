@@ -70,6 +70,12 @@ function NavigationIcon({ name }) {
                 <path d="M15 7h4v4" />
             </>
         ),
+        cooperation: (
+            <>
+                <rect x="3.5" y="5" width="17" height="15" rx="2" />
+                <path d="M8 5V3m8 2V3M3.5 10h17M8 14l2.2 2.2L16 11" />
+            </>
+        ),
     };
 
     return <svg className="nav-ico" {...commonProps}>{paths[name]}</svg>;
@@ -121,6 +127,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const isBudget = location.pathname === '/budget';
     const isHome = location.pathname === '/beranda';
     const isUsers = location.pathname === '/pengguna';
+    const isCooperation = location.pathname.startsWith('/kerja-sama');
     const canViewAllFeatures = user?.role === 'admin' || user?.role === 'user';
     const hasAuthenticatedUser = canViewAllFeatures;
     const [isCompactViewport, setIsCompactViewport] = useState(
@@ -131,6 +138,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
     const [weeklyOpen, setWeeklyOpen] = useState(isWeekly);
+    const [cooperationOpen, setCooperationOpen] = useState(isCooperation);
     const [dates, setDates] = useState([]);
     const [latestActualDate, setLatestActualDate] = useState('');
     const [selectedDate, setSelectedDate] = useState('');
@@ -150,6 +158,10 @@ export default function DashboardLayout({ user, onLogout }) {
     useEffect(() => {
         if (isWeekly) setWeeklyOpen(true);
     }, [isWeekly]);
+
+    useEffect(() => {
+        if (isCooperation) setCooperationOpen(true);
+    }, [isCooperation]);
 
     useEffect(() => {
         const mediaQuery = window.matchMedia('(max-width: 1024px)');
@@ -676,6 +688,42 @@ export default function DashboardLayout({ user, onLogout }) {
                                 </NavLink>
 
                                 <button
+                                    className={`nav-link${isCooperation ? ' active' : ''}`}
+                                    type="button"
+                                    aria-expanded={cooperationOpen}
+                                    aria-controls="cooperationSubmenu"
+                                    onClick={() => setCooperationOpen((open) => !open)}
+                                >
+                                    <NavigationIcon name="cooperation" />
+                                    <span>Kerja sama</span>
+                                    <span className="nav-chevron">
+                                        {cooperationOpen ? '⌃' : '⌄'}
+                                    </span>
+                                </button>
+                                <div
+                                    className={`nav-submenu${cooperationOpen ? '' : ' collapsed'}`}
+                                    id="cooperationSubmenu"
+                                >
+                                    <NavLink
+                                        className={({ isActive }) =>
+                                            `nav-sublink${isActive ? ' active' : ''}`
+                                        }
+                                        to="/kerja-sama"
+                                        end
+                                    >
+                                        Daftar kerja sama
+                                    </NavLink>
+                                    <NavLink
+                                        className={({ isActive }) =>
+                                            `nav-sublink${isActive ? ' active' : ''}`
+                                        }
+                                        to="/kerja-sama/masa-berlaku"
+                                    >
+                                        Masa berlaku
+                                    </NavLink>
+                                </div>
+
+                                <button
                                     className={
                                         `nav-link${isWeekly ? ' active' : ''}`
                                     }
@@ -758,7 +806,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
             </aside>
 
-            <main className={`app-shell${isWeeklyVolume ? ' weekly-volume-shell' : ''}${isYearly ? ' yearly-shell' : ''}${isMonthly ? ' monthly-shell' : ''}${isHome ? ' home-shell' : ''}${isBudget ? ' budget-shell' : ''}${isUsers ? ' users-shell' : ''}${isAveragePrice && user?.role === 'user' ? ' average-price-user-shell' : ''}`}>
+            <main className={`app-shell${isWeeklyVolume ? ' weekly-volume-shell' : ''}${isYearly ? ' yearly-shell' : ''}${isMonthly ? ' monthly-shell' : ''}${isHome ? ' home-shell' : ''}${isBudget ? ' budget-shell' : ''}${isUsers ? ' users-shell' : ''}${isCooperation ? ' cooperation-shell' : ''}${isAveragePrice && user?.role === 'user' ? ' average-price-user-shell' : ''}`}>
                 <header className="topbar">
                     <div className="topbar-brand">
                         <button
@@ -798,6 +846,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
             
                     <div className="topbar-actions">
+                        {!isCooperation && (
                         <div className={`topbar-period-control${isAveragePrice || isBudget ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
                                 <span
                                     className="topbar-calendar"
@@ -888,6 +937,7 @@ export default function DashboardLayout({ user, onLogout }) {
                                     )}
                                 </div>
                         </div>
+                        )}
 
                         <button
                             className="topbar-profile"

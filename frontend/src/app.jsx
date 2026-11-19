@@ -19,6 +19,7 @@ const YearlyPage = lazy(() => import('./pages/YearlyPage'));
 const IssuePage = lazy(() => import('./pages/IssuePage'));
 const BudgetPage = lazy(() => import('./pages/BudgetPage'));
 const SphPage = lazy(() => import('./pages/SphPage'));
+const CooperationPage = lazy(() => import('./pages/CooperationPage'));
 
 function DashboardAccess({ user, onLogout }) {
     const location = useLocation();
@@ -111,6 +112,15 @@ function App() {
                                 element={(
                                     <Suspense fallback={<div className="app-loading">Memuat halaman Budget...</div>}>
                                         <BudgetPage />
+                                    </Suspense>
+                                )}
+                            />
+                            <Route path="kerja-sama/pengajuan" element={<Navigate to="/kerja-sama" replace />} />
+                            <Route
+                                path="kerja-sama/*"
+                                element={(
+                                    <Suspense fallback={<div className="app-loading">Memuat halaman kerja sama...</div>}>
+                                        <CooperationPage />
                                     </Suspense>
                                 )}
                             />
