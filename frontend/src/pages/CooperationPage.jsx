@@ -130,7 +130,7 @@ function MetricCard({ label, value, caption, tone }) {
     );
 }
 
-function PageHeader({ eyebrow, title, description, actions }) {
+function PageHeader({ eyebrow, title, description }) {
     return (
         <header className="cooperation-page-heading">
             <div>
@@ -138,7 +138,6 @@ function PageHeader({ eyebrow, title, description, actions }) {
                 <h1>{title}</h1>
                 <p>{description}</p>
             </div>
-            {actions && <div className="cooperation-heading-actions">{actions}</div>}
         </header>
     );
 }
@@ -179,13 +178,6 @@ function CooperationList({ onShowNotice }) {
                 eyebrow="CUSTOMER & CONTRACT MANAGEMENT"
                 title="Kerja sama customer"
                 description="Daftar kontrak dan amendemen, masa berlakunya, serta tindak lanjut."
-                actions={(
-                    <>
-                        <button className="cooperation-button secondary" type="button" onClick={() => onShowNotice('Ekspor Excel tersedia setelah fitur kerja sama terhubung ke penyimpanan.')}>
-                            <span aria-hidden="true">⇩</span> Ekspor Excel
-                        </button>
-                    </>
-                )}
             />
             <ExampleNotice />
 

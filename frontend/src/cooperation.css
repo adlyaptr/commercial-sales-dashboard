@@ -55,7 +55,6 @@
   font-weight: 800;
   letter-spacing: 1px;
 }
-.cooperation-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .cooperation-example-note {
   display: flex;
   align-items: center;
@@ -94,26 +93,6 @@
   box-shadow: 0 5px 16px rgb(29 55 42 / 10%);
   font-size: 11px;
 }
-.cooperation-button {
-  min-height: 35px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 13px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  font-size: 10px;
-  font-weight: 700;
-  transition: background .15s ease, box-shadow .15s ease, transform .15s ease;
-}
-.cooperation-button:hover { transform: translateY(-1px); }
-.cooperation-button.secondary {
-  border-color: #bedbcc;
-  background: #fff;
-  color: #0e704e;
-}
-.cooperation-button.secondary:hover { background: #f1f8f4; }
 .cooperation-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -380,8 +359,6 @@
   .cooperation-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cooperation-expiry-grid { grid-template-columns: 1fr; }
   .cooperation-donut-layout { flex-direction: row; }
-  .cooperation-heading-actions { width: 100%; }
-  .cooperation-heading-actions .cooperation-button { flex: 1; }
   .cooperation-status-tabs { padding: 0 7px; }
   .cooperation-status-tabs button { padding: 0 7px; }
 }
