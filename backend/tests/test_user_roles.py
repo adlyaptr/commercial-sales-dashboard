@@ -364,7 +364,7 @@ class UserRoleTests(unittest.TestCase):
         self.assertIsNone(revoked["sphRole"])
         self.assertIsNone(self.database.users["contract.head"]["sph_role"])
 
-    def test_commercial_head_login_is_limited_to_sph_approval_app(self):
+    def test_commercial_head_can_use_both_apps_with_commercial_user_permissions(self):
         self.database.users["contract.head"] = {
             "username": "contract.head",
             "password_hash": main.hash_user_password("head-password"),
@@ -397,8 +397,16 @@ class UserRoleTests(unittest.TestCase):
             username="",
             role="",
         )
-        response = asyncio.run(main.login(commercial_request))
-        self.assertEqual(response.status_code, 403)
+        asyncio.run(main.login(commercial_request))
+        profile = main.me(commercial_request)
+
+        self.assertEqual(profile["role"], "user")
+        self.assertEqual(profile["sphRole"], "commercial_head")
+        self.assertEqual(profile["application"], "commercial")
+        self.assertIsNone(main.require_login(commercial_request))
+        with self.assertRaises(main.HTTPException) as error:
+            main.require_admin(commercial_request)
+        self.assertEqual(error.exception.status_code, 403)
 
     def test_legacy_sph_assignment_does_not_grant_user_access(self):
         self.database.users["reader"] = {

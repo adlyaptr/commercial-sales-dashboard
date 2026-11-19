@@ -265,11 +265,6 @@ def require_login(request: Request, application: str = "commercial"):
     if not user or user["role"] != "user":
         request.session.clear()
         raise HTTPException(status_code=401, detail="Akun tidak lagi aktif.")
-    if application == "commercial" and user.get("sph_role") == "commercial_head":
-        raise HTTPException(
-            status_code=403,
-            detail="Akun Commercial Head hanya dapat mengakses persetujuan SPH.",
-        )
 
 
 def require_admin(request: Request):
@@ -1872,11 +1867,6 @@ async def login(request: Request):
             {"detail": "Aplikasi SPH hanya dapat diakses oleh Admin atau Commercial Head."},
             status_code=403,
         )
-    if application == "commercial" and is_commercial_head:
-        return JSONResponse(
-            {"detail": "Akun Commercial Head hanya dapat mengakses persetujuan SPH."},
-            status_code=403,
-        )
     request.session.clear()
     request.session["username"] = username
     request.session["role"] = row["role"]
@@ -1915,12 +1905,6 @@ def me(request: Request):
         raise HTTPException(
             status_code=403,
             detail="Aplikasi SPH hanya dapat diakses oleh Admin atau Commercial Head.",
-        )
-    if application == "commercial" and is_commercial_head:
-        request.session.clear()
-        raise HTTPException(
-            status_code=403,
-            detail="Akun Commercial Head hanya dapat mengakses persetujuan SPH.",
         )
     request.session["sph_role"] = "commercial_head" if is_commercial_head else None
     return {
