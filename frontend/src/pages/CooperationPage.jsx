@@ -1,124 +1,68 @@
-import { useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
+import { api } from '../api';
 import '../cooperation.css';
 
-const exampleContracts = [
-    {
-        customer: 'UD Berkah Jaya Abadi',
-        region: 'Jateng',
-        number: 'PKS-003/2023',
-        type: 'Kontrak',
-        startDate: '01 Okt 2023',
-        endDate: '30 Sep 2026',
-        days: -50,
-        status: 'ended',
-        pic: 'Dewi',
-    },
-    {
-        customer: 'CV Maju Bersama Logistik',
-        region: 'Jabar',
-        number: 'PKS-002/2024/Amd-2',
-        type: 'Amendemen 2',
-        startDate: '15 Des 2024',
-        endDate: '14 Des 2026',
-        days: 25,
-        status: 'active',
-        pic: 'Budi',
-    },
-    {
-        customer: 'PT Karya Mitra Utama',
-        region: 'Jatim',
-        number: 'PKS-007/2025/Amd-1',
-        type: 'Amendemen 1',
-        startDate: '01 Jan 2026',
-        endDate: '31 Des 2026',
-        days: 42,
-        status: 'active',
-        pic: 'Sari',
-    },
-    {
-        customer: 'PT Nusantara Retail Sejahtera',
-        region: 'Jabar',
-        number: 'PKS-014/2025',
-        type: 'Kontrak',
-        startDate: '01 Feb 2025',
-        endDate: '31 Jan 2027',
-        days: 73,
-        status: 'active',
-        pic: 'Budi',
-    },
-    {
-        customer: 'PT Tirta Energi Nusantara',
-        region: 'Jatim',
-        number: 'PKS-011/2025',
-        type: 'Kontrak',
-        startDate: '01 Jan 2025',
-        endDate: '28 Feb 2027',
-        days: 101,
-        status: 'active',
-        pic: 'Andi',
-    },
-    {
-        customer: 'PT Sinar Teknologi',
-        region: 'Jateng',
-        number: 'PKS-021/2026',
-        type: 'Kontrak',
-        startDate: '01 Mar 2026',
-        endDate: '28 Feb 2028',
-        days: 466,
-        status: 'active',
-        pic: 'Dewi',
-    },
-    {
-        customer: 'PT Karya Pangan Sejahtera',
-        region: 'Jabar',
-        number: 'PKS-018/2026',
-        type: 'Kontrak',
-        startDate: '01 Jun 2026',
-        endDate: '31 Mei 2028',
-        days: 558,
-        status: 'active',
-        pic: 'Andi',
-    },
+const leadingColumns = [
+    { key: 'code', label: 'Code' },
+    { key: 'customer', label: 'Customer' },
+    { key: 'address', label: 'Address' },
+    { key: 'mother_station', label: 'Mother Station' },
+    { key: 'forms_of_cooperation', label: 'Forms of cooperation' },
+    { key: 'agreement_number', label: 'Agreement Number' },
 ];
 
-const statusLabels = {
-    active: 'Aktif',
-    ended: 'Berakhir',
-};
+const volumeColumns = [
+    { key: 'volume_min_mmbtu', label: 'Min MMBTU' },
+    { key: 'volume_max_mmbtu', label: 'Max MMBTU' },
+    { key: 'volume_min_sm3', label: 'Min Sm3' },
+    { key: 'volume_max_sm3', label: 'Max Sm3' },
+    { key: 'volume_min_nm3', label: 'Min Nm3' },
+    { key: 'volume_max_nm3', label: 'Max Nm3' },
+];
+
+const priceColumns = [
+    { key: 'price_usd_mmbtu', label: '$/MMBTU' },
+    { key: 'price_usd_m3', label: '$/m3' },
+    { key: 'price_idr_m3', label: 'Rp/m3' },
+];
+
+const trailingColumns = [
+    { key: 'kurs', label: 'KURS' },
+    { key: 'invoicing', label: 'Invoicing' },
+    { key: 'terms_of_payment', label: 'Terms of Payment' },
+    { key: 'contract_signed', label: 'Contrac Signed' },
+    { key: 'gas_in', label: 'Gas In' },
+    { key: 'end_of_contract', label: 'End of Contrac' },
+    { key: 'remarks', label: 'Remarks' },
+    { key: 'pic_customer', label: 'PIC Customer' },
+    { key: 'telephone', label: 'Telepon' },
+];
+
+const contractFields = [
+    ...leadingColumns,
+    ...volumeColumns,
+    ...priceColumns,
+    ...trailingColumns,
+].map(({ key }) => key);
+
+const noWrapFields = new Set([
+    ...volumeColumns.map(({ key }) => key),
+    ...priceColumns.map(({ key }) => key),
+    'kurs',
+    'contract_signed',
+    'gas_in',
+    'end_of_contract',
+    'telephone',
+]);
 
 const statusFilters = [
     { key: 'all', label: 'Semua' },
     { key: 'active', label: 'Aktif' },
     { key: 'soon', label: 'Segera berakhir' },
     { key: 'ended', label: 'Berakhir' },
+    { key: 'undated', label: 'Tanggal akhir kosong' },
 ];
-
-const exampleProposals = [
-    {
-        customer: 'PT Nusantara Retail Sejahtera',
-        number: 'PKS-014/2025',
-        endDate: '31 Jan 2027',
-        region: 'Jabar',
-        pic: 'Budi',
-    },
-    {
-        customer: 'CV Maju Bersama Logistik',
-        number: 'PKS-002/2024/Amd-2',
-        endDate: '14 Des 2026',
-        region: 'Jabar',
-        pic: 'Budi',
-    },
-];
-
-function ExampleNotice() {
-    return (
-        <div className="cooperation-example-note" role="note">
-            <span aria-hidden="true">i</span>
-            Pratinjau desain — sumber spreadsheet/database belum ditetapkan. Data di halaman ini hanya contoh; sinkronisasi otomatis belum aktif.
-        </div>
-    );
-}
 
 function MetricCard({ label, value, caption, tone }) {
     return (
@@ -130,7 +74,7 @@ function MetricCard({ label, value, caption, tone }) {
     );
 }
 
-function PageHeader({ eyebrow, title, description }) {
+function PageHeader({ eyebrow, title, description, children }) {
     return (
         <header className="cooperation-page-heading">
             <div>
@@ -138,49 +82,84 @@ function PageHeader({ eyebrow, title, description }) {
                 <h1>{title}</h1>
                 <p>{description}</p>
             </div>
+            {children}
         </header>
     );
 }
 
-function CooperationList({ onShowNotice }) {
+function getCounts(contracts) {
+    return contracts.reduce((counts, contract) => {
+        counts.all += 1;
+        if (contract.status === 'undated') counts.undated += 1;
+        if (contract.status === 'ended') counts.ended += 1;
+        if (contract.status === 'active') {
+            counts.active += 1;
+            if (contract.days_remaining <= 90) counts.soon += 1;
+        }
+        return counts;
+    }, { all: 0, active: 0, soon: 0, ended: 0, undated: 0 });
+}
+
+function CooperationList({ contracts, loading, error, canEdit, onImport, importing }) {
     const [activeFilter, setActiveFilter] = useState('all');
     const [search, setSearch] = useState('');
-    const [region, setRegion] = useState('all');
-    const [kind, setKind] = useState('all');
+    const fileInput = useRef(null);
+    const counts = useMemo(() => getCounts(contracts), [contracts]);
+    const pics = useMemo(() => [...new Set(
+        contracts.map((contract) => contract.pic_customer).filter(Boolean),
+    )].sort((a, b) => a.localeCompare(b, 'id-ID')), [contracts]);
     const [pic, setPic] = useState('all');
-    const [expiry, setExpiry] = useState('all');
-    const counts = useMemo(() => exampleContracts.reduce((result, contract) => {
-        result[contract.status] += 1;
-        if (contract.status === 'active' && contract.days >= 0 && contract.days <= 90) result.soon += 1;
-        result.all += 1;
-        return result;
-    }, { all: 0, active: 0, soon: 0, ended: 0 }), []);
-    const rows = useMemo(() => exampleContracts.filter((contract) => {
+    const rows = useMemo(() => {
         const query = search.trim().toLocaleLowerCase('id-ID');
-        const matchesText = !query
-            || `${contract.customer} ${contract.number}`.toLocaleLowerCase('id-ID').includes(query);
-        const matchesStatus = activeFilter === 'all'
-            || (activeFilter === 'soon' && contract.status === 'active' && contract.days >= 0 && contract.days <= 90)
-            || contract.status === activeFilter;
-        const matchesRegion = region === 'all' || contract.region === region;
-        const matchesKind = kind === 'all' || contract.type.toLowerCase().includes(kind);
-        const matchesPic = pic === 'all' || contract.pic === pic;
-        const matchesExpiry = expiry === 'all'
-            || (expiry === '30' && contract.days >= 0 && contract.days <= 30)
-            || (expiry === '90' && contract.days >= 0 && contract.days <= 90)
-            || (expiry === 'expired' && contract.days < 0);
-        return matchesText && matchesStatus && matchesRegion && matchesKind && matchesPic && matchesExpiry;
-    }), [activeFilter, expiry, kind, pic, region, search]);
+        return contracts.filter((contract) => {
+            const matchesText = !query || contractFields
+                .some((field) => String(contract[field] || '').toLocaleLowerCase('id-ID').includes(query));
+            const matchesStatus = activeFilter === 'all'
+                || contract.status === activeFilter
+                || (activeFilter === 'soon' && contract.status === 'active' && contract.days_remaining <= 90);
+            return matchesText && matchesStatus && (pic === 'all' || contract.pic_customer === pic);
+        });
+    }, [activeFilter, contracts, pic, search]);
 
     return (
         <section className="cooperation-page">
-            <ExampleNotice />
+            <PageHeader
+                eyebrow="KERJA SAMA CUSTOMER"
+                title="Daftar Kerja Sama"
+                description="Data kontrak mengikuti kolom pada workbook sumber. Nilai yang kosong tetap kosong."
+            >
+                {canEdit && (
+                    <>
+                        <input
+                            ref={fileInput}
+                            className="cooperation-file-input"
+                            type="file"
+                            accept=".xlsx"
+                            aria-label="Pilih workbook kerja sama"
+                            onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = '';
+                                if (file) onImport(file);
+                            }}
+                        />
+                        <button
+                            className="cooperation-import-button"
+                            type="button"
+                            disabled={importing}
+                            onClick={() => fileInput.current?.click()}
+                        >
+                            {importing ? 'Mengimpor...' : 'Impor workbook Excel'}
+                        </button>
+                    </>
+                )}
+            </PageHeader>
 
+            {error && <div className="cooperation-error" role="alert">{error}</div>}
             <section className="cooperation-metrics" aria-label="Ringkasan kerja sama">
-                <MetricCard label="TOTAL KONTRAK" value="7" caption="Data contoh" tone="blue" />
-                <MetricCard label="AKTIF" value="6" caption="Tanggal berakhir belum lewat" tone="green" />
-                <MetricCard label="SEGERA BERAKHIR" value="3" caption="Sisa 90 hari atau kurang" tone="orange" />
-                <MetricCard label="BERAKHIR" value="1" caption="Perlu tindak lanjut" tone="red" />
+                <MetricCard label="TOTAL KONTRAK" value={counts.all} caption="Data dari workbook" tone="blue" />
+                <MetricCard label="AKTIF" value={counts.active} caption="Tanggal akhir belum lewat" tone="green" />
+                <MetricCard label="SEGERA BERAKHIR" value={counts.soon} caption="Dalam 90 hari" tone="orange" />
+                <MetricCard label="BERAKHIR" value={counts.ended} caption="Tanggal akhir sudah lewat" tone="red" />
             </section>
 
             <section className="cooperation-panel cooperation-register">
@@ -199,43 +178,18 @@ function CooperationList({ onShowNotice }) {
                 </div>
                 <div className="cooperation-filters">
                     <label className="cooperation-search">
-                        <span className="sr-only">Cari customer atau nomor dokumen</span>
-                        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nama customer atau nomor dokumen" />
+                        <span className="sr-only">Cari isi data kerja sama</span>
+                        <input
+                            value={search}
+                            onChange={(event) => setSearch(event.target.value)}
+                            placeholder="Cari customer, kode, alamat, nomor perjanjian..."
+                        />
                     </label>
                     <label>
-                        <span className="sr-only">Wilayah</span>
-                        <select value={region} onChange={(event) => setRegion(event.target.value)}>
-                            <option value="all">Semua wilayah</option>
-                            <option value="Jabar">Jabar</option>
-                            <option value="Jateng">Jateng</option>
-                            <option value="Jatim">Jatim</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span className="sr-only">Jenis dokumen</span>
-                        <select value={kind} onChange={(event) => setKind(event.target.value)}>
-                            <option value="all">Semua jenis</option>
-                            <option value="kontrak">Kontrak</option>
-                            <option value="amendemen">Amendemen</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span className="sr-only">PIC</span>
+                        <span className="sr-only">PIC Customer</span>
                         <select value={pic} onChange={(event) => setPic(event.target.value)}>
                             <option value="all">Semua PIC</option>
-                            <option value="Budi">Budi</option>
-                            <option value="Dewi">Dewi</option>
-                            <option value="Sari">Sari</option>
-                            <option value="Andi">Andi</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span className="sr-only">Sisa masa berlaku</span>
-                        <select value={expiry} onChange={(event) => setExpiry(event.target.value)}>
-                            <option value="all">Semua waktu</option>
-                            <option value="30">≤ 30 hari</option>
-                            <option value="90">≤ 90 hari</option>
-                            <option value="expired">Sudah berakhir</option>
+                            {pics.map((name) => <option key={name} value={name}>{name}</option>)}
                         </select>
                     </label>
                 </div>
@@ -243,133 +197,161 @@ function CooperationList({ onShowNotice }) {
                     <table className="cooperation-table">
                         <thead>
                             <tr>
-                                <th>Customer</th>
-                                <th>Wilayah</th>
-                                <th>No. Dokumen</th>
-                                <th>Jenis</th>
-                                <th>Masa berlaku</th>
-                                <th>Sisa hari</th>
-                                <th>Status</th>
-                                <th>PIC</th>
-                                <th>Aksi</th>
+                                {leadingColumns.map((column) => (
+                                    <th key={column.key} rowSpan="2">{column.label}</th>
+                                ))}
+                                <th colSpan={volumeColumns.length}>Volume</th>
+                                <th colSpan={priceColumns.length}>Price</th>
+                                {trailingColumns.map((column) => (
+                                    <th key={column.key} rowSpan="2">{column.label}</th>
+                                ))}
+                            </tr>
+                            <tr>
+                                {volumeColumns.map((column) => <th key={column.key}>{column.label}</th>)}
+                                {priceColumns.map((column) => <th key={column.key}>{column.label}</th>)}
                             </tr>
                         </thead>
                         <tbody>
-                            {rows.map((contract) => (
-                                <tr key={contract.number}>
-                                    <td><strong>{contract.customer}</strong></td>
-                                    <td>{contract.region}</td>
-                                    <td>{contract.number}</td>
-                                    <td>{contract.type}</td>
-                                    <td>{contract.startDate}<br /><span className="cooperation-muted">– {contract.endDate}</span></td>
-                                    <td className={contract.days <= 30 ? 'cooperation-days critical' : contract.days <= 90 ? 'cooperation-days soon' : 'cooperation-days'}>
-                                        {contract.days < 0 ? `Lewat ${Math.abs(contract.days)} hari` : `${contract.days} hari`}
-                                    </td>
-                                    <td><span className={`cooperation-status ${contract.status}`}>{statusLabels[contract.status]}</span></td>
-                                    <td>{contract.pic}</td>
-                                    <td>
-                                        <button className="cooperation-link-button" type="button" onClick={() => onShowNotice('Detail kontrak akan tersedia setelah sumber spreadsheet/database ditetapkan.')}>
-                                            Detail
-                                        </button>
-                                    </td>
+                            {loading && <tr><td className="cooperation-empty" colSpan="24">Memuat data kerja sama...</td></tr>}
+                            {!loading && rows.map((contract) => (
+                                <tr key={contract.id}>
+                                    {contractFields.map((field) => {
+                                        const value = contract[field] || '';
+                                        return (
+                                            <td key={field}>
+                                                <span
+                                                    className={`cooperation-cell-text${noWrapFields.has(field) ? ' no-wrap' : ''}`}
+                                                    title={value || undefined}
+                                                >
+                                                    {value}
+                                                </span>
+                                            </td>
+                                        );
+                                    })}
                                 </tr>
                             ))}
-                            {rows.length === 0 && (
-                                <tr><td className="cooperation-empty" colSpan="9">Tidak ada dokumen yang sesuai dengan filter.</td></tr>
+                            {!loading && rows.length === 0 && (
+                                <tr>
+                                    <td className="cooperation-empty" colSpan="24">
+                                        {contracts.length ? 'Tidak ada data yang sesuai dengan filter.' : 'Belum ada data. Admin dapat mengimpor workbook Excel untuk memuat daftar kerja sama.'}
+                                    </td>
+                                </tr>
                             )}
                         </tbody>
                     </table>
                 </div>
                 <div className="cooperation-table-foot">
-                    <span>Menampilkan {rows.length} dari {exampleContracts.length} data contoh</span>
-                    <span>Filter dapat digunakan pada pratinjau ini</span>
+                    <span>Menampilkan {rows.length} dari {contracts.length} kontrak</span>
+                    <span>Tanggal akhir kosong: {counts.undated}</span>
                 </div>
             </section>
         </section>
     );
 }
 
-function ExpiryDashboard({ onShowNotice }) {
-    const bars = [
-        ['Des 2026', 2],
-        ['Jan 2027', 1],
-        ['Feb 2027', 1],
-        ['Mar 2027', 0],
-        ['Apr 2027', 0],
-        ['Mei 2027', 0],
-    ];
-    const attention = [
-        { customer: 'UD Berkah Jaya Abadi', number: 'PKS-003/2023', info: 'Berakhir · lewat 50 hari', action: 'Lihat detail', tone: 'red' },
-        { customer: 'CV Maju Bersama Logistik', number: 'PKS-002/2024/Amd-2', info: 'Aktif · sisa 25 hari', action: 'Lihat detail', tone: 'orange' },
-        { customer: 'PT Nusantara Retail Sejahtera', number: 'PKS-014/2025', info: 'Aktif · sisa 73 hari', action: 'Lihat detail', tone: 'yellow' },
-    ];
+function ExpiryDashboard({ contracts, loading }) {
+    const counts = useMemo(() => getCounts(contracts), [contracts]);
+    const months = useMemo(() => {
+        const now = new Date();
+        return Array.from({ length: 6 }, (_, index) => {
+            const month = new Date(now.getFullYear(), now.getMonth() + index, 1);
+            const key = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+            return {
+                key,
+                label: new Intl.DateTimeFormat('id-ID', { month: 'short', year: 'numeric' }).format(month),
+                value: contracts.filter((contract) => contract.end_contract_date?.slice(0, 7) === key).length,
+            };
+        });
+    }, [contracts]);
+    const maxMonthCount = Math.max(1, ...months.map((month) => month.value));
+    const attention = useMemo(() => contracts
+        .filter((contract) => contract.status === 'ended'
+            || (contract.status === 'active' && contract.days_remaining <= 90))
+        .sort((a, b) => a.days_remaining - b.days_remaining)
+        .slice(0, 8), [contracts]);
 
     return (
         <section className="cooperation-page">
-            <ExampleNotice />
+            <PageHeader
+                eyebrow="PEMANTAUAN KONTRAK"
+                title="Masa Berlaku"
+                description="Tanggal akhir berupa bulan dan tahun dihitung sampai hari terakhir bulan tersebut."
+            />
             <section className="cooperation-metrics" aria-label="Ringkasan masa berlaku">
-                <MetricCard label="TOTAL KONTRAK" value="7" caption="Data contoh" tone="blue" />
-                <MetricCard label="AKTIF" value="6" caption="Tanggal berakhir belum lewat" tone="green" />
-                <MetricCard label="SEGERA BERAKHIR" value="3" caption="Sisa 90 hari atau kurang" tone="orange" />
-                <MetricCard label="BERAKHIR" value="1" caption="Perlu tindak lanjut" tone="red" />
+                <MetricCard label="TOTAL KONTRAK" value={counts.all} caption="Data dari workbook" tone="blue" />
+                <MetricCard label="AKTIF" value={counts.active} caption="Tanggal akhir belum lewat" tone="green" />
+                <MetricCard label="SEGERA BERAKHIR" value={counts.soon} caption="Dalam 90 hari" tone="orange" />
+                <MetricCard label="BERAKHIR" value={counts.ended} caption="Tanggal akhir sudah lewat" tone="red" />
             </section>
-
-            <div className="cooperation-expiry-grid">
-                <section className="cooperation-panel cooperation-chart-panel">
-                    <div className="cooperation-panel-heading"><h2>Dokumen berakhir per bulan</h2><span>7 dokumen contoh</span></div>
-                    <div className="cooperation-bars" role="img" aria-label="Grafik jumlah dokumen berakhir per bulan">
-                        {bars.map(([month, value]) => (
-                            <div className="cooperation-bar-column" key={month}>
-                                <strong>{value}</strong>
-                                <div className="cooperation-bar-track"><span style={{ height: `${value ? Math.max(value * 46, 22) : 3}px` }} /></div>
-                                <small>{month}</small>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-                <section className="cooperation-panel cooperation-status-panel">
-                    <div className="cooperation-panel-heading"><h2>Komposisi status</h2><span>Per 19 Nov 2026</span></div>
-                    <div className="cooperation-donut-layout">
-                        <div className="cooperation-donut" role="img" aria-label="6 aktif, 1 berakhir">
-                            <div><small>Total dokumen</small><strong>7</strong></div>
+            {loading ? (
+                <div className="cooperation-panel cooperation-dashboard-empty">Memuat data kerja sama...</div>
+            ) : contracts.length === 0 ? (
+                <div className="cooperation-panel cooperation-dashboard-empty">Belum ada data kerja sama. Admin dapat mengimpor workbook dari halaman Daftar Kerja Sama.</div>
+            ) : (
+                <div className="cooperation-expiry-grid">
+                    <section className="cooperation-panel cooperation-chart-panel">
+                        <div className="cooperation-panel-heading">
+                            <h2>Dokumen berakhir per bulan</h2>
+                            <span>6 bulan ke depan</span>
                         </div>
-                        <div className="cooperation-legend">
-                            {[
-                                ['active', 'Aktif', '6 (85,7%)'],
-                                ['ended', 'Berakhir', '1 (14,3%)'],
-                            ].map(([tone, label, value]) => (
-                                <div key={tone}><i className={tone} /><span>{label}</span><strong>{value}</strong></div>
+                        <div className="cooperation-bars" role="img" aria-label="Jumlah kontrak yang berakhir dalam enam bulan ke depan">
+                            {months.map((month) => (
+                                <div className="cooperation-bar-column" key={month.key}>
+                                    <strong>{month.value}</strong>
+                                    <div className="cooperation-bar-track">
+                                        <span style={{ height: `${month.value ? Math.max((month.value / maxMonthCount) * 92, 8) : 3}px` }} />
+                                    </div>
+                                    <small>{month.label}</small>
+                                </div>
                             ))}
                         </div>
-                    </div>
-                </section>
-                <section className="cooperation-panel cooperation-attention-panel">
-                    <div className="cooperation-panel-heading"><h2>Perlu tindakan</h2><button type="button" onClick={() => onShowNotice('Daftar tindakan akan terhubung ke data kerja sama.')}>Lihat semua</button></div>
-                    <div className="cooperation-attention-list">
-                        {attention.map((item) => (
-                            <article key={item.number}>
-                                <div><strong>{item.customer}</strong><small>{item.number} · {item.info}</small></div>
-                                <span className={`cooperation-status ${item.tone}`}>{item.info.split(' · ')[0]}</span>
-                                <button className="cooperation-link-button" type="button" onClick={() => onShowNotice('Detail kontrak akan tersedia setelah sumber spreadsheet/database ditetapkan.')}>{item.action}</button>
-                            </article>
-                        ))}
-                    </div>
-                </section>
-                <section className="cooperation-panel cooperation-reminders-panel">
-                    <div className="cooperation-panel-heading"><h2>Jadwal notifikasi</h2><span>Dalam aplikasi</span></div>
-                    {[
-                        ['H-30', 'CV Maju Bersama Logistik', 'PKS-002/2024/Amd-2', 'red'],
-                        ['H-60', 'PT Karya Mitra Utama', 'PKS-007/2025/Amd-1', 'orange'],
-                        ['H-90', 'PT Nusantara Retail Sejahtera', 'PKS-014/2025', 'green'],
-                    ].map(([days, customer, number, tone]) => (
-                        <article className={`cooperation-reminder ${tone}`} key={days}>
-                            <strong>{days} <span>(1 dokumen)</span></strong>
-                            <small>{customer}</small>
-                            <em>{number}</em>
-                        </article>
-                    ))}
-                </section>
-            </div>
+                    </section>
+                    <section className="cooperation-panel cooperation-status-panel">
+                        <div className="cooperation-panel-heading">
+                            <h2>Komposisi status</h2>
+                            <span>{counts.all} kontrak</span>
+                        </div>
+                        <div className="cooperation-legend cooperation-status-summary">
+                            {[
+                                ['active', 'Aktif', counts.active],
+                                ['ended', 'Berakhir', counts.ended],
+                                ['undated', 'Tanggal akhir kosong', counts.undated],
+                            ].map(([tone, label, value]) => (
+                                <div key={tone}>
+                                    <i className={tone} />
+                                    <span>{label}</span>
+                                    <strong>{value}</strong>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                    <section className="cooperation-panel cooperation-attention-panel">
+                        <div className="cooperation-panel-heading">
+                            <h2>Perlu tindak lanjut</h2>
+                            <span>{attention.length} kontrak</span>
+                        </div>
+                        {attention.length ? (
+                            <div className="cooperation-attention-list">
+                                {attention.map((contract) => (
+                                    <article key={contract.id}>
+                                        <div>
+                                            <strong>{contract.customer || contract.code}</strong>
+                                            <small>{contract.agreement_number || contract.code}</small>
+                                        </div>
+                                        <span className={`cooperation-status ${contract.status === 'ended' ? 'ended' : 'orange'}`}>
+                                            {contract.status === 'ended'
+                                                ? `Berakhir ${Math.abs(contract.days_remaining)} hari lalu`
+                                                : `Sisa ${contract.days_remaining} hari`}
+                                        </span>
+                                    </article>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="cooperation-no-attention">Tidak ada kontrak yang segera berakhir atau telah lewat.</p>
+                        )}
+                    </section>
+                </div>
+            )}
         </section>
     );
 }
@@ -377,24 +359,95 @@ function ExpiryDashboard({ onShowNotice }) {
 export default function CooperationPage() {
     const location = useLocation();
     const navigate = useNavigate();
+    const { canEdit } = useOutletContext();
+    const [contracts, setContracts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
+    const [noticeError, setNoticeError] = useState(false);
+    const [importing, setImporting] = useState(false);
     const isExpiry = location.pathname.endsWith('/masa-berlaku');
 
-    function showNotice(message) {
-        setNotice(message);
-        window.setTimeout(() => setNotice(''), 5000);
+    const refreshContracts = useCallback(async () => {
+        setLoading(true);
+        setError('');
+        try {
+            setContracts(await api('/api/cooperation/contracts'));
+            return true;
+        } catch (requestError) {
+            setError(requestError.message || 'Data kerja sama gagal dimuat.');
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        refreshContracts();
+    }, [refreshContracts]);
+
+    async function importWorkbook(file) {
+        if (!window.confirm('Impor workbook ini dan mengganti seluruh data kerja sama yang tersimpan?')) return;
+        setImporting(true);
+        setNotice('');
+        setNoticeError(false);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const result = await api('/api/cooperation/import', {
+                method: 'POST',
+                body: formData,
+                signal: AbortSignal.timeout(60000),
+            });
+            if (await refreshContracts()) {
+                setNotice(`${result.imported} kontrak berhasil diimpor dari ${result.filename}.`);
+            } else {
+                setNotice('Data berhasil diimpor, tetapi daftar tidak dapat dimuat ulang. Muat ulang halaman.');
+                setNoticeError(true);
+            }
+        } catch (requestError) {
+            setNotice(requestError.message || 'Impor workbook gagal.');
+            setNoticeError(true);
+        } finally {
+            setImporting(false);
+        }
     }
 
     return (
         <div className="cooperation-workspace">
             <nav className="cooperation-tabs" aria-label="Navigasi kerja sama">
-                <button type="button" className={!isExpiry ? 'active' : ''} onClick={() => navigate('/kerja-sama')}>Daftar kerja sama</button>
-                <button type="button" className={isExpiry ? 'active' : ''} onClick={() => navigate('/kerja-sama/masa-berlaku')}>Masa berlaku</button>
+                <button
+                    type="button"
+                    className={!isExpiry ? 'active' : ''}
+                    onClick={() => navigate('/kerja-sama')}
+                >
+                    Daftar kerja sama
+                </button>
+                <button
+                    type="button"
+                    className={isExpiry ? 'active' : ''}
+                    onClick={() => navigate('/kerja-sama/masa-berlaku')}
+                >
+                    Masa berlaku
+                </button>
             </nav>
-            {notice && <div className="cooperation-demo-notice" role="status">{notice}</div>}
+            {notice && (
+                <div className={`cooperation-notice${noticeError ? ' error' : ''}`} role={noticeError ? 'alert' : 'status'}>
+                    {notice}
+                </div>
+            )}
             {isExpiry
-                ? <ExpiryDashboard onShowNotice={showNotice} />
-                : <CooperationList onShowNotice={showNotice} />}
+                ? <ExpiryDashboard contracts={contracts} loading={loading} />
+                : (
+                    <CooperationList
+                        contracts={contracts}
+                        loading={loading}
+                        error={error}
+                        canEdit={canEdit}
+                        onImport={importWorkbook}
+                        importing={importing}
+                    />
+                )}
         </div>
     );
 }

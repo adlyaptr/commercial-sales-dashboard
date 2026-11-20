@@ -141,6 +141,37 @@ CREATE TABLE IF NOT EXISTS app_users (
     sph_role VARCHAR(32) NULL
 );
 
+CREATE TABLE IF NOT EXISTS cooperation_contracts (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    sort_order INT NOT NULL,
+    code TEXT NOT NULL,
+    customer TEXT NOT NULL,
+    address TEXT NOT NULL,
+    mother_station TEXT NOT NULL,
+    forms_of_cooperation TEXT NOT NULL,
+    agreement_number TEXT NOT NULL,
+    volume_min_mmbtu TEXT NOT NULL,
+    volume_max_mmbtu TEXT NOT NULL,
+    volume_min_sm3 TEXT NOT NULL,
+    volume_max_sm3 TEXT NOT NULL,
+    volume_min_nm3 TEXT NOT NULL,
+    volume_max_nm3 TEXT NOT NULL,
+    price_usd_mmbtu TEXT NOT NULL,
+    price_usd_m3 TEXT NOT NULL,
+    price_idr_m3 TEXT NOT NULL,
+    kurs TEXT NOT NULL,
+    invoicing TEXT NOT NULL,
+    terms_of_payment TEXT NOT NULL,
+    contract_signed TEXT NOT NULL,
+    gas_in TEXT NOT NULL,
+    end_of_contract TEXT NOT NULL,
+    end_contract_date DATE NULL,
+    remarks TEXT NOT NULL,
+    pic_customer TEXT NOT NULL,
+    telephone TEXT NOT NULL,
+    INDEX idx_cooperation_contracts_order (sort_order)
+);
+
 CREATE TABLE IF NOT EXISTS sph_customers (
     customer_key VARCHAR(191) PRIMARY KEY,
     customer_name VARCHAR(255) NOT NULL,

@@ -43,10 +43,12 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 try:
     from .db import initialize_database
+    from .cooperation import COOPERATION_FIELDS, parse_cooperation_workbook
     from .monthly_template_export import build_monthly_template_export
     from .yahoo_imap import fetch_daily_sales_emails
 except ImportError:
     from db import initialize_database
+    from cooperation import COOPERATION_FIELDS, parse_cooperation_workbook
     from monthly_template_export import build_monthly_template_export
     from yahoo_imap import fetch_daily_sales_emails
     
@@ -8569,6 +8571,72 @@ async def update_customer_status(customer_key: str, request: Request):
         "operator": operator,
         "off_from_date": off_from_date.isoformat() if off_from_date else None,
     }
+
+
+@app.get("/api/cooperation/contracts")
+def list_cooperation_contracts(request: Request):
+    require_login(request)
+    with db() as con:
+        rows = con.execute(
+            "SELECT id,sort_order,code,customer,address,mother_station,"
+            "forms_of_cooperation,agreement_number,volume_min_mmbtu,volume_max_mmbtu,"
+            "volume_min_sm3,volume_max_sm3,volume_min_nm3,volume_max_nm3,"
+            "price_usd_mmbtu,price_usd_m3,price_idr_m3,kurs,invoicing,"
+            "terms_of_payment,contract_signed,gas_in,end_of_contract,"
+            "end_contract_date,remarks,pic_customer,telephone "
+            "FROM cooperation_contracts ORDER BY sort_order,id"
+        ).fetchall()
+    today = _business_today()
+    contracts = []
+    for row in rows:
+        contract = dict(row)
+        end_date = contract["end_contract_date"]
+        if isinstance(end_date, datetime):
+            end_date = end_date.date()
+        days_remaining = (end_date - today).days if end_date else None
+        contract["days_remaining"] = days_remaining
+        contract["status"] = (
+            "undated" if days_remaining is None
+            else "ended" if days_remaining < 0
+            else "active"
+        )
+        contracts.append(contract)
+    return contracts
+
+
+@app.post("/api/cooperation/import")
+async def import_cooperation_workbook(request: Request, file: UploadFile = File(...)):
+    require_admin(request)
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Pilih file Excel .xlsx.")
+    content = await file.read()
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Ukuran file Excel tidak boleh melebihi 20 MB.")
+    try:
+        records = parse_cooperation_workbook(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    column_names = ("sort_order", *COOPERATION_FIELDS, "end_contract_date")
+    insert_sql = (
+        "INSERT INTO cooperation_contracts ("
+        + ",".join(column_names)
+        + ") VALUES ("
+        + ",".join(["%s"] * len(column_names))
+        + ")"
+    )
+    with db() as con:
+        con.execute("DELETE FROM cooperation_contracts")
+        for record in records:
+            con.execute(
+                insert_sql,
+                (
+                    record["sort_order"],
+                    *(record[field] for field in COOPERATION_FIELDS),
+                    record["end_contract_date"],
+                ),
+            )
+    return {"ok": True, "imported": len(records), "filename": file.filename}
 
 
 @app.get("/", include_in_schema=False)
