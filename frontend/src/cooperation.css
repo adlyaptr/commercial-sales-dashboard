@@ -218,12 +218,15 @@
   border: 1px solid #dce6e0;
   color: #526b60;
   vertical-align: middle;
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
 .cooperation-cell-text {
   display: -webkit-box;
-  width: max-content;
-  max-width: 160px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   overflow-wrap: anywhere;
   white-space: normal;
@@ -234,7 +237,9 @@
 }
 .cooperation-cell-text.no-wrap {
   display: block;
-  max-width: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .cooperation-table td:nth-child(n+7):nth-child(-n+16),
