@@ -8039,7 +8039,8 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
                    COALESCE(operator_factors.sm3_per_mmbtu,0) AS sm3_per_mmbtu,
                    COALESCE(exchange_rates.exchange_rate,0) AS exchange_rate,
                    workbook_import.summary_sm3 AS workbook_summary_sm3,
-                   workbook_import.summary_rupiah AS workbook_summary_rupiah
+                   workbook_import.summary_rupiah AS workbook_summary_rupiah,
+                   workbook_import.customer_keys_json AS workbook_customer_keys_json
             FROM monthly_average_price_inputs price_inputs
             JOIN customers c ON c.customer_key=price_inputs.customer_key
             LEFT JOIN monthly_average_price_operator_factors operator_factors
@@ -8070,6 +8071,18 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
         for row in input_rows
         if row.get("workbook_summary_sm3") is not None
     }
+    november_workbook_customer_keys = set()
+    for row in input_rows:
+        if row["period"] != "2026-11" or not row.get("workbook_customer_keys_json"):
+            continue
+        try:
+            imported_keys = json.loads(row["workbook_customer_keys_json"])
+        except (json.JSONDecodeError, TypeError):
+            imported_keys = []
+        if isinstance(imported_keys, list):
+            november_workbook_customer_keys.update(
+                norm(key) for key in imported_keys if isinstance(key, str)
+            )
     for row in input_rows:
         if canonical_average_price_customer_key(row["customer_key"]) in AVERAGE_PRICE_EXCLUDED_CUSTOMER_KEYS:
             continue
@@ -8095,13 +8108,33 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
         so_sm3 = float(row["so_sm3"] or 0)
         actual_sm3 = float(row["actual_sm3"] or 0)
         period_start = date.fromisoformat(f"{row['period']}-01")
+        next_period_start = (
+            date(period_start.year + 1, 1, 1)
+            if period_start.month == 12
+            else date(period_start.year, period_start.month + 1, 1)
+        )
+        period_end = next_period_start - timedelta(days=1)
         is_legacy_workbook_month = row["period"] in legacy_workbook_months
-        sm3_override = None
-        mmbtu_override = None
-        total_usd_override = None
-        rupiah_override = None
-        sm3 = actual_sm3
         price_active = bool(row.get("price_active", True))
+        use_november_workbook_values = (
+            row["period"] == "2026-11"
+            and start <= period_start
+            and end >= period_end
+            and norm(row["customer_key"]) in november_workbook_customer_keys
+        )
+        sm3_override = row.get("sm3_override") if use_november_workbook_values else None
+        mmbtu_override = row.get("mmbtu_override") if use_november_workbook_values else None
+        total_usd_override = (
+            row.get("total_usd_override") if use_november_workbook_values else None
+        )
+        rupiah_override = (
+            row.get("rupiah_override") if use_november_workbook_values else None
+        )
+        sm3 = (
+            float(sm3_override)
+            if price_active and sm3_override is not None
+            else actual_sm3 if price_active else 0.0
+        )
         if not price_active:
             sm3 = 0.0
         factor = float(row["sm3_per_mmbtu"] or 0)
@@ -8140,7 +8173,13 @@ def monthly_average_price_range(request: Request, start_date: str, end_date: str
         )
         include_in_summary = (
             True
-            if is_legacy_workbook_month
+            if (
+                use_november_workbook_values
+                or (
+                    is_legacy_workbook_month
+                    and row["period"] != "2026-11"
+                )
+            )
             else bool(row.get("include_in_summary", True))
         )
         region_key = norm(row.get("region") or "")
