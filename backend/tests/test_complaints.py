@@ -682,6 +682,10 @@ class DashboardApiTests(unittest.TestCase):
             "DATE_FORMAT(s.report_date,'%Y-%m-%d')",
             database.trend_query,
         )
+        self.assertIn(
+            "WHEN dai.report_date IS NULL THEN s.so",
+            database.trend_query,
+        )
         self.assertEqual(result["total_so"], 150)
         self.assertEqual(result["total_actual"], 150)
         self.assertEqual(result["diff"], 0)

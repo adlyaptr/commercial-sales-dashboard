@@ -6508,10 +6508,12 @@ def dashboard(
             SELECT {group_expression} AS period_start,
                    SUM(CASE WHEN (c.operator='OFF' OR
                        (c.off_from_date IS NOT NULL AND s.report_date>=c.off_from_date))
-                       AND dai.report_date IS NULL THEN 0 ELSE s.so END) AS so,
+                       THEN 0 ELSE s.so END) AS so,
                    SUM(CASE WHEN (c.operator='OFF' OR
                        (c.off_from_date IS NOT NULL AND s.report_date>=c.off_from_date))
-                       AND dai.report_date IS NULL THEN 0 ELSE s.actual END) AS actual
+                       THEN 0
+                       WHEN dai.report_date IS NULL THEN s.so
+                       ELSE s.actual END) AS actual
             FROM sales s JOIN customers c ON c.customer_key=s.customer_key
             LEFT JOIN daily_actual_imports dai
               ON dai.report_date=s.report_date
