@@ -324,6 +324,7 @@
   cursor: pointer;
   font-size: 9px;
 }
+.cooperation-month-detail summary strong { font-size: 11px; }
 .cooperation-month-detail summary span { color: #71887e; font-weight: 600; }
 .cooperation-month-empty { margin: 0 0 10px; color: #84948b; font-size: 9px; }
 .cooperation-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
