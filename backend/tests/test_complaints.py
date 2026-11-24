@@ -1041,6 +1041,7 @@ class HomeSummaryTests(unittest.TestCase):
             "2026-10-08": [{"customer": "KHT Customer", "so": 40}],
         }
         with (
+            patch.object(main, "_business_today", return_value=date(2026, 10, 31)),
             patch.object(main, "db", return_value=MemoryHomeSummary()),
             patch.object(main, "get_sales_order_data", return_value=sales_orders),
         ):
@@ -1082,6 +1083,7 @@ class HomeSummaryTests(unittest.TestCase):
             "2026-10-11": [{"customer": "KHT Customer", "so": 400}],
         }
         with (
+            patch.object(main, "_business_today", return_value=date(2026, 10, 31)),
             patch.object(main, "db", return_value=database),
             patch.object(main, "get_sales_order_data", return_value=sales_orders),
         ):
@@ -1239,7 +1241,7 @@ class HomeSummaryTests(unittest.TestCase):
         self.assertEqual(result["month_summary"]["so"], 300)
         self.assertEqual(result["month_summary"]["actual"], 300)
 
-    def test_home_summary_past_month_keeps_confirmed_imports_after_selected_date(self):
+    def test_home_summary_does_not_forecast_completed_month_after_selected_date(self):
         database = MemoryHomeSummary(
             sales_rows=[
                 {
@@ -1261,7 +1263,7 @@ class HomeSummaryTests(unittest.TestCase):
                     "source_file": "daily-sales.xlsx",
                 },
             ],
-            actual_imported_dates=("2026-10-30", "2026-10-31"),
+            actual_imported_dates=(),
         )
         sales_orders = {
             "2026-10-31": [{"customer": "KHT Customer", "so": 999}],
@@ -1318,6 +1320,7 @@ class HomeSummaryTests(unittest.TestCase):
             "2026-10-01": [{"customer": "SETU Customer", "so": 500}],
         }
         with (
+            patch.object(main, "_business_today", return_value=date(2026, 10, 31)),
             patch.object(main, "db", return_value=database),
             patch.object(main, "get_sales_order_data", return_value=sales_orders),
         ):

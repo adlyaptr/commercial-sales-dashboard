@@ -934,6 +934,7 @@ def overlay_sales_order_forecast(
     preserve_imported_so=False,
     forecast_only_unimported_dates=False,
     summary_override_months=None,
+    forecast_excluded_dates=None,
 ):
     summary_override_months = set(summary_override_months or ())
     actual_imported_dates = {
@@ -943,6 +944,14 @@ def overlay_sales_order_forecast(
         if isinstance(value, date)
         else str(value)
         for value in (actual_imported_dates or ())
+    }
+    forecast_excluded_dates = {
+        value.date().isoformat()
+        if isinstance(value, datetime)
+        else value.isoformat()
+        if isinstance(value, date)
+        else str(value)
+        for value in (forecast_excluded_dates or ())
     }
     if forecast_only_unimported_dates:
         today = _business_today().isoformat()
@@ -988,6 +997,7 @@ def overlay_sales_order_forecast(
             enriched["report_date"][:7] in summary_override_months
             and enriched.get("source_file")
             and enriched["source_file"] != "manual-fob"
+            and enriched["report_date"] not in forecast_excluded_dates
             and not enriched.get("manual_fob")
         ):
             imported_sales_order_dates.add(enriched["report_date"])
@@ -995,6 +1005,7 @@ def overlay_sales_order_forecast(
             enriched["actual_is_forecast"] = False
             if (
                 enriched["report_date"] not in actual_imported_dates
+                and enriched["report_date"] not in forecast_excluded_dates
                 and not enriched.get("manual_fob")
             ):
                 use_imported_so = not is_off and (
@@ -1017,9 +1028,13 @@ def overlay_sales_order_forecast(
         day = date.fromisoformat(report_date)
         if day < start_date or day > end_date:
             continue
-        if report_date in actual_imported_dates or (
-            report_date[:7] in summary_override_months
-            and report_date in imported_sales_order_dates
+        if (
+            report_date in actual_imported_dates
+            or report_date in forecast_excluded_dates
+            or (
+                report_date[:7] in summary_override_months
+                and report_date in imported_sales_order_dates
+            )
         ):
             continue
         for order in orders:
@@ -1060,11 +1075,15 @@ def overlay_sales_order_forecast(
                         or existing_so <= 0
                     ):
                         existing["so"] = order["so"]
-                can_forecast = report_date not in actual_imported_dates and (
-                    forecast_only_unimported_dates
-                    or (
-                        float(existing.get("actual") or 0) == 0
-                        and report_date not in dates_with_nonzero_actual
+                can_forecast = (
+                    report_date not in actual_imported_dates
+                    and report_date not in forecast_excluded_dates
+                    and (
+                        forecast_only_unimported_dates
+                        or (
+                            float(existing.get("actual") or 0) == 0
+                            and report_date not in dates_with_nonzero_actual
+                        )
                     )
                 )
                 if (
@@ -1094,11 +1113,15 @@ def overlay_sales_order_forecast(
             }
 
     for row in enriched_by_key.values():
-        can_forecast = row["report_date"] not in actual_imported_dates and (
-            forecast_only_unimported_dates
-            or (
-                float(row.get("actual") or 0) == 0
-                and row["report_date"] not in dates_with_nonzero_actual
+        can_forecast = (
+            row["report_date"] not in actual_imported_dates
+            and row["report_date"] not in forecast_excluded_dates
+            and (
+                forecast_only_unimported_dates
+                or (
+                    float(row.get("actual") or 0) == 0
+                    and row["report_date"] not in dates_with_nonzero_actual
+                )
             )
         )
         if (
@@ -4448,6 +4471,12 @@ def home_summary(request: Request, month: str, through_date: Optional[str] = Non
             for report_date in actual_imported_dates
             if report_date <= through_date_key
         }
+    forecast_excluded_dates = set()
+    if month_end < _business_today():
+        forecast_excluded_dates = {
+            (month_start + timedelta(days=offset)).isoformat()
+            for offset in range((month_end - month_start).days + 1)
+        }
     rows, _ = overlay_sales_order_forecast(
         rows,
         customer_rows,
@@ -4458,6 +4487,7 @@ def home_summary(request: Request, month: str, through_date: Optional[str] = Non
         preserve_imported_so=True,
         forecast_only_unimported_dates=True,
         summary_override_months=NOVEMBER_SUMMARY_OVERRIDE_MONTHS,
+        forecast_excluded_dates=forecast_excluded_dates,
     )
 
     def empty_totals():
