@@ -43,12 +43,20 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 try:
     from .db import initialize_database
-    from .cooperation import COOPERATION_FIELDS, parse_cooperation_workbook
+    from .cooperation import (
+        COOPERATION_FIELDS,
+        is_expired_customer_summary_header,
+        parse_cooperation_workbook,
+    )
     from .monthly_template_export import build_monthly_template_export
     from .yahoo_imap import fetch_daily_sales_emails
 except ImportError:
     from db import initialize_database
-    from cooperation import COOPERATION_FIELDS, parse_cooperation_workbook
+    from cooperation import (
+        COOPERATION_FIELDS,
+        is_expired_customer_summary_header,
+        parse_cooperation_workbook,
+    )
     from monthly_template_export import build_monthly_template_export
     from yahoo_imap import fetch_daily_sales_emails
     
@@ -8695,10 +8703,18 @@ def list_cooperation_contracts(request: Request):
             f"SELECT {select_columns} "
             "FROM cooperation_contracts ORDER BY sort_order,id"
         ).fetchall()
-    today = _business_today()
-    contracts = []
+    visible_rows = []
     for row in rows:
         contract = dict(row)
+        if is_expired_customer_summary_header(
+            contract.get("code"),
+            contract.get("customer"),
+        ):
+            break
+        visible_rows.append(contract)
+    today = _business_today()
+    contracts = []
+    for contract in visible_rows:
         end_date = contract["end_contract_date"]
         if isinstance(end_date, datetime):
             end_date = end_date.date()

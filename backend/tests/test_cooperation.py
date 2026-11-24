@@ -14,7 +14,7 @@ import cooperation
 import main
 
 
-def build_workbook():
+def build_workbook(include_expired_summary=False, include_summary_title=True):
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "kontrak"
@@ -30,6 +30,14 @@ def build_workbook():
     worksheet.cell(9, 22, None)
     worksheet.cell(10, 2, "code-only-row")
     worksheet.cell(11, 9, 250)
+    if include_expired_summary:
+        if include_summary_title:
+            worksheet.cell(12, 1, "Customer yang habis kontrak di tahun 2023")
+        worksheet.cell(13, 2, "No")
+        worksheet.cell(13, 3, "Nama Customer")
+        worksheet.cell(14, 2, 1)
+        worksheet.cell(14, 3, "Expired Customer")
+        worksheet.cell(14, 4, datetime(2023, 1, 1))
     output = BytesIO()
     workbook.save(output)
     workbook.close()
@@ -98,6 +106,26 @@ class CooperationWorkbookTests(unittest.TestCase):
         self.assertEqual(records[0]["end_contract_date"].isoformat(), "2026-12-31")
         self.assertEqual(records[1]["end_of_contract"], "")
         self.assertIsNone(records[1]["end_contract_date"])
+
+    def test_parser_stops_before_expired_customer_appendix(self):
+        records = cooperation.parse_cooperation_workbook(
+            build_workbook(include_expired_summary=True)
+        )
+
+        self.assertEqual(len(records), 3)
+        self.assertNotIn("Nama Customer", [record["customer"] for record in records])
+        self.assertNotIn("Expired Customer", [record["customer"] for record in records])
+
+    def test_parser_stops_at_appendix_header_without_title(self):
+        records = cooperation.parse_cooperation_workbook(
+            build_workbook(
+                include_expired_summary=True,
+                include_summary_title=False,
+            )
+        )
+
+        self.assertEqual(len(records), 3)
+        self.assertNotIn("Nama Customer", [record["customer"] for record in records])
 
     def test_parser_handles_indonesian_text_dates(self):
         self.assertEqual(
@@ -179,6 +207,35 @@ class CooperationWorkbookTests(unittest.TestCase):
             [(row["status"], row["days_remaining"]) for row in contracts],
             [("active", 9), ("ended", -1), ("undated", None)],
         )
+
+    def test_list_omits_legacy_expired_customer_appendix(self):
+        database = MemoryContractsDatabase([
+            {
+                "id": 1,
+                "code": "C-1",
+                "customer": "Customer A",
+                "end_contract_date": date(2026, 1, 10),
+            },
+            {
+                "id": 2,
+                "code": "No",
+                "customer": "Nama Customer",
+                "end_contract_date": None,
+            },
+            {
+                "id": 3,
+                "code": "1",
+                "customer": "Expired Customer",
+                "end_contract_date": date(2023, 1, 1),
+            },
+        ])
+        with (
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "_business_today", return_value=date(2026, 1, 1)),
+        ):
+            contracts = main.list_cooperation_contracts(FakeRequest())
+
+        self.assertEqual([contract["customer"] for contract in contracts], ["Customer A"])
 
     def test_regular_user_receives_only_contract_validity_fields(self):
         database = MemoryContractsDatabase([

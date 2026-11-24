@@ -118,6 +118,24 @@ def parse_contract_date(value):
     return None
 
 
+def _normalized_label(value):
+    return " ".join(_cell_text(value).split()).casefold()
+
+
+def is_expired_customer_summary_header(code, customer):
+    return (
+        _normalized_label(code) == "no"
+        and _normalized_label(customer) == "nama customer"
+    )
+
+
+def _is_expired_customer_summary_title(row):
+    return any(
+        "customer yang habis kontrak di" in _normalized_label(value)
+        for value in row[:5]
+    )
+
+
 def parse_cooperation_workbook(content):
     try:
         workbook = load_workbook(
@@ -143,6 +161,11 @@ def parse_cooperation_workbook(content):
             worksheet.iter_rows(min_row=8, max_col=25, values_only=True),
             start=8,
         ):
+            if (
+                _is_expired_customer_summary_title(row)
+                or is_expired_customer_summary_header(row[1], row[2])
+            ):
+                break
             if row[1] in (None, "") and row[2] in (None, ""):
                 continue
             values = {
