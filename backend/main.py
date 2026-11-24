@@ -4440,7 +4440,7 @@ def home_summary(request: Request, month: str, through_date: Optional[str] = Non
         ).fetchone()
 
     actual_imported_dates = _confirmed_actual_import_dates(actual_import_rows)
-    if through_day is not None:
+    if through_day is not None and month_end >= _business_today():
         through_date_key = through_day.isoformat()
         actual_imported_dates = {
             report_date

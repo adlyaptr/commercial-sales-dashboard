@@ -1190,6 +1190,47 @@ class HomeSummaryTests(unittest.TestCase):
         self.assertEqual(result["month_summary"]["so"], 300)
         self.assertEqual(result["month_summary"]["actual"], 300)
 
+    def test_home_summary_past_month_keeps_confirmed_imports_after_selected_date(self):
+        database = MemoryHomeSummary(
+            sales_rows=[
+                {
+                    "report_date": date(2026, 10, 30),
+                    "customer_name": "SETU Customer",
+                    "operator": "SETU",
+                    "customer_key": "setu-a",
+                    "so": 100,
+                    "actual": 80,
+                    "source_file": "daily-sales.xlsx",
+                },
+                {
+                    "report_date": date(2026, 10, 31),
+                    "customer_name": "KHT Customer",
+                    "operator": "KHT",
+                    "customer_key": "kht-a",
+                    "so": 200,
+                    "actual": 100,
+                    "source_file": "daily-sales.xlsx",
+                },
+            ],
+            actual_imported_dates=("2026-10-30", "2026-10-31"),
+        )
+        sales_orders = {
+            "2026-10-31": [{"customer": "KHT Customer", "so": 999}],
+        }
+        with (
+            patch.object(main, "_business_today", return_value=date(2026, 11, 24)),
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "get_sales_order_data", return_value=sales_orders),
+        ):
+            result = main.home_summary(
+                FakeRequest(),
+                month="2026-10",
+                through_date="2026-10-30",
+            )
+
+        self.assertEqual(result["month_summary"]["so"], 300)
+        self.assertEqual(result["month_summary"]["actual"], 180)
+
     def test_home_summary_rejects_through_date_from_another_month(self):
         with self.assertRaises(main.HTTPException) as invalid:
             main.home_summary(
