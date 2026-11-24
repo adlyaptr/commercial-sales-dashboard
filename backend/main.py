@@ -1502,7 +1502,7 @@ def _replacement_month_range(month, operator_records):
     workbook_dates = {record["report_date"] for record in operator_records}
     if workbook_dates != expected_dates:
         raise ValueError(
-            "Workbook replace harus berisi data sheet operator untuk setiap tanggal "
+            "Workbook replace harus berisi data untuk setiap tanggal "
             f"{month_start.isoformat()} s.d. {month_end.isoformat()}."
         )
     customers_by_date = {}
@@ -1516,6 +1516,29 @@ def _replacement_month_range(month, operator_records):
             "Workbook replace harus memuat matriks customer lengkap untuk setiap tanggal."
         )
     return month_start.isoformat(), month_end.isoformat()
+
+
+def _replacement_daily_sales_range(month, worksheet):
+    actual_columns, _ = daily_sales_customer_columns(worksheet)
+    if not actual_columns:
+        raise ValueError(
+            "Workbook replace memerlukan kolom ACTUAL pada sheet Daily Sales."
+        )
+
+    report_dates = []
+    for row in range(5, worksheet.max_row + 1):
+        report_date = parse_date(worksheet.cell(row, 2).value)
+        if report_date:
+            report_dates.append(str(report_date))
+    if len(report_dates) != len(set(report_dates)):
+        raise ValueError("Workbook replace tidak boleh memiliki tanggal duplikat.")
+
+    records = [
+        {"report_date": report_date, "customer": customer}
+        for report_date in report_dates
+        for customer, _ in actual_columns
+    ]
+    return _replacement_month_range(month, records)
 
 
 def import_excel(
@@ -1570,14 +1593,20 @@ def import_excel(
         )
         replacement_range = None
         if replace_month is not None:
-            if daily is not None or not operator_records:
-                raise ValueError(
-                    "Replace bulan hanya mendukung workbook dengan sheet operator."
+            if daily is not None:
+                replacement_range = _replacement_daily_sales_range(
+                    replace_month,
+                    daily,
                 )
-            replacement_range = _replacement_month_range(
-                replace_month,
-                operator_records,
-            )
+            elif operator_records:
+                replacement_range = _replacement_month_range(
+                    replace_month,
+                    operator_records,
+                )
+            else:
+                raise ValueError(
+                    "Replace bulan memerlukan sheet Daily Sales atau sheet operator."
+                )
         with db() as con:
             # If the uploaded workbook contains operator sheets, use them as a mapping source.
             mapping_saved = _mapping_from_operator_sheets(wb, con)

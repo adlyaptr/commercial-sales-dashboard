@@ -31,6 +31,21 @@ def operator_sheet_workbook():
     return workbook
 
 
+def daily_sales_workbook(day_count=31):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Daily Sales"
+    sheet.cell(3, 4, "PLATINUM")
+    sheet.cell(4, 4, "TARGET")
+    sheet.cell(4, 5, "ACTUAL")
+    for day in range(1, day_count + 1):
+        row = 4 + day
+        sheet.cell(row, 2, datetime(2026, 10, day))
+        sheet.cell(row, 4, 4500)
+        sheet.cell(row, 5, day)
+    return workbook
+
+
 class OperatorSheetImportTests(unittest.TestCase):
     def test_future_actual_zeros_do_not_mark_date_as_imported(self):
         workbook = Workbook()
@@ -436,6 +451,73 @@ class OperatorSheetImportTests(unittest.TestCase):
             [row[1][0] for row in database.saved if row[0].startswith("INSERT INTO sales")][0],
             "2026-02-01",
         )
+
+    def test_replace_month_accepts_complete_daily_sales_workbook(self):
+        workbook = daily_sales_workbook()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "october.xlsx"
+            workbook.save(path)
+            workbook.close()
+            database = MemoryImportDatabase()
+
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", return_value="BLORA"),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+            ):
+                result = main.import_excel(
+                    path,
+                    path.name,
+                    replace_month="2026-10",
+                )
+
+        delete_statements = [
+            row for row in database.saved if row[0].startswith("DELETE FROM")
+        ]
+        self.assertEqual(
+            [row[0] for row in delete_statements],
+            [
+                "DELETE FROM sales WHERE report_date BETWEEN %s AND %s",
+                "DELETE FROM daily_actual_imports WHERE report_date BETWEEN %s AND %s",
+            ],
+        )
+        self.assertEqual(
+            [row[1] for row in delete_statements],
+            [("2026-10-01", "2026-10-31")] * 2,
+        )
+        self.assertEqual(result["rows_saved"], 31)
+        self.assertEqual(
+            len([
+                row for row in database.saved
+                if row[0].startswith("INSERT INTO daily_actual_imports")
+            ]),
+            31,
+        )
+
+    def test_replace_month_rejects_incomplete_daily_sales_before_deleting(self):
+        workbook = daily_sales_workbook(day_count=30)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "partial-october.xlsx"
+            workbook.save(path)
+            workbook.close()
+            database = MemoryImportDatabase()
+
+            with (
+                patch.object(main, "db", return_value=database),
+                patch.object(main, "find_operator", return_value="BLORA"),
+                patch.object(main, "_mapping_from_operator_sheets", return_value=0),
+            ):
+                with self.assertRaisesRegex(ValueError, "setiap tanggal"):
+                    main.import_excel(
+                        path,
+                        path.name,
+                        replace_month="2026-10",
+                    )
+
+        self.assertFalse(any(
+            statement.startswith("DELETE FROM")
+            for statement, _ in database.saved
+        ))
 
     def test_replace_month_rejects_partial_workbook_before_deleting_rows(self):
         workbook = operator_sheet_workbook()
