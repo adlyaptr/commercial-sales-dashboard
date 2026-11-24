@@ -373,7 +373,9 @@ function ExpiryDashboard({ contracts, loading }) {
                                                     <strong>{contract.customer || contract.code || 'Customer tidak tercatat'}</strong>
                                                     <small>{contract.agreement_number || contract.code || 'Nomor perjanjian tidak tercatat'}</small>
                                                 </div>
-                                                <span>{contract.end_of_contract || contract.end_contract_date}</span>
+                                                <span className="cooperation-month-contract-date">
+                                                    {contract.end_of_contract || contract.end_contract_date}
+                                                </span>
                                             </article>
                                         ))}
                                     </div>

@@ -401,6 +401,7 @@
 .cooperation-attention-list article > div { display: grid; gap: 3px; }
 .cooperation-attention-list article > div strong { color: #345342; font-size: 9px; }
 .cooperation-attention-list article > div small { color: #84948b; font-size: 8px; }
+.cooperation-month-contract-date { color: #84948b; font-size: 8px; text-align: right; }
 .cooperation-attention-list .cooperation-link-button { grid-column: 1 / -1; }
 .cooperation-reminder {
   display: grid;
