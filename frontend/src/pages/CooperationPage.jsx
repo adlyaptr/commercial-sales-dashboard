@@ -64,12 +64,6 @@ const statusFilters = [
     { key: 'undated', label: 'Tanggal akhir kosong' },
 ];
 
-const statusLabels = {
-    active: 'Aktif',
-    ended: 'Berakhir',
-    undated: 'Tanggal akhir kosong',
-};
-
 function MetricCard({ label, value, caption, tone }) {
     return (
         <article className={`cooperation-metric ${tone || ''}`}>
@@ -275,7 +269,7 @@ function CooperationList({ contracts, loading, error, canEdit, onImport, importi
     );
 }
 
-function ExpiryDashboard({ contracts, loading, canViewDetails }) {
+function ExpiryDashboard({ contracts, loading }) {
     const counts = useMemo(() => getCounts(contracts), [contracts]);
     const customerCounts = useMemo(() => getUniqueCustomerCounts(contracts), [contracts]);
     const months = useMemo(() => {
@@ -391,48 +385,6 @@ function ExpiryDashboard({ contracts, loading, canViewDetails }) {
                     </div>
                 </section>
             )}
-            {canViewDetails && !loading && contracts.length > 0 && (
-                <section className="cooperation-panel cooperation-validity-list">
-                    <div className="cooperation-panel-heading">
-                        <h2>Masa berlaku tiap kontrak</h2>
-                        <span>{contracts.length} kontrak</span>
-                    </div>
-                    <div className="cooperation-table-scroll">
-                        <table className="cooperation-table">
-                            <thead>
-                                <tr>
-                                    <th>Customer</th>
-                                    <th>Nomor perjanjian</th>
-                                    <th>Berlaku sampai</th>
-                                    <th>Status</th>
-                                    <th>Sisa waktu</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {contracts.map((contract) => (
-                                    <tr key={contract.id}>
-                                        <td>{contract.customer || contract.code || '-'}</td>
-                                        <td>{contract.agreement_number || '-'}</td>
-                                        <td>{contract.end_of_contract || contract.end_contract_date || 'Tidak ditentukan'}</td>
-                                        <td>
-                                            <span className={`cooperation-status ${contract.status}`}>
-                                                {statusLabels[contract.status]}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            {contract.days_remaining === null
-                                                ? '-'
-                                                : contract.days_remaining < 0
-                                                    ? `Berakhir ${Math.abs(contract.days_remaining)} hari lalu`
-                                                    : `Sisa ${contract.days_remaining} hari`}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
-            )}
         </section>
     );
 }
@@ -525,7 +477,7 @@ export default function CooperationPage() {
                 </div>
             )}
             {isExpiry
-                ? <ExpiryDashboard contracts={contracts} loading={loading} canViewDetails={canEdit} />
+                ? <ExpiryDashboard contracts={contracts} loading={loading} />
                 : (
                     <CooperationList
                         contracts={contracts}
