@@ -46,6 +46,7 @@ try:
     from .cooperation import (
         COOPERATION_FIELDS,
         is_expired_customer_summary_header,
+        is_expired_customer_summary_title,
         parse_cooperation_workbook,
     )
     from .monthly_template_export import build_monthly_template_export
@@ -55,6 +56,7 @@ except ImportError:
     from cooperation import (
         COOPERATION_FIELDS,
         is_expired_customer_summary_header,
+        is_expired_customer_summary_title,
         parse_cooperation_workbook,
     )
     from monthly_template_export import build_monthly_template_export
@@ -8706,9 +8708,19 @@ def list_cooperation_contracts(request: Request):
     visible_rows = []
     for row in rows:
         contract = dict(row)
-        if is_expired_customer_summary_header(
+        appendix_fields = (
             contract.get("code"),
             contract.get("customer"),
+            contract.get("address"),
+            contract.get("mother_station"),
+            contract.get("forms_of_cooperation"),
+        )
+        if (
+            is_expired_customer_summary_title(appendix_fields)
+            or is_expired_customer_summary_header(
+                contract.get("code"),
+                contract.get("customer"),
+            )
         ):
             break
         visible_rows.append(contract)

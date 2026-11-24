@@ -218,12 +218,18 @@ class CooperationWorkbookTests(unittest.TestCase):
             },
             {
                 "id": 2,
+                "code": "Customer yang habis kontrak di 2023",
+                "customer": "",
+                "end_contract_date": None,
+            },
+            {
+                "id": 3,
                 "code": "No",
                 "customer": "Nama Customer",
                 "end_contract_date": None,
             },
             {
-                "id": 3,
+                "id": 4,
                 "code": "1",
                 "customer": "Expired Customer",
                 "end_contract_date": date(2023, 1, 1),

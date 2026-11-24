@@ -129,7 +129,7 @@ def is_expired_customer_summary_header(code, customer):
     )
 
 
-def _is_expired_customer_summary_title(row):
+def is_expired_customer_summary_title(row):
     return any(
         "customer yang habis kontrak di" in _normalized_label(value)
         for value in row[:5]
@@ -162,7 +162,7 @@ def parse_cooperation_workbook(content):
             start=8,
         ):
             if (
-                _is_expired_customer_summary_title(row)
+                is_expired_customer_summary_title(row)
                 or is_expired_customer_summary_header(row[1], row[2])
             ):
                 break
