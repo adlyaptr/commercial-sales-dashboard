@@ -283,19 +283,19 @@ function ExpiryDashboard({ contracts, loading, canViewDetails }) {
         return Array.from({ length: 6 }, (_, index) => {
             const month = new Date(now.getFullYear(), now.getMonth() + index, 1);
             const key = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+            const monthContracts = contracts
+                .filter((contract) => contract.end_contract_date?.slice(0, 7) === key)
+                .sort((a, b) => a.end_contract_date.localeCompare(b.end_contract_date));
             return {
                 key,
                 label: new Intl.DateTimeFormat('id-ID', { month: 'short', year: 'numeric' }).format(month),
-                value: contracts.filter((contract) => contract.end_contract_date?.slice(0, 7) === key).length,
+                detailLabel: new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(month),
+                contracts: monthContracts,
+                value: monthContracts.length,
             };
         });
     }, [contracts]);
     const maxMonthCount = Math.max(1, ...months.map((month) => month.value));
-    const attention = useMemo(() => contracts
-        .filter((contract) => contract.status === 'ended'
-            || (contract.status === 'active' && contract.days_remaining <= 90))
-        .sort((a, b) => a.days_remaining - b.days_remaining)
-        .slice(0, 8), [contracts]);
 
     return (
         <section className="cooperation-page">
@@ -352,32 +352,44 @@ function ExpiryDashboard({ contracts, loading, canViewDetails }) {
                             ))}
                         </div>
                     </section>
-                    <section className="cooperation-panel cooperation-attention-panel">
-                        <div className="cooperation-panel-heading">
-                            <h2>Perlu tindak lanjut</h2>
-                            <span>{attention.length} kontrak</span>
-                        </div>
-                        {attention.length ? (
-                            <div className="cooperation-attention-list">
-                                {attention.map((contract) => (
-                                    <article key={contract.id}>
-                                        <div>
-                                            <strong>{contract.customer || contract.code}</strong>
-                                            <small>{contract.agreement_number || contract.code}</small>
-                                        </div>
-                                        <span className={`cooperation-status ${contract.status === 'ended' ? 'ended' : 'orange'}`}>
-                                            {contract.status === 'ended'
-                                                ? `Berakhir ${Math.abs(contract.days_remaining)} hari lalu`
-                                                : `Sisa ${contract.days_remaining} hari`}
-                                        </span>
-                                    </article>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="cooperation-no-attention">Tidak ada kontrak yang segera berakhir atau telah lewat.</p>
-                        )}
-                    </section>
                 </div>
+            )}
+            {!loading && contracts.length > 0 && (
+                <section className="cooperation-panel cooperation-monthly-details">
+                    <div className="cooperation-panel-heading">
+                        <h2>Rincian dokumen berakhir per bulan</h2>
+                        <span>Pilih bulan untuk melihat dokumennya</span>
+                    </div>
+                    <div className="cooperation-month-breakdown">
+                        {months.map((month, index) => (
+                            <details
+                                className="cooperation-month-detail"
+                                key={month.key}
+                                open={index === 0 && month.value > 0}
+                            >
+                                <summary>
+                                    <strong>{month.detailLabel}</strong>
+                                    <span>{month.value} dokumen</span>
+                                </summary>
+                                {month.value ? (
+                                    <div className="cooperation-attention-list">
+                                        {month.contracts.map((contract) => (
+                                            <article key={contract.id}>
+                                                <div>
+                                                    <strong>{contract.customer || contract.code || 'Customer tidak tercatat'}</strong>
+                                                    <small>{contract.agreement_number || contract.code || 'Nomor perjanjian tidak tercatat'}</small>
+                                                </div>
+                                                <span>{contract.end_of_contract || contract.end_contract_date}</span>
+                                            </article>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="cooperation-month-empty">Tidak ada dokumen yang berakhir pada bulan ini.</p>
+                                )}
+                            </details>
+                        ))}
+                    </div>
+                </section>
             )}
             {canViewDetails && !loading && contracts.length > 0 && (
                 <section className="cooperation-panel cooperation-validity-list">
