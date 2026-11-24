@@ -121,6 +121,7 @@ SALES_ORDER_SHEET_ID = os.getenv(
 SALES_ORDER_SHEET_GID = os.getenv("SALES_ORDER_SHEET_GID", "694583576").strip()
 SALES_ORDER_CACHE_SECONDS = 300
 NOVEMBER_SUMMARY_OVERRIDE_MONTHS = frozenset({"2026-11"})
+NON_FOB_SUMMARY_MONTHS = frozenset({"2026-10", "2026-11"})
 _sales_order_cache = {"expires_at": 0.0, "data": None}
 _sales_order_lock = threading.Lock()
 BUDGET_TARGET_SHEET_GID = os.getenv("BUDGET_TARGET_SHEET_GID", "737662524").strip()
@@ -4499,7 +4500,7 @@ def home_summary(request: Request, month: str, through_date: Optional[str] = Non
             {"totals": empty_totals(), "operators": empty_operators()},
         )
         exclude_manual_fob = (
-            month_key in NOVEMBER_SUMMARY_OVERRIDE_MONTHS
+            month_key in NON_FOB_SUMMARY_MONTHS
             and row.get("manual_fob")
         )
         if not exclude_manual_fob:
