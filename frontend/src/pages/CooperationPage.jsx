@@ -275,7 +275,7 @@ function CooperationList({ contracts, loading, error, canEdit, onImport, importi
     );
 }
 
-function ExpiryDashboard({ contracts, loading }) {
+function ExpiryDashboard({ contracts, loading, canViewDetails }) {
     const counts = useMemo(() => getCounts(contracts), [contracts]);
     const customerCounts = useMemo(() => getUniqueCustomerCounts(contracts), [contracts]);
     const months = useMemo(() => {
@@ -379,7 +379,7 @@ function ExpiryDashboard({ contracts, loading }) {
                     </section>
                 </div>
             )}
-            {!loading && contracts.length > 0 && (
+            {canViewDetails && !loading && contracts.length > 0 && (
                 <section className="cooperation-panel cooperation-validity-list">
                     <div className="cooperation-panel-heading">
                         <h2>Masa berlaku tiap kontrak</h2>
@@ -513,7 +513,7 @@ export default function CooperationPage() {
                 </div>
             )}
             {isExpiry
-                ? <ExpiryDashboard contracts={contracts} loading={loading} />
+                ? <ExpiryDashboard contracts={contracts} loading={loading} canViewDetails={canEdit} />
                 : (
                     <CooperationList
                         contracts={contracts}
