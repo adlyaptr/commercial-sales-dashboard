@@ -704,15 +704,17 @@ export default function DashboardLayout({ user, onLogout }) {
                                     className={`nav-submenu${cooperationOpen ? '' : ' collapsed'}`}
                                     id="cooperationSubmenu"
                                 >
-                                    <NavLink
-                                        className={({ isActive }) =>
-                                            `nav-sublink${isActive ? ' active' : ''}`
-                                        }
-                                        to="/kerja-sama"
-                                        end
-                                    >
-                                        Daftar kerja sama
-                                    </NavLink>
+                                    {user.role === 'admin' && (
+                                        <NavLink
+                                            className={({ isActive }) =>
+                                                `nav-sublink${isActive ? ' active' : ''}`
+                                            }
+                                            to="/kerja-sama"
+                                            end
+                                        >
+                                            Daftar kerja sama
+                                        </NavLink>
+                                    )}
                                     <NavLink
                                         className={({ isActive }) =>
                                             `nav-sublink${isActive ? ' active' : ''}`

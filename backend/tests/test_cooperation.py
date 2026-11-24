@@ -72,6 +72,7 @@ class MemoryDatabase:
 class MemoryContractsDatabase:
     def __init__(self, contracts):
         self.contracts = contracts
+        self.statements = []
 
     def __enter__(self):
         return self
@@ -79,7 +80,8 @@ class MemoryContractsDatabase:
     def __exit__(self, *_):
         return False
 
-    def execute(self, *_):
+    def execute(self, statement, *_):
+        self.statements.append(statement)
         return SimpleNamespace(fetchall=lambda: self.contracts)
 
 
@@ -169,10 +171,48 @@ class CooperationWorkbookTests(unittest.TestCase):
         ):
             contracts = main.list_cooperation_contracts(FakeRequest())
 
+        self.assertIn(
+            "SELECT id,sort_order,code,customer,address,mother_station,",
+            database.statements[0],
+        )
         self.assertEqual(
             [(row["status"], row["days_remaining"]) for row in contracts],
             [("active", 9), ("ended", -1), ("undated", None)],
         )
+
+    def test_regular_user_receives_only_contract_validity_fields(self):
+        database = MemoryContractsDatabase([
+            {
+                "id": 1,
+                "code": "C-1",
+                "customer": "Customer A",
+                "agreement_number": "AGR-1",
+                "end_of_contract": "31-Dec-2026",
+                "end_contract_date": date(2026, 12, 31),
+            },
+        ])
+        with (
+            patch.object(main, "require_login"),
+            patch.object(main, "db", return_value=database),
+            patch.object(main, "_business_today", return_value=date(2026, 1, 1)),
+        ):
+            contracts = main.list_cooperation_contracts(FakeRequest(role="user"))
+
+        self.assertIn("SELECT id,code,customer,agreement_number,end_of_contract,end_contract_date", database.statements[0])
+        self.assertEqual(
+            set(contracts[0]),
+            {
+                "id",
+                "code",
+                "customer",
+                "agreement_number",
+                "end_of_contract",
+                "end_contract_date",
+                "days_remaining",
+                "status",
+            },
+        )
+        self.assertEqual(contracts[0]["days_remaining"], 364)
 
 
 if __name__ == "__main__":

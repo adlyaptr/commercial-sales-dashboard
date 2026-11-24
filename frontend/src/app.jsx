@@ -115,7 +115,10 @@ function App() {
                                     </Suspense>
                                 )}
                             />
-                            <Route path="kerja-sama/pengajuan" element={<Navigate to="/kerja-sama" replace />} />
+                            <Route
+                                path="kerja-sama/pengajuan"
+                                element={<Navigate to={user.role === 'admin' ? '/kerja-sama' : '/kerja-sama/masa-berlaku'} replace />}
+                            />
                             <Route
                                 path="kerja-sama/*"
                                 element={(

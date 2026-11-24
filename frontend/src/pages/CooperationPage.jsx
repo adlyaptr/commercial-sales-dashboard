@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { api } from '../api';
 import '../cooperation.css';
 
@@ -64,6 +64,12 @@ const statusFilters = [
     { key: 'undated', label: 'Tanggal akhir kosong' },
 ];
 
+const statusLabels = {
+    active: 'Aktif',
+    ended: 'Berakhir',
+    undated: 'Tanggal akhir kosong',
+};
+
 function MetricCard({ label, value, caption, tone }) {
     return (
         <article className={`cooperation-metric ${tone || ''}`}>
@@ -100,11 +106,31 @@ function getCounts(contracts) {
     }, { all: 0, active: 0, soon: 0, ended: 0, undated: 0 });
 }
 
+function getCustomerKey(contract) {
+    const customer = String(contract.customer || '').trim();
+    if (customer) return `customer:${customer.toLocaleLowerCase('id-ID')}`;
+
+    const code = String(contract.code || '').trim();
+    if (code) return `code:${code.toLocaleLowerCase('id-ID')}`;
+
+    return `contract:${contract.id}`;
+}
+
+function getUniqueCustomerCounts(contracts) {
+    return {
+        all: new Set(contracts.map(getCustomerKey)).size,
+        ended: new Set(
+            contracts.filter((contract) => contract.status === 'ended').map(getCustomerKey),
+        ).size,
+    };
+}
+
 function CooperationList({ contracts, loading, error, canEdit, onImport, importing }) {
     const [activeFilter, setActiveFilter] = useState('all');
     const [search, setSearch] = useState('');
     const fileInput = useRef(null);
     const counts = useMemo(() => getCounts(contracts), [contracts]);
+    const customerCounts = useMemo(() => getUniqueCustomerCounts(contracts), [contracts]);
     const pics = useMemo(() => [...new Set(
         contracts.map((contract) => contract.pic_customer).filter(Boolean),
     )].sort((a, b) => a.localeCompare(b, 'id-ID')), [contracts]);
@@ -156,10 +182,10 @@ function CooperationList({ contracts, loading, error, canEdit, onImport, importi
 
             {error && <div className="cooperation-error" role="alert">{error}</div>}
             <section className="cooperation-metrics" aria-label="Ringkasan kerja sama">
-                <MetricCard label="TOTAL KONTRAK" value={counts.all} caption="Data dari workbook" tone="blue" />
+                <MetricCard label="TOTAL KONTRAK" value={customerCounts.all} caption="Customer unik" tone="blue" />
                 <MetricCard label="AKTIF" value={counts.active} caption="Tanggal akhir belum lewat" tone="green" />
                 <MetricCard label="SEGERA BERAKHIR" value={counts.soon} caption="Dalam 90 hari" tone="orange" />
-                <MetricCard label="BERAKHIR" value={counts.ended} caption="Tanggal akhir sudah lewat" tone="red" />
+                <MetricCard label="BERAKHIR" value={customerCounts.ended} caption="Customer unik dengan kontrak berakhir" tone="red" />
             </section>
 
             <section className="cooperation-panel cooperation-register">
@@ -251,6 +277,7 @@ function CooperationList({ contracts, loading, error, canEdit, onImport, importi
 
 function ExpiryDashboard({ contracts, loading }) {
     const counts = useMemo(() => getCounts(contracts), [contracts]);
+    const customerCounts = useMemo(() => getUniqueCustomerCounts(contracts), [contracts]);
     const months = useMemo(() => {
         const now = new Date();
         return Array.from({ length: 6 }, (_, index) => {
@@ -278,10 +305,10 @@ function ExpiryDashboard({ contracts, loading }) {
                 description="Tanggal akhir berupa bulan dan tahun dihitung sampai hari terakhir bulan tersebut."
             />
             <section className="cooperation-metrics" aria-label="Ringkasan masa berlaku">
-                <MetricCard label="TOTAL KONTRAK" value={counts.all} caption="Data dari workbook" tone="blue" />
+                <MetricCard label="TOTAL KONTRAK" value={customerCounts.all} caption="Customer unik" tone="blue" />
                 <MetricCard label="AKTIF" value={counts.active} caption="Tanggal akhir belum lewat" tone="green" />
                 <MetricCard label="SEGERA BERAKHIR" value={counts.soon} caption="Dalam 90 hari" tone="orange" />
-                <MetricCard label="BERAKHIR" value={counts.ended} caption="Tanggal akhir sudah lewat" tone="red" />
+                <MetricCard label="BERAKHIR" value={customerCounts.ended} caption="Customer unik dengan kontrak berakhir" tone="red" />
             </section>
             {loading ? (
                 <div className="cooperation-panel cooperation-dashboard-empty">Memuat data kerja sama...</div>
@@ -352,6 +379,48 @@ function ExpiryDashboard({ contracts, loading }) {
                     </section>
                 </div>
             )}
+            {!loading && contracts.length > 0 && (
+                <section className="cooperation-panel cooperation-validity-list">
+                    <div className="cooperation-panel-heading">
+                        <h2>Masa berlaku tiap kontrak</h2>
+                        <span>{contracts.length} kontrak</span>
+                    </div>
+                    <div className="cooperation-table-scroll">
+                        <table className="cooperation-table">
+                            <thead>
+                                <tr>
+                                    <th>Customer</th>
+                                    <th>Nomor perjanjian</th>
+                                    <th>Berlaku sampai</th>
+                                    <th>Status</th>
+                                    <th>Sisa waktu</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {contracts.map((contract) => (
+                                    <tr key={contract.id}>
+                                        <td>{contract.customer || contract.code || '-'}</td>
+                                        <td>{contract.agreement_number || '-'}</td>
+                                        <td>{contract.end_of_contract || contract.end_contract_date || 'Tidak ditentukan'}</td>
+                                        <td>
+                                            <span className={`cooperation-status ${contract.status}`}>
+                                                {statusLabels[contract.status]}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            {contract.days_remaining === null
+                                                ? '-'
+                                                : contract.days_remaining < 0
+                                                    ? `Berakhir ${Math.abs(contract.days_remaining)} hari lalu`
+                                                    : `Sisa ${contract.days_remaining} hari`}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            )}
         </section>
     );
 }
@@ -383,8 +452,9 @@ export default function CooperationPage() {
     }, []);
 
     useEffect(() => {
+        if (!canEdit && !isExpiry) return;
         refreshContracts();
-    }, [refreshContracts]);
+    }, [canEdit, isExpiry, refreshContracts]);
 
     async function importWorkbook(file) {
         if (!window.confirm('Impor workbook ini dan mengganti seluruh data kerja sama yang tersimpan?')) return;
@@ -413,24 +483,30 @@ export default function CooperationPage() {
         }
     }
 
+    if (!canEdit && !isExpiry) {
+        return <Navigate to="/kerja-sama/masa-berlaku" replace />;
+    }
+
     return (
         <div className="cooperation-workspace">
-            <nav className="cooperation-tabs" aria-label="Navigasi kerja sama">
-                <button
-                    type="button"
-                    className={!isExpiry ? 'active' : ''}
-                    onClick={() => navigate('/kerja-sama')}
-                >
-                    Daftar kerja sama
-                </button>
-                <button
-                    type="button"
-                    className={isExpiry ? 'active' : ''}
-                    onClick={() => navigate('/kerja-sama/masa-berlaku')}
-                >
-                    Masa berlaku
-                </button>
-            </nav>
+            {canEdit && (
+                <nav className="cooperation-tabs" aria-label="Navigasi kerja sama">
+                    <button
+                        type="button"
+                        className={!isExpiry ? 'active' : ''}
+                        onClick={() => navigate('/kerja-sama')}
+                    >
+                        Daftar kerja sama
+                    </button>
+                    <button
+                        type="button"
+                        className={isExpiry ? 'active' : ''}
+                        onClick={() => navigate('/kerja-sama/masa-berlaku')}
+                    >
+                        Masa berlaku
+                    </button>
+                </nav>
+            )}
             {notice && (
                 <div className={`cooperation-notice${noticeError ? ' error' : ''}`} role={noticeError ? 'alert' : 'status'}>
                     {notice}

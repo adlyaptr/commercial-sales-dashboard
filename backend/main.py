@@ -8617,14 +8617,22 @@ async def update_customer_status(customer_key: str, request: Request):
 @app.get("/api/cooperation/contracts")
 def list_cooperation_contracts(request: Request):
     require_login(request)
-    with db() as con:
-        rows = con.execute(
-            "SELECT id,sort_order,code,customer,address,mother_station,"
+    if is_admin(request):
+        select_columns = (
+            "id,sort_order,code,customer,address,mother_station,"
             "forms_of_cooperation,agreement_number,volume_min_mmbtu,volume_max_mmbtu,"
             "volume_min_sm3,volume_max_sm3,volume_min_nm3,volume_max_nm3,"
             "price_usd_mmbtu,price_usd_m3,price_idr_m3,kurs,invoicing,"
             "terms_of_payment,contract_signed,gas_in,end_of_contract,"
-            "end_contract_date,remarks,pic_customer,telephone "
+            "end_contract_date,remarks,pic_customer,telephone"
+        )
+    else:
+        select_columns = (
+            "id,code,customer,agreement_number,end_of_contract,end_contract_date"
+        )
+    with db() as con:
+        rows = con.execute(
+            f"SELECT {select_columns} "
             "FROM cooperation_contracts ORDER BY sort_order,id"
         ).fetchall()
     today = _business_today()
