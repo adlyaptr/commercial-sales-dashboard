@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js';
-import { useOutletContext } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { api } from '../api';
 import SectionIcon from '../components/SectionIcon';
 
@@ -321,9 +321,16 @@ export default function HomePage() {
                             <h3><SectionIcon name="complaint" />Complain periode terpilih</h3>
                             <Message loading={loading} error={errors.complaints} empty={monthlyComplaints.length === 0 ? 'Tidak ada complain pada periode terpilih.' : ''}>
                                 <div className="home-complaint-chart">
-                                    <div className="home-complaint-donut" style={{ background: complaintDonut }}>
-                                        <div><small>Total Complain</small><strong>{formatNumber(complaintTotal, 0)}</strong></div>
-                                    </div>
+                                    <Link
+                                        className="home-complaint-donut-link"
+                                        to="/mingguan/complain"
+                                        aria-label={`Buka halaman Complain, total ${formatNumber(complaintTotal, 0)}`}
+                                        title="Buka halaman Complain"
+                                    >
+                                        <div className="home-complaint-donut" style={{ background: complaintDonut }}>
+                                            <div><small>Total Complain</small><strong>{formatNumber(complaintTotal, 0)}</strong></div>
+                                        </div>
+                                    </Link>
                                     <div className="home-complaint-legend">
                                         {complaintTypeTotals.map((item, index) => (
                                             <div key={item.name}>
