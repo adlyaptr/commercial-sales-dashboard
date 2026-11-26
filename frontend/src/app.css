@@ -50,7 +50,7 @@ button { cursor: pointer; }
 
 .layout-shell {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
+  grid-template-columns: 190px minmax(0, 1fr);
   min-height: 100vh;
   align-items: start;
   background: var(--bg);
