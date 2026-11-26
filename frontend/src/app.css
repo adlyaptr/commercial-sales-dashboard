@@ -4867,3 +4867,28 @@ body {
   outline: 2px solid #b9f3d4;
   outline-offset: 2px;
 }
+
+@media (min-width: 1025px) {
+  .layout-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .layout-shell .sidebar,
+  .layout-shell.sidebar-hidden .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    display: flex;
+    width: 150px;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    transform: translateX(0);
+    transition: transform .22s ease;
+    z-index: 1200;
+  }
+
+  .layout-shell.sidebar-hidden .sidebar {
+    transform: translateX(-105%);
+    pointer-events: none;
+  }
+}

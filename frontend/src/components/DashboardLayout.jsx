@@ -674,7 +674,7 @@ export default function DashboardLayout({ user, onLogout }) {
             <aside
                 className="sidebar"
                 id="sidebar"
-                inert={isCompactViewport && !mobileSidebarOpen}
+                inert={sidebarHidden || (isCompactViewport && !mobileSidebarOpen)}
             >
                     <NavLink
                         className="side-brand"
