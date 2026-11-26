@@ -4675,6 +4675,15 @@ body {
   line-height: 1.4;
 }
 
+.nav-divider {
+  flex: 0 0 1px;
+  width: calc(100% - 24px);
+  height: 1px;
+  margin: 4px 12px;
+  border: 0;
+  background: rgb(255 255 255 / 22%);
+}
+
 .nav-link {
   min-height: 39px;
   padding: 0 12px;
@@ -4831,4 +4840,30 @@ body {
   .layout-shell .sidebar-foot {
     display: flex;
   }
+}
+
+.sidebar-toggle {
+  position: relative;
+  z-index: 1301;
+  display: grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 7px;
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.sidebar-toggle:hover {
+  background: rgb(255 255 255 / 22%);
+}
+
+.sidebar-toggle:focus-visible {
+  outline: 2px solid #b9f3d4;
+  outline-offset: 2px;
 }

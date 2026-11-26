@@ -635,6 +635,27 @@ export default function DashboardLayout({ user, onLogout }) {
     const sidebarVisible = isCompactViewport
         ? mobileSidebarOpen
         : !sidebarHidden;
+    const sidebarToggleButton = (
+        <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={toggleSidebar}
+            aria-controls="sidebar"
+            aria-expanded={sidebarVisible}
+            aria-label={
+                !sidebarVisible
+                    ? 'Tampilkan sidebar'
+                    : 'Sembunyikan sidebar'
+            }
+            title={
+                !sidebarVisible
+                    ? 'Tampilkan sidebar'
+                    : 'Sembunyikan sidebar'
+            }
+        >
+            {!sidebarVisible ? '☰' : '☷'}
+        </button>
+    );
 
     return (
         <div
@@ -713,6 +734,7 @@ export default function DashboardLayout({ user, onLogout }) {
                                     <span>Budget</span>
                                 </NavLink>
 
+                                <hr className="nav-divider" aria-hidden="true" />
                                 <span className="nav-section-label">MINGGUAN</span>
 
                                 <NavLink
@@ -739,6 +761,7 @@ export default function DashboardLayout({ user, onLogout }) {
                                     <span>Complain</span>
                                 </NavLink>
 
+                                <hr className="nav-divider" aria-hidden="true" />
                                 <NavLink
                                     className={classForNav}
                                     to="/bulanan"
@@ -755,6 +778,7 @@ export default function DashboardLayout({ user, onLogout }) {
                                     <span>Tahunan</span>
                                 </NavLink>
 
+                                <hr className="nav-divider" aria-hidden="true" />
                                 <span className="nav-section-label">KERJA SAMA</span>
 
                                 <div
@@ -783,6 +807,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
                                 {user.role === 'admin' && (
                                     <>
+                                        <hr className="nav-divider" aria-hidden="true" />
                                         <span className="nav-section-label">PENGELOLAAN</span>
                                         <NavLink className={classForNav} to="/pengguna">
                                             <span className="nav-ico" aria-hidden="true">♙</span>
@@ -820,25 +845,7 @@ export default function DashboardLayout({ user, onLogout }) {
             <main className={`app-shell${isWeeklyVolume ? ' weekly-volume-shell' : ''}${isYearly ? ' yearly-shell' : ''}${isMonthly ? ' monthly-shell' : ''}${isHome ? ' home-shell' : ''}${isBudget ? ' budget-shell' : ''}${isUsers ? ' users-shell' : ''}${isCooperation ? ' cooperation-shell' : ''}${isAveragePrice && user?.role === 'user' ? ' average-price-user-shell' : ''}`}>
                 <header className="topbar">
                     <div className="topbar-brand">
-                        <button
-                            type="button"
-                            className="sidebar-toggle"
-                            onClick={toggleSidebar}
-                            aria-controls="sidebar"
-                            aria-expanded={sidebarVisible}
-                            aria-label={
-                                !sidebarVisible
-                                    ? 'Tampilkan sidebar'
-                                    : 'Sembunyikan sidebar'
-                            }
-                            title={
-                                !sidebarVisible
-                                    ? 'Tampilkan sidebar'
-                                    : 'Sembunyikan sidebar'
-                            }
-                        >
-                            {!sidebarVisible ? '☰' : '☷'}
-                        </button>
+                        {(!isCompactViewport || !mobileSidebarOpen) && sidebarToggleButton}
 
                         <div
                             className="topbar-logo"
