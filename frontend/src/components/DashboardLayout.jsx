@@ -626,6 +626,11 @@ export default function DashboardLayout({ user, onLogout }) {
         });
     }
 
+    function openUsersPage() {
+        setMobileSidebarOpen(false);
+        navigate('/pengguna');
+    }
+
     function closeMobileSidebarAfterNavigation(event) {
         if (isCompactViewport && event.target.closest('a')) {
             setMobileSidebarOpen(false);
@@ -803,31 +808,39 @@ export default function DashboardLayout({ user, onLogout }) {
                                         Masa berlaku
                                     </NavLink>
                                 </div>
-
-
-                                {user.role === 'admin' && (
-                                    <>
-                                        <hr className="nav-divider" aria-hidden="true" />
-                                        <span className="nav-section-label">PENGELOLAAN</span>
-                                        <NavLink className={classForNav} to="/pengguna">
-                                            <span className="nav-ico" aria-hidden="true">♙</span>
-                                            <span>Pengguna</span>
-                                        </NavLink>
-                                    </>
-                                )}
                             </>
                         )}
 
                     </nav>
 
                     <div className="sidebar-foot">
-                        <div className="sidebar-user-avatar" aria-hidden="true">
-                            {(user?.name || user?.username || 'A').charAt(0).toUpperCase()}
-                        </div>
-                        <div className="sidebar-user-details">
-                            <strong>{user?.name || user?.username || 'Pengunjung'}</strong>
-                            <span>{user?.role === 'admin' ? 'Administrator' : user?.role === 'user' ? 'User' : 'Guest'}</span>
-                        </div>
+                        {user?.role === 'admin' ? (
+                            <button
+                                className="sidebar-profile-button"
+                                type="button"
+                                onClick={openUsersPage}
+                                aria-label="Buka halaman Pengguna"
+                                title="Buka halaman Pengguna"
+                            >
+                                <span className="sidebar-user-avatar" aria-hidden="true">
+                                    {(user?.name || user?.username || 'A').charAt(0).toUpperCase()}
+                                </span>
+                                <span className="sidebar-user-details">
+                                    <strong>{user?.name || user?.username || 'Pengunjung'}</strong>
+                                    <span>Administrator</span>
+                                </span>
+                            </button>
+                        ) : (
+                            <div className="sidebar-profile-button">
+                                <span className="sidebar-user-avatar" aria-hidden="true">
+                                    {(user?.name || user?.username || 'A').charAt(0).toUpperCase()}
+                                </span>
+                                <span className="sidebar-user-details">
+                                    <strong>{user?.name || user?.username || 'Pengunjung'}</strong>
+                                    <span>{user?.role === 'user' ? 'User' : 'Guest'}</span>
+                                </span>
+                            </div>
+                        )}
                         <button
                             className="sidebar-logout"
                             type="button"
