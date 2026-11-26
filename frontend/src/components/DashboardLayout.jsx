@@ -12,6 +12,9 @@ import logoImage from '../assets/reethau.png';
 const classForNav = ({ isActive }) =>
     `nav-link${isActive ? ' active' : ''}`;
 
+const classForCompactNav = ({ isActive }) =>
+    `nav-link nav-link-compact${isActive ? ' active' : ''}`;
+
 const AUTO_REFRESH_INTERVAL_MS = 310_000;
 
 function NavigationIcon({ name }) {
@@ -58,6 +61,26 @@ function NavigationIcon({ name }) {
                 <rect x="14" y="13" width="3" height="3" rx=".5" />
             </>
         ),
+        volume: (
+            <>
+                <path d="M4 20h16" />
+                <rect x="5" y="12" width="3" height="8" rx=".5" />
+                <rect x="10.5" y="8" width="3" height="12" rx=".5" />
+                <rect x="16" y="4" width="3" height="16" rx=".5" />
+            </>
+        ),
+        averagePrice: (
+            <>
+                <circle cx="12" cy="12" r="9" />
+                <path d="M15.5 8.5c-.7-.7-1.6-1-2.8-1-1.5 0-2.5.8-2.5 1.8 0 2.8 5.2 1.2 5.2 4.2 0 1.2-1.1 2.1-2.8 2.1-1.2 0-2.2-.4-3-1.1M12 5.5v13" />
+            </>
+        ),
+        complain: (
+            <>
+                <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H7l-3 2v-5.3A7.5 7.5 0 1 1 20 11.5Z" />
+                <path d="M12.5 8v4m0 3h.01" />
+            </>
+        ),
         monthly: (
             <>
                 <rect x="3.5" y="5" width="17" height="16" rx="2" />
@@ -74,6 +97,20 @@ function NavigationIcon({ name }) {
             <>
                 <rect x="3.5" y="5" width="17" height="15" rx="2" />
                 <path d="M8 5V3m8 2V3M3.5 10h17M8 14l2.2 2.2L16 11" />
+            </>
+        ),
+        cooperationList: (
+            <>
+                <rect x="4" y="3.5" width="16" height="17" rx="2" />
+                <path d="M8 8h8M8 12h8m-8 4h5" />
+            </>
+        ),
+        validity: (
+            <>
+                <rect x="3.5" y="5" width="17" height="16" rx="2" />
+                <path d="M8 3v4m8-4v4M3.5 10h17" />
+                <circle cx="14.5" cy="15.5" r="3.2" />
+                <path d="M14.5 13.9v1.8l1.2.7" />
             </>
         ),
     };
@@ -119,7 +156,6 @@ export default function DashboardLayout({ user, onLogout }) {
     const navigate = useNavigate();
 
     const isDaily = location.pathname === '/harian';
-    const isWeekly = location.pathname.startsWith('/mingguan');
     const isWeeklyVolume = location.pathname === '/mingguan/volume';
     const isAveragePrice = location.pathname === '/mingguan/average-price';
     const isYearly = location.pathname === '/tahunan';
@@ -137,8 +173,6 @@ export default function DashboardLayout({ user, onLogout }) {
         useState(readSidebarPreference);
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-    const [weeklyOpen, setWeeklyOpen] = useState(isWeekly);
-    const [cooperationOpen, setCooperationOpen] = useState(isCooperation);
     const [dates, setDates] = useState([]);
     const [latestActualDate, setLatestActualDate] = useState('');
     const [selectedDate, setSelectedDate] = useState('');
@@ -152,16 +186,6 @@ export default function DashboardLayout({ user, onLogout }) {
     const [dataError, setDataError] = useState('');
     const [loadingDates, setLoadingDates] = useState(true);
     const [loggingOut, setLoggingOut] = useState(false);
-
-    // Memastikan submenu Mingguan terbuka ketika pengguna
-    // berpindah ke halaman Volume, Average Price, atau Complain.
-    useEffect(() => {
-        if (isWeekly) setWeeklyOpen(true);
-    }, [isWeekly]);
-
-    useEffect(() => {
-        if (isCooperation) setCooperationOpen(true);
-    }, [isCooperation]);
 
     useEffect(() => {
         const mediaQuery = window.matchMedia('(max-width: 1024px)');
@@ -663,6 +687,8 @@ export default function DashboardLayout({ user, onLogout }) {
 
                         {canViewAllFeatures && (
                             <>
+                                <span className="nav-section-label">MONITORING KOMERSIAL</span>
+
                                 <NavLink
                                     className={classForNav}
                                     to="/harian"
@@ -687,97 +713,31 @@ export default function DashboardLayout({ user, onLogout }) {
                                     <span>Budget</span>
                                 </NavLink>
 
-                                <button
-                                    className={`nav-link${isCooperation ? ' active' : ''}`}
-                                    type="button"
-                                    aria-expanded={cooperationOpen}
-                                    aria-controls="cooperationSubmenu"
-                                    onClick={() => setCooperationOpen((open) => !open)}
-                                >
-                                    <NavigationIcon name="cooperation" />
-                                    <span>Kerja sama</span>
-                                    <span className="nav-chevron">
-                                        {cooperationOpen ? '⌃' : '⌄'}
-                                    </span>
-                                </button>
-                                <div
-                                    className={`nav-submenu${cooperationOpen ? '' : ' collapsed'}`}
-                                    id="cooperationSubmenu"
-                                >
-                                    {user.role === 'admin' && (
-                                        <NavLink
-                                            className={({ isActive }) =>
-                                                `nav-sublink${isActive ? ' active' : ''}`
-                                            }
-                                            to="/kerja-sama"
-                                            end
-                                        >
-                                            Daftar kerja sama
-                                        </NavLink>
-                                    )}
-                                    <NavLink
-                                        className={({ isActive }) =>
-                                            `nav-sublink${isActive ? ' active' : ''}`
-                                        }
-                                        to="/kerja-sama/masa-berlaku"
-                                    >
-                                        Masa berlaku
-                                    </NavLink>
-                                </div>
+                                <span className="nav-section-label">MINGGUAN</span>
 
-                                <button
-                                    className={
-                                        `nav-link${isWeekly ? ' active' : ''}`
-                                    }
-                                    type="button"
-                                    aria-expanded={weeklyOpen}
-                                    aria-controls="weeklySubmenu"
-                                    onClick={() =>
-                                        setWeeklyOpen((open) => !open)
-                                    }
+                                <NavLink
+                                    className={classForCompactNav}
+                                    to="/mingguan/volume"
                                 >
-                                    <NavigationIcon name="weekly" />
-                                    <span>Mingguan</span>
-                                    <span className="nav-chevron">
-                                        {weeklyOpen ? '⌃' : '⌄'}
-                                    </span>
-                                </button>
+                                    <NavigationIcon name="volume" />
+                                    <span>Volume</span>
+                                </NavLink>
 
-                                <div
-                                    className={
-                                        `nav-submenu${weeklyOpen ? '' : ' collapsed'}`
-                                    }
-                                    id="weeklySubmenu"
+                                <NavLink
+                                    className={classForCompactNav}
+                                    to="/mingguan/average-price"
                                 >
-                                    <NavLink
-                                        className={({ isActive }) =>
-                                            `nav-sublink${isActive ? ' active' : ''}`
-                                        }
-                                        to="/mingguan/volume"
-                                    >
-                                        Volume
-                                    </NavLink>
+                                    <NavigationIcon name="averagePrice" />
+                                    <span>Average Price</span>
+                                </NavLink>
 
-                                    {canViewAllFeatures && (
-                                        <NavLink
-                                            className={({ isActive }) =>
-                                                `nav-sublink${isActive ? ' active' : ''}`
-                                            }
-                                            to="/mingguan/average-price"
-                                        >
-                                            Average Price
-                                        </NavLink>
-                                    )}
-
-                                    <NavLink
-                                        className={({ isActive }) =>
-                                            `nav-sublink${isActive ? ' active' : ''}`
-                                        }
-                                        to="/mingguan/complain"
-                                    >
-                                        Complain
-                                    </NavLink>
-                                </div>
+                                <NavLink
+                                    className={classForCompactNav}
+                                    to="/mingguan/complain"
+                                >
+                                    <NavigationIcon name="complain" />
+                                    <span>Complain</span>
+                                </NavLink>
 
                                 <NavLink
                                     className={classForNav}
@@ -795,16 +755,65 @@ export default function DashboardLayout({ user, onLogout }) {
                                     <span>Tahunan</span>
                                 </NavLink>
 
-                                {user.role === 'admin' && (
-                                    <NavLink className={classForNav} to="/pengguna">
-                                        <span className="nav-ico" aria-hidden="true">♙</span>
-                                        <span>Pengguna</span>
+                                <span className="nav-section-label">KERJA SAMA</span>
+
+                                <div
+                                    className="nav-submenu cooperation-submenu"
+                                    id="cooperationSubmenu"
+                                >
+                                    {user.role === 'admin' && (
+                                        <NavLink
+                                            className={classForCompactNav}
+                                            to="/kerja-sama"
+                                            end
+                                        >
+                                            <NavigationIcon name="cooperationList" />
+                                            Daftar kerja sama
+                                        </NavLink>
+                                    )}
+                                    <NavLink
+                                        className={classForCompactNav}
+                                        to="/kerja-sama/masa-berlaku"
+                                    >
+                                        <NavigationIcon name="validity" />
+                                        Masa berlaku
                                     </NavLink>
+                                </div>
+
+
+                                {user.role === 'admin' && (
+                                    <>
+                                        <span className="nav-section-label">PENGELOLAAN</span>
+                                        <NavLink className={classForNav} to="/pengguna">
+                                            <span className="nav-ico" aria-hidden="true">♙</span>
+                                            <span>Pengguna</span>
+                                        </NavLink>
+                                    </>
                                 )}
                             </>
                         )}
 
                     </nav>
+
+                    <div className="sidebar-foot">
+                        <div className="sidebar-user-avatar" aria-hidden="true">
+                            {(user?.name || user?.username || 'A').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="sidebar-user-details">
+                            <strong>{user?.name || user?.username || 'Pengunjung'}</strong>
+                            <span>{user?.role === 'admin' ? 'Administrator' : user?.role === 'user' ? 'User' : 'Guest'}</span>
+                        </div>
+                        <button
+                            className="sidebar-logout"
+                            type="button"
+                            aria-label={hasAuthenticatedUser ? 'Keluar dari aplikasi' : 'Login Admin atau User'}
+                            title={hasAuthenticatedUser ? 'Keluar dari aplikasi' : 'Login Admin atau User'}
+                            disabled={loggingOut}
+                            onClick={hasAuthenticatedUser ? logout : () => navigate('/login')}
+                        >
+                            <span aria-hidden="true">↪</span>
+                        </button>
+                    </div>
 
             </aside>
 
@@ -941,26 +950,6 @@ export default function DashboardLayout({ user, onLogout }) {
                         </div>
                         )}
 
-                        <button
-                            className="topbar-profile"
-                            type="button"
-                            aria-label={hasAuthenticatedUser ? 'Keluar dari aplikasi' : 'Login Admin atau User'}
-                            title={
-                                !hasAuthenticatedUser
-                                    ? 'Login Admin atau User'
-                                    : loggingOut
-                                    ? 'Sedang keluar...'
-                                    : `Keluar: ${
-                                        user?.name ||
-                                        user?.username ||
-                                        'Pengguna'
-                                    }`
-                            }
-                            disabled={loggingOut}
-                            onClick={hasAuthenticatedUser ? logout : () => navigate('/login')}
-                        >
-                            <span aria-hidden="true">👤</span>
-                        </button>
                     </div>
                 </header>
 
