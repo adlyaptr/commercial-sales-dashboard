@@ -320,7 +320,7 @@ function ExpiryDashboard({ contracts, loading }) {
                                 <div className="cooperation-bar-column" key={month.key}>
                                     <strong>{month.value}</strong>
                                     <div className="cooperation-bar-track">
-                                        <span style={{ height: `${month.value ? Math.max((month.value / maxMonthCount) * 92, 8) : 3}px` }} />
+                                        <span style={{ height: `${month.value ? Math.max((month.value / maxMonthCount) * 92, 8) : 3}%` }} />
                                     </div>
                                     <small>{month.label}</small>
                                 </div>

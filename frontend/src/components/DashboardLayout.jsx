@@ -164,6 +164,7 @@ export default function DashboardLayout({ user, onLogout }) {
     const isHome = location.pathname === '/beranda';
     const isUsers = location.pathname === '/pengguna';
     const isCooperation = location.pathname.startsWith('/kerja-sama');
+    const isCooperationExpiry = location.pathname === '/kerja-sama/masa-berlaku';
     const canViewAllFeatures = user?.role === 'admin' || user?.role === 'user';
     const hasAuthenticatedUser = canViewAllFeatures;
     const [isCompactViewport, setIsCompactViewport] = useState(
@@ -855,7 +856,7 @@ export default function DashboardLayout({ user, onLogout }) {
 
             </aside>
 
-            <main className={`app-shell${isWeeklyVolume ? ' weekly-volume-shell' : ''}${isYearly ? ' yearly-shell' : ''}${isMonthly ? ' monthly-shell' : ''}${isHome ? ' home-shell' : ''}${isBudget ? ' budget-shell' : ''}${isUsers ? ' users-shell' : ''}${isCooperation ? ' cooperation-shell' : ''}${isAveragePrice && user?.role === 'user' ? ' average-price-user-shell' : ''}`}>
+            <main className={`app-shell${isWeeklyVolume ? ' weekly-volume-shell' : ''}${isYearly ? ' yearly-shell' : ''}${isMonthly ? ' monthly-shell' : ''}${isHome ? ' home-shell' : ''}${isBudget ? ' budget-shell' : ''}${isUsers ? ' users-shell' : ''}${isCooperation ? ' cooperation-shell' : ''}${isCooperationExpiry ? ' cooperation-expiry-shell' : ''}${isAveragePrice && user?.role === 'user' ? ' average-price-user-shell' : ''}`}>
                 <header className="topbar">
                     <div className="topbar-brand">
                         {(!isCompactViewport || !mobileSidebarOpen) && sidebarToggleButton}
