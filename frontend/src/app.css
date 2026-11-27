@@ -2100,11 +2100,11 @@ textarea:focus-visible, a:focus-visible {
 }
 
 .monthly-legend .legend-so {
-  background: #1777d1;
+  background: linear-gradient(180deg, #10b981 0%, #064e3b 100%);
 }
 
 .monthly-legend .legend-actual {
-  background: #f0a43a;
+  background: linear-gradient(180deg, #d9f99d 0%, #4d7c0f 100%);
 }
 
 /* Bar chart */
@@ -2184,11 +2184,11 @@ textarea:focus-visible, a:focus-visible {
 }
 
 .monthly-pair .bar-so {
-  background: linear-gradient(180deg, #4ba0e8, #1777d1);
+  background: linear-gradient(180deg, #10b981 0%, #064e3b 100%);
 }
 
 .monthly-pair .bar-actual {
-  background: linear-gradient(180deg, #f7c36f, #f0a43a);
+  background: linear-gradient(180deg, #d9f99d 0%, #4d7c0f 100%);
 }
 
 .monthly-bar-group > small {
