@@ -3222,7 +3222,10 @@ def _sph_generate_proposal_pdf(proposal, inline=False):
                 Table(
                     [
                         [Paragraph("Approval Penawaran", styles["SphApprovalHeader"])],
-                        [Paragraph("PT Green Pulse Dynamics", styles["SphApprovalHeader"])],
+                        [Paragraph(
+                            safe(proposal["customerName"]),
+                            styles["SphApprovalHeader"],
+                        )],
                         [""],
                         [Paragraph("Direktur/Manajer", styles["SphApprovalText"])],
                     ],

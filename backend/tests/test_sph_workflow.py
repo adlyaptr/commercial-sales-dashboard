@@ -880,11 +880,15 @@ class SphWorkflowTests(unittest.TestCase):
         self.database.row.update({
             "addressLine1": "Jalan Akses Tol Cibitung No.82, Gandasari,",
             "addressLine2": "Kecamatan Cikarang Barat, Kabupaten Bekasi, Jawa Barat 17530",
+            "customerName": "PT Nama Pelanggan Dibuat",
         })
         paragraph_texts = []
+        approval_header_texts = []
 
         def capture_paragraph(text, style=None, bulletText=None, *args, **kwargs):
             paragraph_texts.append(text)
+            if style and style.name == "SphApprovalHeader":
+                approval_header_texts.append(text)
             return Paragraph(text, style, bulletText, *args, **kwargs)
 
         with patch("reportlab.platypus.Paragraph", side_effect=capture_paragraph):
@@ -896,8 +900,10 @@ class SphWorkflowTests(unittest.TestCase):
             paragraph_texts,
         )
         self.assertIn("Masa kontrak 2 (Dua) tahun.", paragraph_texts)
-        self.assertIn("Approval Penawaran", paragraph_texts)
-        self.assertIn("PT Green Pulse Dynamics", paragraph_texts)
+        self.assertEqual(
+            approval_header_texts,
+            ["Approval Penawaran", "PT Nama Pelanggan Dibuat"],
+        )
         self.assertIn(
             "<u><b>Sahrul Astrurrachman</b></u><br/>"
             "<i>Commercial &amp; Marketing Head</i>",
