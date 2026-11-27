@@ -4,6 +4,7 @@ import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Toolt
 import { Link, useOutletContext } from 'react-router-dom';
 import { api } from '../api';
 import SectionIcon from '../components/SectionIcon';
+import { greenBarGradient } from '../utils/chartColors';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -239,8 +240,8 @@ export default function HomePage() {
         return {
             labels: operators,
             datasets: [
-                { label: 'SO', data: operators.map((operator) => operatorTotals[operator]?.so ?? 0), backgroundColor: '#1777d1', borderRadius: 3, maxBarThickness: 32 },
-                { label: 'Actual', data: operators.map((operator) => operatorTotals[operator]?.actual ?? 0), backgroundColor: '#f0a43a', borderRadius: 3, maxBarThickness: 32 },
+                { label: 'SO', data: operators.map((operator) => operatorTotals[operator]?.so ?? 0), backgroundColor: (context) => greenBarGradient(context, '#064e3b', '#10b981'), borderRadius: 3, maxBarThickness: 32 },
+                { label: 'Actual', data: operators.map((operator) => operatorTotals[operator]?.actual ?? 0), backgroundColor: (context) => greenBarGradient(context, '#4d7c0f', '#d9f99d'), borderRadius: 3, maxBarThickness: 32 },
             ],
         };
     }, [summary]);

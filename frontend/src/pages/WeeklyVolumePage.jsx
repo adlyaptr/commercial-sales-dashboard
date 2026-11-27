@@ -3,6 +3,7 @@ import { Bar, Line } from 'react-chartjs-2';
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, LineElement, PointElement, Tooltip } from 'chart.js';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
+import { greenBarGradient } from '../utils/chartColors';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend);
 
@@ -85,16 +86,16 @@ export default function WeeklyVolumePage() {
     const comparisonData = {
         labels: operatorTotals.map((item) => item.operator),
         datasets: [
-            { label: 'SO', data: operatorTotals.map((item) => item.so), backgroundColor: '#1777d1', borderRadius: 3, maxBarThickness: 32 },
-            { label: 'Actual', data: operatorTotals.map((item) => item.actual), backgroundColor: '#f0a43a', borderRadius: 3, maxBarThickness: 32 },
+            { label: 'SO', data: operatorTotals.map((item) => item.so), backgroundColor: (context) => greenBarGradient(context, '#064e3b', '#10b981'), borderRadius: 3, maxBarThickness: 32 },
+            { label: 'Actual', data: operatorTotals.map((item) => item.actual), backgroundColor: (context) => greenBarGradient(context, '#4d7c0f', '#d9f99d'), borderRadius: 3, maxBarThickness: 32 },
         ],
     };
     const totalComparisonData = {
         labels: ['TOTAL'],
         datasets: [
-            { label: 'Target', data: [totals.target], backgroundColor: '#18a979', borderRadius: 3, maxBarThickness: 55 },
-            { label: 'SO', data: [totals.so], backgroundColor: '#1777d1', borderRadius: 3, maxBarThickness: 55 },
-            { label: 'Actual', data: [totals.actual], backgroundColor: '#e64b59', borderRadius: 3, maxBarThickness: 65 },
+            { label: 'Target', data: [totals.target], backgroundColor: (context) => greenBarGradient(context, '#0f766e', '#5eead4'), borderRadius: 3, maxBarThickness: 55 },
+            { label: 'SO', data: [totals.so], backgroundColor: (context) => greenBarGradient(context, '#064e3b', '#10b981'), borderRadius: 3, maxBarThickness: 55 },
+            { label: 'Actual', data: [totals.actual], backgroundColor: (context) => greenBarGradient(context, '#4d7c0f', '#d9f99d'), borderRadius: 3, maxBarThickness: 65 },
         ],
     };
     const trendData = {
