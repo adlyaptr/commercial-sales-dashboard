@@ -327,65 +327,44 @@ function ExpiryDashboard({ contracts, loading }) {
                             ))}
                         </div>
                     </section>
-                    <section className="cooperation-panel cooperation-status-panel">
+                    <section className="cooperation-panel cooperation-monthly-details">
                         <div className="cooperation-panel-heading">
-                            <h2>Komposisi status</h2>
-                            <span>{counts.all} kontrak</span>
+                            <h2>Rincian dokumen berakhir per bulan</h2>
+                            <span>Pilih bulan untuk melihat dokumennya</span>
                         </div>
-                        <div className="cooperation-legend cooperation-status-summary">
-                            {[
-                                ['active', 'Aktif', counts.active],
-                                ['ended', 'Berakhir', counts.ended],
-                                ['undated', 'Tanggal akhir kosong', counts.undated],
-                            ].map(([tone, label, value]) => (
-                                <div key={tone}>
-                                    <i className={tone} />
-                                    <span>{label}</span>
-                                    <strong>{value}</strong>
-                                </div>
+                        <div className="cooperation-month-breakdown">
+                            {months.map((month, index) => (
+                                <details
+                                    className="cooperation-month-detail"
+                                    key={month.key}
+                                    open={index === 0 && month.value > 0}
+                                >
+                                    <summary>
+                                        <strong>{month.detailLabel}</strong>
+                                        <span>{month.value} dokumen</span>
+                                    </summary>
+                                    {month.value ? (
+                                        <div className="cooperation-attention-list">
+                                            {month.contracts.map((contract) => (
+                                                <article key={contract.id}>
+                                                    <div>
+                                                        <strong>{contract.customer || contract.code || 'Customer tidak tercatat'}</strong>
+                                                        <small>{contract.agreement_number || contract.code || 'Nomor perjanjian tidak tercatat'}</small>
+                                                    </div>
+                                                    <span className="cooperation-month-contract-date">
+                                                        {contract.end_of_contract || contract.end_contract_date}
+                                                    </span>
+                                                </article>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="cooperation-month-empty">Tidak ada dokumen yang berakhir pada bulan ini.</p>
+                                    )}
+                                </details>
                             ))}
                         </div>
                     </section>
                 </div>
-            )}
-            {!loading && contracts.length > 0 && (
-                <section className="cooperation-panel cooperation-monthly-details">
-                    <div className="cooperation-panel-heading">
-                        <h2>Rincian dokumen berakhir per bulan</h2>
-                        <span>Pilih bulan untuk melihat dokumennya</span>
-                    </div>
-                    <div className="cooperation-month-breakdown">
-                        {months.map((month, index) => (
-                            <details
-                                className="cooperation-month-detail"
-                                key={month.key}
-                                open={index === 0 && month.value > 0}
-                            >
-                                <summary>
-                                    <strong>{month.detailLabel}</strong>
-                                    <span>{month.value} dokumen</span>
-                                </summary>
-                                {month.value ? (
-                                    <div className="cooperation-attention-list">
-                                        {month.contracts.map((contract) => (
-                                            <article key={contract.id}>
-                                                <div>
-                                                    <strong>{contract.customer || contract.code || 'Customer tidak tercatat'}</strong>
-                                                    <small>{contract.agreement_number || contract.code || 'Nomor perjanjian tidak tercatat'}</small>
-                                                </div>
-                                                <span className="cooperation-month-contract-date">
-                                                    {contract.end_of_contract || contract.end_contract_date}
-                                                </span>
-                                            </article>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="cooperation-month-empty">Tidak ada dokumen yang berakhir pada bulan ini.</p>
-                                )}
-                            </details>
-                        ))}
-                    </div>
-                </section>
             )}
         </section>
     );
