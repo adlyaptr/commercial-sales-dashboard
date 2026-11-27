@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import sys
 import unittest
@@ -61,6 +62,7 @@ class MemorySphDatabase:
             "advantages": "",
             "otherTerms": "",
             "preparation": "",
+            "offerDetails": "",
             "reethauObligations": "",
             "customerObligations": "",
             "approvals": "[]",
@@ -105,6 +107,13 @@ class MemorySphDatabase:
             return SimpleNamespace(fetchall=lambda: list(reversed(self.logs)))
         if statement.startswith("INSERT INTO sph_customers"):
             return SimpleNamespace(rowcount=1)
+        if statement.startswith("INSERT INTO sph_proposals("):
+            if statement.count("%s") != len(parameters):
+                raise AssertionError("SPH proposal insert placeholder mismatch")
+            self.row["number"] = parameters[0]
+            self.row["status"] = "draft"
+            self.row["offerDetails"] = parameters[-1]
+            return SimpleNamespace(lastrowid=7)
         if statement.startswith("UPDATE sph_proposals SET proposal_number=%s"):
             if self.row["status"] == "active":
                 return SimpleNamespace(rowcount=0)
@@ -136,6 +145,7 @@ class MemorySphDatabase:
             self.row["templateKey"] = parameters[26]
             self.row["version"] += parameters[27]
             self.row["updatedAt"] = parameters[28]
+            self.row["offerDetails"] = parameters[29]
             self.row["status"] = "draft"
             self.row["approvals"] = "[]"
             self.row["approvedAt"] = None
@@ -386,6 +396,40 @@ class SphWorkflowTests(unittest.TestCase):
             main._sph_validate_proposal(proposal)
         self.assertEqual(error.exception.status_code, 400)
 
+    def test_create_proposal_persists_edited_offer_details(self):
+        offer_details = json.dumps([
+            {
+                "id": item_id,
+                "checked": True,
+                "text": "Poin penawaran yang telah diedit." if index == 0 else None,
+            }
+            for index, item_id in enumerate(main.SPH_OFFER_DETAIL_IDS)
+        ])
+        proposal = {
+            "proposalNumber": "SPH-2026-11-MKT-010",
+            "customerName": "Customer A",
+            "proposalDate": "2026-11-06",
+            "volumeMin": 100,
+            "volumeMax": 200,
+            "priceUsd": 14.5,
+            "topPercent": 90,
+            "guarantee": "Cash Deposit",
+            "dueDay": 20,
+            "contractDuration": 2,
+            "contractDurationUnit": "year",
+            "offerDetails": offer_details,
+        }
+
+        created = asyncio.run(main.sph_create_proposal(
+            SphRequest("admin", proposal),
+        ))
+
+        self.assertEqual(created["status"], "draft")
+        self.assertEqual(
+            json.loads(created["offerDetails"])[0]["text"],
+            "Poin penawaran yang telah diedit.",
+        )
+
     def test_existing_commercial_head_approval_is_not_replaced_by_admin(self):
         self.database.row["approvals"] = '["commercial_head"]'
         admin_request = SphRequest("admin", {"action": "approve_as_admin"})
@@ -432,6 +476,14 @@ class SphWorkflowTests(unittest.TestCase):
             "advantages": "Pasokan dan layanan monitoring.",
             "otherTerms": "Evaluasi setiap tahun.",
             "preparation": "30 hari setelah penawaran disetujui.",
+            "offerDetails": json.dumps([
+                {
+                    "id": item_id,
+                    "checked": index != 1,
+                    "text": "Durasi yang sudah diedit." if index == 0 else None,
+                }
+                for index, item_id in enumerate(main.SPH_OFFER_DETAIL_IDS)
+            ]),
             "reethauObligations": "New obligations",
             "customerObligations": "",
         }
@@ -450,6 +502,10 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertEqual(updated["contractDuration"], 45)
         self.assertEqual(updated["contractDurationUnit"], "day")
         self.assertEqual(updated["durationDetails"], "Evaluasi supply setiap tahun.")
+        self.assertEqual(
+            json.loads(updated["offerDetails"])[0]["text"],
+            "Durasi yang sudah diedit.",
+        )
         self.assertEqual(updated["attentionTo"], "Bapak Setiadi")
         self.assertEqual(updated["motherStation"], "Wunut - Sidoarjo, Jawa Timur")
         self.assertEqual(updated["plantName"], "Plant Gresik")
@@ -784,8 +840,21 @@ class SphWorkflowTests(unittest.TestCase):
             "exchangeClause": False,
             "reethauObligations": "Mengirim CNG.",
             "customerObligations": "Menyediakan area.",
+            "offerDetails": json.dumps([
+                {
+                    "id": item_id,
+                    "checked": True,
+                    "text": "Poin pratinjau yang telah diedit." if index == 0 else None,
+                }
+                for index, item_id in enumerate(main.SPH_OFFER_DETAIL_IDS)
+            ]),
         })
-        response = asyncio.run(main.sph_proposal_pdf_preview(request))
+        with patch.object(
+            main,
+            "_sph_generate_proposal_pdf",
+            wraps=main._sph_generate_proposal_pdf,
+        ) as generate_pdf:
+            response = asyncio.run(main.sph_proposal_pdf_preview(request))
 
         async def read_response():
             return b"".join([chunk async for chunk in response.body_iterator])
@@ -797,6 +866,10 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertEqual(
             main._sph_validate_proposal(request.payload)["template_key"],
             "term_description",
+        )
+        self.assertEqual(
+            json.loads(generate_pdf.call_args.args[0]["offerDetails"])[0]["text"],
+            "Poin pratinjau yang telah diedit.",
         )
         self.assertEqual(self.database.row, original_row)
         self.assertEqual(self.database.logs, original_logs)
@@ -829,6 +902,54 @@ class SphWorkflowTests(unittest.TestCase):
             "<u><b>Admin</b></u>",
             paragraph_texts,
         )
+
+    def test_sph_pdf_uses_checked_and_edited_offer_details(self):
+        from reportlab.platypus import Paragraph
+
+        self.database.row["offerDetails"] = json.dumps([
+            {
+                "id": item_id,
+                "checked": index in {0, 2},
+                "text": (
+                    "Masa kontrak yang telah disesuaikan."
+                    if index == 0
+                    else None
+                ),
+            }
+            for index, item_id in enumerate(main.SPH_OFFER_DETAIL_IDS)
+        ])
+        detail_items = []
+
+        def capture_paragraph(text, style=None, bulletText=None, *args, **kwargs):
+            if bulletText is not None and style.name == "SphListB":
+                detail_items.append((bulletText, text))
+            return Paragraph(text, style, bulletText, *args, **kwargs)
+
+        with patch("reportlab.platypus.Paragraph", side_effect=capture_paragraph):
+            main.sph_proposal_pdf(7, SphRequest("admin"))
+
+        self.assertEqual(detail_items, [
+            ("1.", "Masa kontrak yang telah disesuaikan."),
+            (
+                "2.",
+                "Perhitungan pemakaian CNG menggunakan metering milik "
+                "PT Reethau Cipta Energi.",
+            ),
+        ])
+
+    def test_sph_offer_details_validation_requires_nine_valid_items(self):
+        valid_items = [
+            {"id": item_id, "checked": True, "text": None}
+            for item_id in main.SPH_OFFER_DETAIL_IDS
+        ]
+        self.assertEqual(
+            json.loads(main._sph_validate_offer_details(json.dumps(valid_items))),
+            valid_items,
+        )
+
+        with self.assertRaises(main.HTTPException) as error:
+            main._sph_validate_offer_details("[]")
+        self.assertEqual(error.exception.status_code, 400)
 
     def test_term_description_pdf_uses_the_selected_templates_structure_and_data(self):
         from reportlab.platypus import Paragraph

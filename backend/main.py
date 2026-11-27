@@ -2112,6 +2112,17 @@ SPH_GUARANTEES = {
 }
 SPH_TEMPLATES = {"standard", "term_description"}
 SPH_DURATION_UNITS = {"year": "tahun", "day": "hari"}
+SPH_OFFER_DETAIL_IDS = (
+    "contract_duration",
+    "supply_guarantee",
+    "metering",
+    "calorific_conversion",
+    "payment_guarantee",
+    "take_or_pay",
+    "payment_due",
+    "gas_source",
+    "price_escalation",
+)
 SPH_YEAR_WORDS = {
     1: "Satu", 2: "Dua", 3: "Tiga", 4: "Empat", 5: "Lima",
     6: "Enam", 7: "Tujuh", 8: "Delapan", 9: "Sembilan",
@@ -2127,6 +2138,27 @@ def _sph_contract_duration_label(proposal):
     if unit == "year" and duration in SPH_YEAR_WORDS:
         return f"{duration} ({SPH_YEAR_WORDS[duration]}) tahun"
     return f"{duration} {SPH_DURATION_UNITS.get(unit, 'tahun')}"
+
+
+def _sph_default_offer_detail_texts(proposal):
+    return [
+        f"Masa kontrak {_sph_contract_duration_label(proposal)}.",
+        "Garansi supply atau garansi kelangsungan pasokan CNG.",
+        "Perhitungan pemakaian CNG menggunakan metering milik "
+        "PT Reethau Cipta Energi.",
+        "Konversi sm3 menjadi MMBTU berdasarkan spesifikasi gas (nilai kalori) "
+        "yang akan dikalkulasi setiap bulannya.",
+        f"Menggunakan jaminan pembayaran berupa {proposal['guarantee']}.",
+        f"Dikenakan TOP (Take or Pay) {proposal['topPercent']:g}% dari "
+        "pengambilan minimum pemakaian.",
+        f"Pembayaran dilakukan oleh Pihak Kedua paling lambat tanggal "
+        f"{proposal['dueDay']} setiap bulannya ke rekening Pihak Pertama, "
+        "PT Reethau Cipta Energi, PT Bank Mandiri No. Rekening "
+        "167-000701735-2 (IDR).",
+        "Sumber gas langsung dari PT Pertamina dan memiliki Izin Niaga Gas CNG.",
+        "Harga gas dapat berubah berdasarkan eskalasi harga resmi dari "
+        "pemerintah dan/atau sumber gas.",
+    ]
 
 
 def _sph_now():
@@ -2274,6 +2306,67 @@ def _sph_parse_term_checklist(value):
     return parsed_lines
 
 
+def _sph_validate_offer_details(value):
+    raw = _sph_text(value, "Detail Penawaran", 20000)
+    if not raw:
+        return ""
+    try:
+        items = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Format Detail Penawaran tidak valid.",
+        ) from exc
+    if not isinstance(items, list) or len(items) != len(SPH_OFFER_DETAIL_IDS):
+        raise HTTPException(
+            status_code=400,
+            detail="Daftar Detail Penawaran tidak valid.",
+        )
+    normalized = []
+    for expected_id, item in zip(SPH_OFFER_DETAIL_IDS, items):
+        if (
+            not isinstance(item, dict)
+            or item.get("id") != expected_id
+            or type(item.get("checked")) is not bool
+            or (
+                item.get("text") is not None
+                and not isinstance(item.get("text"), str)
+            )
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Daftar Detail Penawaran tidak valid.",
+            )
+        text = item.get("text")
+        if isinstance(text, str) and len(text) > 4000:
+            raise HTTPException(
+                status_code=400,
+                detail="Teks Detail Penawaran terlalu panjang.",
+            )
+        normalized.append({
+            "id": expected_id,
+            "checked": item["checked"],
+            "text": text,
+        })
+    return json.dumps(normalized, ensure_ascii=False)
+
+
+def _sph_offer_detail_lines(proposal):
+    defaults = _sph_default_offer_detail_texts(proposal)
+    raw = str(proposal.get("offerDetails") or "").strip()
+    if not raw:
+        return defaults
+    items = json.loads(raw)
+    lines = []
+    for default, item in zip(defaults, items):
+        if not item["checked"]:
+            continue
+        text = default if item["text"] is None else item["text"].strip()
+        if text:
+            lines.append(text)
+    return lines
+
+
 def _sph_validate_proposal(payload):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Format SPH tidak valid.")
@@ -2374,6 +2467,7 @@ def _sph_validate_proposal(payload):
         "advantages": _sph_text(payload.get("advantages"), "Keunggulan", 10000),
         "other_terms": _sph_text(payload.get("otherTerms"), "Ketentuan lain", 10000),
         "preparation": _sph_text(payload.get("preparation"), "Preparation", 5000),
+        "offer_details": _sph_validate_offer_details(payload.get("offerDetails")),
         "reethau_obligations": _sph_text(payload.get("reethauObligations"), "Kewajiban Reethau"),
         "customer_obligations": _sph_text(payload.get("customerObligations"), "Kewajiban pelanggan"),
     }
@@ -2399,7 +2493,7 @@ def _sph_proposal_row(con, proposal_id):
         "p.end_date AS endDate,"
         "p.volume_details AS volumeDetails,p.price_details AS priceDetails,"
         "p.payment_terms AS paymentTerms,p.advantages,p.other_terms AS otherTerms,"
-        "p.preparation,"
+        "p.preparation,p.offer_details AS offerDetails,"
         "p.reethau_obligations AS reethauObligations,"
         "p.customer_obligations AS customerObligations,p.approvals,p.sent_date AS sentDate,"
         "p.template_key AS templateKey,p.approved_at AS approvedAt,"
@@ -2540,9 +2634,9 @@ async def sph_create_proposal(request: Request):
                 "duration_details,attention_to,supply_pattern,delivery_point,start_date,end_date,volume_details,"
                 "price_details,payment_terms,advantages,other_terms,preparation,"
                 "reethau_obligations,customer_obligations,template_key,approvals,"
-                "created_by,updated_at) "
+                "created_by,updated_at,offer_details) "
                 "VALUES(%s,%s,%s,%s,%s,%s,'draft',0,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
-                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'[]',%s,%s)",
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'[]',%s,%s,%s)",
                 (
                     proposal["proposal_number"], proposal["customer_key"], proposal["proposal_date"],
                     proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
@@ -2561,6 +2655,7 @@ async def sph_create_proposal(request: Request):
                     proposal["other_terms"], proposal["preparation"],
                     proposal["reethau_obligations"], proposal["customer_obligations"],
                     proposal["template_key"], request.session["username"], now,
+                    proposal["offer_details"],
                 ),
             )
         except pymysql.err.IntegrityError as exc:
@@ -2610,7 +2705,8 @@ async def sph_update_proposal(proposal_id: int, request: Request):
                 "payment_terms=%s,advantages=%s,other_terms=%s,preparation=%s,"
                 "reethau_obligations=%s,"
                 "customer_obligations=%s,template_key=%s,version=version+%s,approvals='[]',"
-                "approved_at=NULL,sent_date=NULL,updated_at=%s WHERE id=%s AND status <> 'active'",
+                "approved_at=NULL,sent_date=NULL,updated_at=%s,offer_details=%s "
+                "WHERE id=%s AND status <> 'active'",
                 (
                     proposal["proposal_number"], proposal["customer_key"], proposal["proposal_date"],
                     proposal["volume_min"], proposal["volume_max"], proposal["price_usd"],
@@ -2628,7 +2724,8 @@ async def sph_update_proposal(proposal_id: int, request: Request):
                     proposal["payment_terms"], proposal["advantages"],
                     proposal["other_terms"], proposal["preparation"],
                     proposal["reethau_obligations"], proposal["customer_obligations"],
-                    proposal["template_key"], int(was_submitted), now, proposal_id,
+                    proposal["template_key"], int(was_submitted), now,
+                    proposal["offer_details"], proposal_id,
                 ),
             )
         except pymysql.err.IntegrityError as exc:
@@ -3089,46 +3186,13 @@ def _sph_generate_proposal_pdf(proposal, inline=False):
         Spacer(1, 2 * mm),
         table,
         Paragraph("B. Detail Penawaran", styles["SphSection"]),
-        numbered_item(
-            1,
-            f"Masa kontrak {_sph_contract_duration_label(proposal)}.",
-        ),
-        numbered_item(2, "Garansi supply atau garansi kelangsungan pasokan CNG."),
-        numbered_item(
-            3,
-            "Perhitungan pemakaian CNG menggunakan metering milik "
-            "PT Reethau Cipta Energi.",
-        ),
-        numbered_item(
-            4,
-            "Konversi sm3 menjadi MMBTU berdasarkan spesifikasi gas (nilai kalori) "
-            "yang akan dikalkulasi setiap bulannya.",
-        ),
-        numbered_item(
-            5,
-            f"Menggunakan jaminan pembayaran berupa {proposal['guarantee']}.",
-        ),
-        numbered_item(
-            6,
-            f"Dikenakan TOP (Take or Pay) {proposal['topPercent']:g}% dari "
-            "pengambilan minimum pemakaian.",
-        ),
-        numbered_item(
-            7,
-            f"Pembayaran dilakukan oleh Pihak Kedua paling lambat tanggal "
-            f"{proposal['dueDay']} setiap bulannya ke rekening Pihak Pertama, "
-            "PT Reethau Cipta Energi, PT Bank Mandiri No. Rekening "
-            "167-000701735-2 (IDR).",
-        ),
-        numbered_item(
-            8,
-            "Sumber gas langsung dari PT Pertamina dan memiliki Izin Niaga Gas CNG.",
-        ),
-        numbered_item(
-            9,
-            "Harga gas dapat berubah berdasarkan eskalasi harga resmi dari "
-            "pemerintah dan/atau sumber gas.",
-        ),
+        *[
+            numbered_item(index, text)
+            for index, text in enumerate(
+                _sph_offer_detail_lines(proposal),
+                start=1,
+            )
+        ],
         Paragraph("C. Kewajiban PT Reethau Cipta Energi", styles["SphSection"]),
         *obligation_lines(proposal["reethauObligations"], "C"),
         Paragraph("D. Kewajiban Customer", styles["SphSection"]),
@@ -3807,6 +3871,7 @@ async def sph_proposal_pdf_preview(request: Request):
         "contractDuration": validated["contract_duration_value"],
         "contractDurationUnit": validated["contract_duration_unit"],
         "durationDetails": validated["duration_details"],
+        "offerDetails": validated["offer_details"],
         "reethauObligations": validated["reethau_obligations"],
         "customerObligations": validated["customer_obligations"],
         "status": "draft",

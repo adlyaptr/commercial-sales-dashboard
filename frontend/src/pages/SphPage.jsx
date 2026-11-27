@@ -79,6 +79,91 @@ const preparationOptions = [
     { label: '30 hari setelah surat penawaran ini di approved atau sesuai dengan kesepakatan.', checked: true },
 ];
 
+const offerDetailDefinitions = [
+    { id: 'contract_duration' },
+    { id: 'supply_guarantee' },
+    { id: 'metering' },
+    { id: 'calorific_conversion' },
+    { id: 'payment_guarantee' },
+    { id: 'take_or_pay' },
+    { id: 'payment_due' },
+    { id: 'gas_source' },
+    { id: 'price_escalation' },
+];
+
+const durationWords = [
+    '',
+    'Satu',
+    'Dua',
+    'Tiga',
+    'Empat',
+    'Lima',
+    'Enam',
+    'Tujuh',
+    'Delapan',
+    'Sembilan',
+    'Sepuluh',
+    'Sebelas',
+    'Dua Belas',
+    'Tiga Belas',
+    'Empat Belas',
+    'Lima Belas',
+];
+
+function defaultOfferDetailTexts(form) {
+    const duration = Number(form.contractDuration);
+    const durationUnit = form.contractDurationUnit === 'day' ? 'hari' : 'tahun';
+    const durationLabel = durationUnit === 'tahun' && durationWords[duration]
+        ? `${duration} (${durationWords[duration]}) ${durationUnit}`
+        : `${form.contractDuration || '[jangka waktu]'} ${durationUnit}`;
+    const topPercent = form.topPercent === '' ? '[persentase TOP]' : Number(form.topPercent);
+    const dueDay = form.dueDay || '[tanggal pembayaran]';
+
+    return [
+        `Masa kontrak ${durationLabel}.`,
+        'Garansi supply atau garansi kelangsungan pasokan CNG.',
+        'Perhitungan pemakaian CNG menggunakan metering milik PT Reethau Cipta Energi.',
+        'Konversi sm3 menjadi MMBTU berdasarkan spesifikasi gas (nilai kalori) yang akan dikalkulasi setiap bulannya.',
+        `Menggunakan jaminan pembayaran berupa ${form.guarantee || '[jenis jaminan]'}.`,
+        `Dikenakan TOP (Take or Pay) ${topPercent}% dari pengambilan minimum pemakaian.`,
+        `Pembayaran dilakukan oleh Pihak Kedua paling lambat tanggal ${dueDay} setiap bulannya ke rekening Pihak Pertama, PT Reethau Cipta Energi, PT Bank Mandiri No. Rekening 167-000701735-2 (IDR).`,
+        'Sumber gas langsung dari PT Pertamina dan memiliki Izin Niaga Gas CNG.',
+        'Harga gas dapat berubah berdasarkan eskalasi harga resmi dari pemerintah dan/atau sumber gas.',
+    ];
+}
+
+function blankOfferDetails() {
+    return JSON.stringify(offerDetailDefinitions.map(({ id }) => ({
+        id,
+        checked: true,
+        text: null,
+    })));
+}
+
+function parseOfferDetails(value) {
+    const defaults = offerDetailDefinitions.map(({ id }) => ({
+        id,
+        checked: true,
+        text: null,
+    }));
+    if (!value) return defaults;
+
+    try {
+        const parsed = JSON.parse(value);
+        if (!Array.isArray(parsed)) return defaults;
+        return defaults.map((item) => {
+            const stored = parsed.find((candidate) => candidate?.id === item.id);
+            return stored
+                && typeof stored.checked === 'boolean'
+                && (stored.text === null || typeof stored.text === 'string')
+                ? { ...item, checked: stored.checked, text: stored.text }
+                : item;
+        });
+    } catch {
+        return defaults;
+    }
+}
+
 function serializeObligations(options, selectedOptions, otherSelected, otherText) {
     const lines = options
         .filter((option) => selectedOptions.includes(option.label))
@@ -205,6 +290,7 @@ function blankProposal() {
         advantages: serializeTermChecklist(advantageOptions, advantageOptions.map((option) => option.label), false, ''),
         otherTerms: serializeTermChecklist(otherTermOptions, otherTermOptions.map((option) => option.label), false, ''),
         preparation: serializeTermChecklist(preparationOptions, preparationOptions.map((option) => option.label), false, ''),
+        offerDetails: blankOfferDetails(),
         reethauObligations: serializeObligations(
             reethauObligationOptions,
             reethauObligationOptions.filter((option) => option.checked).map((option) => option.label),
@@ -251,6 +337,7 @@ function formFromProposal(proposal) {
         advantages: proposal.advantages || '',
         otherTerms: proposal.otherTerms || '',
         preparation: proposal.preparation || '',
+        offerDetails: proposal.offerDetails || blankOfferDetails(),
         reethauObligations: proposal.reethauObligations || '',
         customerObligations: proposal.customerObligations || '',
     };
@@ -310,6 +397,7 @@ function SphPaperPreview({ form }) {
         advantages: form.advantages,
         otherTerms: form.otherTerms,
         preparation: form.preparation,
+        offerDetails: form.offerDetails,
         reethauObligations: form.reethauObligations,
         customerObligations: form.customerObligations,
     });
@@ -484,6 +572,53 @@ function ObligationChecklist({
                     />
                 </label>
             )}
+        </fieldset>
+    );
+}
+
+function OfferDetailsChecklist({ value, form, onChange }) {
+    const items = parseOfferDetails(value);
+    const defaults = defaultOfferDetailTexts(form);
+
+    function updateItem(index, changes) {
+        const updated = items.map((item, itemIndex) => (
+            itemIndex === index ? { ...item, ...changes } : item
+        ));
+        onChange(JSON.stringify(updated));
+    }
+
+    return (
+        <fieldset className="sph-obligation-group sph-offer-details-group">
+            <legend>B. Detail Penawaran</legend>
+            <p className="sph-form-hint">
+                Centang poin yang digunakan dan ubah teks sesuai kebutuhan penawaran.
+            </p>
+            <div className="sph-offer-detail-list">
+                {items.map((item, index) => (
+                    <div className="sph-offer-detail-item" key={item.id}>
+                        <label className="sph-offer-detail-toggle">
+                            <input
+                                type="checkbox"
+                                checked={item.checked}
+                                aria-label={`Sertakan detail penawaran poin ${index + 1}`}
+                                onChange={(event) => updateItem(index, {
+                                    checked: event.target.checked,
+                                })}
+                            />
+                            <span>{index + 1}.</span>
+                        </label>
+                        <textarea
+                            rows="2"
+                            aria-label={`Teks detail penawaran poin ${index + 1}`}
+                            value={item.text === null ? defaults[index] : item.text}
+                            disabled={!item.checked}
+                            onChange={(event) => updateItem(index, {
+                                text: event.target.value,
+                            })}
+                        />
+                    </div>
+                ))}
+            </div>
         </fieldset>
     );
 }
@@ -1085,6 +1220,11 @@ export default function SphPage({ user, onLogout }) {
                                     </div>
                                 ) : (
                                     <div className="sph-form-grid sph-form-grid-single">
+                                        <OfferDetailsChecklist
+                                            value={form.offerDetails}
+                                            form={form}
+                                            onChange={(value) => setForm((current) => ({ ...current, offerDetails: value }))}
+                                        />
                                         <ObligationChecklist
                                             title="Kewajiban PT Reethau Cipta Energi (C)"
                                             value={form.reethauObligations}

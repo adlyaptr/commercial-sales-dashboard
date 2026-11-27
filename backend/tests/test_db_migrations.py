@@ -69,6 +69,27 @@ class DatabaseMigrationTests(unittest.TestCase):
             0,
         )
 
+    def test_sph_offer_details_migration_adds_missing_column(self):
+        connection = MigrationConnection({"proposal_number"})
+
+        db._ensure_sph_offer_details_column(connection)
+
+        self.assertIn("offer_details", connection.columns)
+        self.assertEqual(
+            sum("ALTER TABLE sph_proposals" in statement for statement in connection.statements),
+            1,
+        )
+
+    def test_sph_offer_details_migration_preserves_existing_column(self):
+        connection = MigrationConnection({"proposal_number", "offer_details"})
+
+        db._ensure_sph_offer_details_column(connection)
+
+        self.assertEqual(
+            sum("ALTER TABLE sph_proposals" in statement for statement in connection.statements),
+            0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

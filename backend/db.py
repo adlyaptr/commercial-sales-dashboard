@@ -19,6 +19,19 @@ def _ensure_sph_contract_date_columns(connection):
             )
 
 
+def _ensure_sph_offer_details_column(connection):
+    columns = connection.execute(
+        """
+        SELECT COLUMN_NAME FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sph_proposals'
+        """
+    ).fetchall()
+    if not any(column["COLUMN_NAME"] == "offer_details" for column in columns):
+        connection.execute(
+            "ALTER TABLE sph_proposals ADD COLUMN offer_details TEXT NULL"
+        )
+
+
 def _ensure_customer_off_date_column(connection):
     columns = connection.execute(
         """
@@ -41,6 +54,7 @@ def initialize_database(connection_factory, app_username, app_password):
                 con.execute(statement)
 
         _ensure_sph_contract_date_columns(con)
+        _ensure_sph_offer_details_column(con)
         _ensure_customer_off_date_column(con)
 
         con.execute(

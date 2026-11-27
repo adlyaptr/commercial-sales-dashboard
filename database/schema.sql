@@ -200,6 +200,7 @@ CREATE TABLE IF NOT EXISTS sph_proposals (
     end_date DATE NULL,
     reethau_obligations TEXT NOT NULL,
     customer_obligations TEXT NOT NULL,
+    offer_details TEXT NULL,
     approvals TEXT NOT NULL,
     sent_date DATE NULL,
     approved_at DATE NULL,

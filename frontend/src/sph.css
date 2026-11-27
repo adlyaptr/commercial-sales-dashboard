@@ -585,6 +585,14 @@
 .sph-obligation-option { gap: 8px; color: #40564b; font-size: 11px; line-height: 1.5; }
 .sph-obligation-option input { width: 17px; height: 17px; flex-basis: 17px; }
 .sph-obligation-essay { margin-top: 10px; }
+.sph-offer-details-group { grid-column: 1 / -1; }
+.sph-offer-detail-list { display: grid; gap: 7px; }
+.sph-offer-detail-item { display: grid; grid-template-columns: 35px minmax(0, 1fr); align-items: start; gap: 8px; }
+.sph-offer-detail-toggle { display: flex; align-items: flex-start; gap: 5px; padding-top: 9px; color: #40564b; font-size: 11px; font-weight: 700; }
+.sph-offer-detail-toggle input { width: 16px; height: 16px; flex: 0 0 16px; margin: 0; accent-color: #176646; }
+.sph-offer-detail-item textarea { width: 100%; min-width: 0; min-height: 48px; padding: 7px 9px; border: 1px solid #d3e2da; border-radius: 7px; background: linear-gradient(180deg, #fff, #fbfdfc); color: #263d33; font: inherit; font-size: 11px; line-height: 1.45; resize: vertical; }
+.sph-offer-detail-item textarea:focus { border-color: #42a878; outline: 3px solid rgb(52 143 96 / 12%); }
+.sph-offer-detail-item textarea:disabled { background: #f0f3f1; color: #87958d; }
 .sph-form-actions { position: sticky; bottom: 10px; z-index: 3; padding: 9px; border: 1px solid #d7e6df; border-radius: 10px; background: linear-gradient(115deg, rgb(255 255 255 / 96%), rgb(239 249 244 / 95%)); box-shadow: 0 5px 16px rgb(28 54 43 / 9%); backdrop-filter: blur(8px); }
 
 .sph-document-preview {
