@@ -20,7 +20,7 @@ const regionByOperator = {
 };
 
 const regions = ["JAWA BARAT", "JAWA TENGAH", "JAWA TIMUR"];
-const colors = ["#1777d1", "#f0a43a", "#70afe4"];
+const colors = ["#0072b2", "#d55e00", "#009e73"];
 
 const fmt = (value) =>
   new Intl.NumberFormat("id-ID", {
