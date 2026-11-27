@@ -234,39 +234,49 @@ button { cursor: pointer; }
 /* Pilihan periode */
 .topbar-period-control {
     position: relative;
-    min-width: 230px;
-    min-height: 42px;
+    min-width: 190px;
+    min-height: 30px;
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 4px 8px;
-    border: 1px solid rgb(255 255 255 / 38%);
-    border-radius: 6px;
-    background: rgb(22 132 91 / 72%);
+    gap: 5px;
+    padding: 3px 9px;
+    border: 1px solid #0b7652;
+    border-radius: 999px;
+    background: #0b7652;
     color: #ffffff;
+    box-shadow: 0 2px 8px rgb(4 42 34 / 10%);
 }
 
 .topbar-calendar {
     display: grid;
     place-items: center;
-    width: 20px;
+    width: 15px;
     flex-shrink: 0;
     color: #ffffff;
-    font-size: 19px;
+}
+
+.topbar-calendar svg {
+    width: 14px;
+    height: 14px;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
 }
 
 .topbar-period-content {
     display: flex;
-    flex-direction: column;
+    align-items: center;
     gap: 4px;
     min-width: 0;
     flex: 1;
 }
 
 .topbar-period-content small {
-    color: #d3e4ef;
-    font-size: 9px;
+    color: #e2f5eb;
+    font-size: 8px;
     line-height: 1.2;
+    white-space: nowrap;
 }
 
 .topbar-period-range {
@@ -276,81 +286,221 @@ button { cursor: pointer; }
     right: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px;
+    gap: 6px;
+    max-width: calc(100vw - 20px);
+    padding: 7px;
     border: 1px solid rgb(255 255 255 / 35%);
     border-radius: 8px;
     background: #0b654a;
     box-shadow: 0 8px 20px rgb(0 0 0 / 22%);
 }
 
-.topbar-period-range label {
+.topbar-period-date-field {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     min-width: 0;
+    flex: 0 1 auto;
 }
 
-.topbar-period-range label > span {
-    color: #e0f5e9;
+.topbar-period-date-field > span {
+    color: #ffffff;
     font-size: 9px;
+    white-space: nowrap;
+}
+
+.topbar-period-date-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3px;
+    width: 94px;
+    min-width: 0;
+    min-height: 20px;
+    padding: 1px 3px;
+    border: 1px solid rgb(255 255 255 / 44%);
+    border-radius: 4px;
+    background: #0b7652;
+    color: #ffffff;
+    font: inherit;
+    font-size: 8px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.topbar-period-date-button:hover {
+    background: #16845b;
+}
+
+.topbar-period-date-button:focus-visible,
+.topbar-date-calendar button:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+}
+
+.topbar-period-date-button:disabled {
+    opacity: .65;
+    cursor: wait;
+}
+
+.topbar-date-calendar {
+    position: absolute;
+    z-index: 21;
+    top: calc(100% + 5px);
+    left: 0;
+    width: 218px;
+    max-width: calc(100vw - 20px);
+    padding: 7px;
+    border: 1px solid rgb(255 255 255 / 35%);
+    border-radius: 8px;
+    background: #0b654a;
+    box-shadow: 0 8px 20px rgb(0 0 0 / 24%);
+    color: #ffffff;
+}
+
+.topbar-date-calendar.align-end {
+    right: 0;
+    left: auto;
+}
+
+.topbar-date-calendar-header {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) 22px;
+    align-items: center;
+    gap: 3px;
+    margin-bottom: 5px;
+}
+
+.topbar-date-calendar-header strong {
+    font-size: 10px;
+    text-align: center;
+    text-transform: capitalize;
+}
+
+.topbar-date-calendar-header button {
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #ffffff;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.topbar-date-calendar-header button:hover,
+.topbar-date-calendar-day:hover:not(:disabled) {
+    background: rgb(255 255 255 / 16%);
+}
+
+.topbar-date-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+}
+
+.topbar-date-calendar-weekday {
+    display: grid;
+    min-height: 18px;
+    place-items: center;
+    color: #c9ead9;
+    font-size: 8px;
+    font-weight: 700;
+}
+
+.topbar-date-calendar-day {
+    display: grid;
+    min-width: 0;
+    min-height: 22px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #ffffff;
+    font: inherit;
+    font-size: 9px;
+    cursor: pointer;
+}
+
+.topbar-date-calendar-day.outside-month {
+    color: #a7cfba;
+}
+
+.topbar-date-calendar-day.selected {
+    background: #0b9a68;
+    color: #ffffff;
+    font-weight: 800;
+}
+
+.topbar-date-calendar-day:disabled {
+    opacity: .35;
+    cursor: not-allowed;
 }
 
 .topbar-period-content input,
 .topbar-period-content select {
-    width: 100%;
+    width: auto;
     min-width: 0;
-    padding: 3px 5px;
-    border: 1px solid rgb(255 255 255 / 44%);
-    border-radius: 4px;
+    flex: 1;
+    padding: 1px 2px;
+    border: 0;
+    border-radius: 0;
     outline: none;
-    background: #16845b;
-    color: #fff;
+    background: transparent;
+    color: #ffffff;
     color-scheme: dark;
     font-family: inherit;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     cursor: pointer;
 }
 
 .topbar-period-content input::-webkit-calendar-picker-indicator {
-    filter: brightness(0) invert(1);
+    filter: none;
 }
 
 .topbar-period-summary {
-    width: 100%;
-    min-height: 27px;
+    width: auto;
+    min-width: 0;
+    min-height: 22px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 4px 8px;
-    border: 1px solid rgb(255 255 255 / 44%);
-    border-radius: 5px;
-    background: #16845b;
-    color: #fff;
+    flex: 1;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #ffffff;
     font: inherit;
-    font-size: 12px;
+    font-size: 9px;
     font-weight: 700;
     text-align: left;
     cursor: pointer;
 }
 
-.topbar-period-summary:hover,
+.topbar-period-summary:hover {
+    background: transparent;
+    color: #d7f5e5;
+}
+
 .topbar-period-done:hover {
     background: #20a875;
 }
 
 .topbar-period-summary:focus-visible,
 .topbar-period-done:focus-visible {
-    outline: 2px solid #b9f3d4;
+    outline: 2px solid #ffffff;
     outline-offset: 2px;
 }
 
 .topbar-period-summary-icon {
     font-size: 10px;
 }
-
 .topbar-period-done {
     min-height: 27px;
     padding: 4px 8px;
@@ -364,17 +514,18 @@ button { cursor: pointer; }
     cursor: pointer;
 }
 
-.topbar-period-control.single-date { min-width: 165px; }
-.topbar-period-control.single-date .topbar-period-content { max-width: 145px; }
-.topbar-period-control.date-range { min-width: 240px; }
+.topbar-period-control.single-date { min-width: 190px; }
+.topbar-period-control.single-date .topbar-period-content { max-width: none; }
+.topbar-period-control.date-range { min-width: 190px; }
+.topbar-period-control.date-range.daily-period { min-width: 275px; }
 .topbar-period-control.date-range .topbar-period-content { flex: 1; }
-.topbar-period-control.date-range .topbar-period-range input { width: 132px; }
 .topbar-period-content input:disabled,
 .topbar-period-content select:disabled { opacity: .65; cursor: wait; }
 
 @media (max-width: 1200px) {
-    .topbar-period-control.date-range { min-width: 240px; }
-    .topbar-period-control.date-range .topbar-period-range input { width: 115px; }
+    .topbar-period-control.date-range { min-width: 190px; }
+    .topbar-period-control.date-range.daily-period { min-width: 275px; }
+    .topbar-period-date-button { width: 82px; }
 }
 
 .topbar-dropdown {
@@ -491,11 +642,15 @@ button { cursor: pointer; }
         min-width: 0;
     }
 
-    .topbar-period-control.date-range { min-width: 0; }
+    .topbar-period-control.date-range,
+    .topbar-period-control.date-range.daily-period { min-width: 0; }
+    .topbar-period-control.single-date { min-width: 0; }
     .topbar-period-control.date-range input { width: 100%; }
     .topbar-period-range { gap: 5px; }
-    .topbar-period-range label { flex: 1; }
-    .topbar-period-range label > span { font-size: 8px; }
+    .topbar-period-date-field { gap: 2px; }
+    .topbar-period-date-field > span { font-size: 8px; }
+    .topbar-period-date-button { width: 72px; }
+    .topbar-date-calendar { width: 210px; }
     .topbar-period-content input { font-size: 9px; }
 
     .app-shell {

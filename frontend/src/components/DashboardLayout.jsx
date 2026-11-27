@@ -135,6 +135,102 @@ const formatReportDate = (date) => {
 const formatPeriodDate = (date) =>
     date ? date.split('-').reverse().join('/') : 'Pilih tanggal';
 
+const calendarWeekdays = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+
+function toDateValue(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getCalendarDays(monthValue) {
+    const [year, month] = monthValue.split('-').map(Number);
+    const firstDay = new Date(year, month - 1, 1);
+    const dayCount = new Date(year, month, 0).getDate();
+    const cellCount = Math.ceil((firstDay.getDay() + dayCount) / 7) * 7;
+
+    return Array.from(
+        { length: cellCount },
+        (_, index) => new Date(year, month - 1, index - firstDay.getDay() + 1),
+    );
+}
+
+function CompactDateCalendar({
+    monthValue,
+    selectedValue,
+    minDate,
+    alignEnd,
+    onSelect,
+    onMonthChange,
+}) {
+    const [year, month] = monthValue.split('-').map(Number);
+    const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('id-ID', {
+        month: 'long',
+        year: 'numeric',
+    });
+
+    return (
+        <div
+            className={`topbar-date-calendar${alignEnd ? ' align-end' : ''}`}
+            role="dialog"
+            aria-label="Pilih tanggal"
+        >
+            <div className="topbar-date-calendar-header">
+                <button
+                    type="button"
+                    aria-label="Bulan sebelumnya"
+                    onClick={() => onMonthChange(-1)}
+                >
+                    ‹
+                </button>
+                <strong>{monthLabel}</strong>
+                <button
+                    type="button"
+                    aria-label="Bulan berikutnya"
+                    onClick={() => onMonthChange(1)}
+                >
+                    ›
+                </button>
+            </div>
+            <div className="topbar-date-calendar-grid">
+                {calendarWeekdays.map((weekday) => (
+                    <span className="topbar-date-calendar-weekday" key={weekday}>
+                        {weekday}
+                    </span>
+                ))}
+                {getCalendarDays(monthValue).map((date) => {
+                    const dateValue = toDateValue(date);
+                    const isOutsideMonth = date.getMonth() !== month - 1;
+                    const isSelected = dateValue === selectedValue;
+
+                    return (
+                        <button
+                            className={[
+                                'topbar-date-calendar-day',
+                                isOutsideMonth ? 'outside-month' : '',
+                                isSelected ? 'selected' : '',
+                            ].filter(Boolean).join(' ')}
+                            type="button"
+                            key={dateValue}
+                            aria-label={date.toLocaleDateString('id-ID', {
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric',
+                            })}
+                            aria-pressed={isSelected}
+                            disabled={minDate ? dateValue < minDate : false}
+                            onClick={() => onSelect(dateValue)}
+                        >
+                            {date.getDate()}
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
 function readSidebarPreference() {
     try {
         return localStorage.getItem('sidebar-hidden') === 'true';
@@ -181,6 +277,8 @@ export default function DashboardLayout({ user, onLogout }) {
     const [rangeEndDate, setRangeEndDate] = useState('');
     const [averagePriceMonth, setAveragePriceMonth] = useState('');
     const [rangePickerOpen, setRangePickerOpen] = useState(false);
+    const [activeRangeCalendar, setActiveRangeCalendar] = useState(null);
+    const [calendarMonth, setCalendarMonth] = useState('');
     const [dashboard, setDashboard] = useState(null);
     const [forecastRefreshKey, setForecastRefreshKey] = useState(0);
     const [homeRefreshKey, setHomeRefreshKey] = useState(0);
@@ -216,6 +314,15 @@ export default function DashboardLayout({ user, onLogout }) {
         window.addEventListener('keydown', closeOnEscape);
         return () => window.removeEventListener('keydown', closeOnEscape);
     }, [mobileSidebarOpen]);
+
+    useEffect(() => {
+        if (!activeRangeCalendar) return undefined;
+        const closeOnEscape = (event) => {
+            if (event.key === 'Escape') setActiveRangeCalendar(null);
+        };
+        window.addEventListener('keydown', closeOnEscape);
+        return () => window.removeEventListener('keydown', closeOnEscape);
+    }, [activeRangeCalendar]);
 
     // Memuat tanggal yang tersedia dari backend.
     const loadDates = useCallback(async () => {
@@ -615,6 +722,35 @@ export default function DashboardLayout({ user, onLogout }) {
         if (!rangeStartDate || value < rangeStartDate) setRangeStartDate(value);
     }
 
+    function toggleRangeCalendar(field, value) {
+        if (activeRangeCalendar === field) {
+            setActiveRangeCalendar(null);
+            return;
+        }
+        const initialDate = value || rangeStartDate || dates[0] || toDateValue(new Date());
+        setCalendarMonth(initialDate.slice(0, 7));
+        setActiveRangeCalendar(field);
+    }
+
+    function changeCalendarMonth(offset) {
+        setCalendarMonth((currentMonth) => {
+            const [year, month] = currentMonth.split('-').map(Number);
+            const nextMonth = new Date(year, month - 1 + offset, 1);
+            return toDateValue(nextMonth).slice(0, 7);
+        });
+    }
+
+    function selectRangeCalendarDate(value) {
+        if (activeRangeCalendar === 'start') {
+            if (isDaily) updateDailyRangeStart(value);
+            else updateRangeStart(value);
+        } else {
+            if (isDaily) updateDailyRangeEnd(value);
+            else updateRangeEnd(value);
+        }
+        setActiveRangeCalendar(null);
+    }
+
     function toggleSidebar() {
         if (isCompactViewport) {
             setMobileSidebarOpen((open) => !open);
@@ -879,12 +1015,15 @@ export default function DashboardLayout({ user, onLogout }) {
             
                     <div className="topbar-actions">
                         {!isCooperation && (
-                        <div className={`topbar-period-control${isAveragePrice || isBudget ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}`}>
+                        <div className={`topbar-period-control${isAveragePrice || isBudget ? ' single-date' : ` date-range${rangePickerOpen ? ' is-open' : ''}`}${isDaily ? ' daily-period' : ''}`}>
                                 <span
                                     className="topbar-calendar"
                                     aria-hidden="true"
                                 >
-                                    ▦
+                                    <svg viewBox="0 0 24 24" fill="none">
+                                        <rect x="3" y="5" width="18" height="16" rx="2" />
+                                        <path d="M8 3v4m8-4v4M3 10h18" />
+                                    </svg>
                                 </span>
 
                                 <div className="topbar-period-content">
@@ -931,38 +1070,60 @@ export default function DashboardLayout({ user, onLogout }) {
                                             </button>
                                             {rangePickerOpen && (
                                                 <div className="topbar-period-range">
-                                                    <label>
+                                                    <div className="topbar-period-date-field">
                                                         <span>Dari</span>
-                                                        <input
+                                                        <button
+                                                            className="topbar-period-date-button"
+                                                            type="button"
                                                             aria-label="Tanggal awal periode"
-                                                            type="date"
-                                                            value={rangeStartDate}
+                                                            aria-haspopup="dialog"
+                                                            aria-expanded={activeRangeCalendar === 'start'}
                                                             disabled={loadingDates || dates.length === 0}
-                                                            onChange={(event) => isDaily
-                                                                ? updateDailyRangeStart(event.target.value)
-                                                                : updateRangeStart(event.target.value)}
-                                                        />
-                                                    </label>
-                                                    <label>
+                                                            onClick={() => toggleRangeCalendar('start', rangeStartDate)}
+                                                        >
+                                                            {formatPeriodDate(rangeStartDate)}
+                                                            <span aria-hidden="true">▾</span>
+                                                        </button>
+                                                    </div>
+                                                    <div className="topbar-period-date-field">
                                                         <span>Sampai</span>
-                                                        <input
+                                                        <button
+                                                            className="topbar-period-date-button"
+                                                            type="button"
                                                             aria-label="Tanggal akhir periode"
-                                                            type="date"
-                                                            value={rangeEndDate}
-                                                            min={rangeStartDate || undefined}
+                                                            aria-haspopup="dialog"
+                                                            aria-expanded={activeRangeCalendar === 'end'}
                                                             disabled={loadingDates || dates.length === 0}
-                                                            onChange={(event) => isDaily
-                                                                ? updateDailyRangeEnd(event.target.value)
-                                                                : updateRangeEnd(event.target.value)}
-                                                        />
-                                                    </label>
+                                                            onClick={() => toggleRangeCalendar('end', rangeEndDate)}
+                                                        >
+                                                            {formatPeriodDate(rangeEndDate)}
+                                                            <span aria-hidden="true">▾</span>
+                                                        </button>
+                                                    </div>
                                                     <button
                                                         className="topbar-period-done"
                                                         type="button"
-                                                        onClick={() => setRangePickerOpen(false)}
+                                                        onClick={() => {
+                                                            setActiveRangeCalendar(null);
+                                                            setRangePickerOpen(false);
+                                                        }}
                                                     >
                                                         Selesai
                                                     </button>
+                                                    {activeRangeCalendar && (
+                                                        <CompactDateCalendar
+                                                            monthValue={calendarMonth}
+                                                            selectedValue={activeRangeCalendar === 'start'
+                                                                ? rangeStartDate
+                                                                : rangeEndDate}
+                                                            minDate={activeRangeCalendar === 'end'
+                                                                ? rangeStartDate
+                                                                : ''}
+                                                            alignEnd={activeRangeCalendar === 'end'}
+                                                            onSelect={selectRangeCalendarDate}
+                                                            onMonthChange={changeCalendarMonth}
+                                                        />
+                                                    )}
                                                 </div>
                                             )}
                                         </>
