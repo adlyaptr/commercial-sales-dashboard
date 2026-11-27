@@ -3214,7 +3214,8 @@ def _sph_generate_proposal_pdf(proposal, inline=False):
                     Paragraph("Hormat kami,<br/><b>PT Reethau Cipta Energi</b>", styles["SphBody"]),
                     Spacer(1, 26 * mm),
                     Paragraph(
-                        "<u><b>Admin</b></u>",
+                        "<u><b>Sahrul Astrurrachman</b></u><br/>"
+                        "<i>Commercial &amp; Marketing Head</i>",
                         styles["SphBody"],
                     ),
                 ],
@@ -3746,10 +3747,10 @@ def _sph_generate_term_description_pdf(proposal, inline=False):
             [[
                 [
                     Paragraph("Hormat kami,<br/><b>PT Reethau Cipta Energi</b>", styles["SphTermsBodyLetter"]),
-                    Spacer(1, 16.15 * mm),
+                    Spacer(1, 26 * mm),
                     Paragraph(
                         "<u><b>Sahrul Astrurrachman</b></u><br/>"
-                        "<i>Commersial &amp; Marketing Head</i>",
+                        "<i>Commercial &amp; Marketing Head</i>",
                         styles["SphTermsBodyLetter"],
                     ),
                 ],

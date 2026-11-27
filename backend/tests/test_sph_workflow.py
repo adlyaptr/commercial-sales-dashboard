@@ -899,7 +899,8 @@ class SphWorkflowTests(unittest.TestCase):
         self.assertIn("Approval Penawaran", paragraph_texts)
         self.assertIn("PT Green Pulse Dynamics", paragraph_texts)
         self.assertIn(
-            "<u><b>Admin</b></u>",
+            "<u><b>Sahrul Astrurrachman</b></u><br/>"
+            "<i>Commercial &amp; Marketing Head</i>",
             paragraph_texts,
         )
 
@@ -1056,6 +1057,7 @@ class SphWorkflowTests(unittest.TestCase):
             "30 hari setelah penawaran disetujui.",
             "Approval Customer",
             "Sahrul Astrurrachman",
+            "Commercial &amp; Marketing Head",
         ):
             with self.subTest(expected=expected):
                 self.assertTrue(
